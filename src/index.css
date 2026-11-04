@@ -1283,3 +1283,23 @@
   }
 }
 
+
+/* Gráficos da aba Desempenho (Comercial). Cada tema tem os próprios tons,
+   validados contra a sua superfície; no claro, os rótulos e a tabela de cada
+   gráfico compensam o contraste menor do verde e do amarelo. */
+.dark {
+  --cv-azul: #3987e5;
+  --cv-laranja: #d95926;
+  --cv-verde: #199e70;
+  --cv-amarelo: #c98500;
+  --cv-cinza: #63636b;
+  --cv-cinza-claro: #3f3f46;
+}
+html:not(.dark) {
+  --cv-azul: #2a78d6;
+  --cv-laranja: #eb6834;
+  --cv-verde: #1baf7a;
+  --cv-amarelo: #eda100;
+  --cv-cinza: #8a8f99;
+  --cv-cinza-claro: #c3c6cc;
+}

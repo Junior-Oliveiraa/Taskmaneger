@@ -7,6 +7,7 @@ import SiengeFaturas from './SiengeFaturas';
 import SiengeMetasDashboard from './SiengeMetasDashboard';
 import SiengeVendasModal from './SiengeVendasModal';
 import SiengeVendasDashboard from './SiengeVendasDashboard';
+import ComercialDashboard from './comercial/ComercialDashboard';
 import { useAuth } from '../context/AuthContext';
 
 // Exportado: o Sidebar usa o mesmo e-mail para decidir se mostra "Tabela de
@@ -243,10 +244,14 @@ export default function SiengeView({
             taxonomy={taxonomy}
           />
         ) : tab === 'vendas_dashboard' ? (
-          <SiengeVendasDashboard
-            projects={visibleProjects}
-            unidades={tabelaVendas}
-            versoes={tabelaVendaVersoes}
+          <ComercialDashboard
+            estoque={
+              <SiengeVendasDashboard
+                projects={visibleProjects}
+                unidades={tabelaVendas}
+                versoes={tabelaVendaVersoes}
+              />
+            }
           />
         ) : tab === 'vendas' ? (
           <SiengeVendasModal
