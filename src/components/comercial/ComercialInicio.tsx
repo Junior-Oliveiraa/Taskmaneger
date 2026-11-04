@@ -9,13 +9,13 @@ import {
   COMERCIAL_TRANSICOES, ComercialMovimento, ComercialMovimentoTipo,
   criarProposta, fetchComercialMovimentos, fetchComercialPropostas, registrarMovimentoComercial,
 } from '../../lib/comercialApi';
-import PropostasKanban from './PropostasKanban';
 import { Campo, CrmButton, inputCls, selectCls } from '../crm/CrmShared';
 
-export type ComercialTab = 'inicio' | 'vendas' | 'vendas_dashboard' | 'historico';
+export type ComercialTab = 'inicio' | 'propostas' | 'vendas' | 'vendas_dashboard' | 'historico';
 
 const ABAS: { id: ComercialTab; label: string }[] = [
   { id: 'inicio',           label: 'Início' },
+  { id: 'propostas',        label: 'Propostas' },
   { id: 'vendas',           label: 'Tabela de Vendas' },
   { id: 'vendas_dashboard', label: 'Dashboard' },
   { id: 'historico',        label: 'Histórico' },
@@ -210,7 +210,7 @@ export default function ComercialInicio({ projects, projectDisplays, unidades, v
           arquivos,
         });
         queryClient.invalidateQueries({ queryKey: ['comercialPropostas'] });
-        setSucesso('Proposta adicionada ao kanban em "Propostas realizadas".');
+        setSucesso('Proposta adicionada: acompanhe na aba Propostas, em "Propostas realizadas".');
         setCliente('');
         setUnidadeId('');
         setFluxoPagamento('');
@@ -462,8 +462,6 @@ export default function ComercialInicio({ projects, projectDisplays, unidades, v
           </div>
         </section>
       </div>
-
-      <PropostasKanban propostas={propostas} projects={projects} />
     </div>
   );
 }

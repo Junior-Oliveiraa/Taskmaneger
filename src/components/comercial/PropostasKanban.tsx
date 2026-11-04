@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
-import { Layers, Paperclip, Trash2, X } from 'lucide-react';
-import { Project } from '../../types';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Layers, Paperclip, Plus, Trash2, X } from 'lucide-react';
+import { Project, SiengeProjectDisplay, SiengeTabelaVendaColuna, SiengeTabelaVendaUnidade, SiengeTabelaVendaVersao } from '../../types';
+import NovaPropostaModal, { AutorizacaoResumo } from './NovaPropostaModal';
 import {
-  ComercialProposta, PROPOSTA_ETAPAS, PropostaEtapa, excluirProposta, moverProposta,
+  ComercialProposta, PROPOSTA_ETAPAS, PropostaEtapa, excluirProposta, fetchComercialPropostas, moverProposta,
 } from '../../lib/comercialApi';
 import { CrmButton, selectCls } from '../crm/CrmShared';
 
@@ -12,12 +13,17 @@ const dataBr = (iso: string) => iso.slice(0, 10).split('-').reverse().join('/');
 const primeiroNome = (nome: string) => nome.trim().split(/\s+/)[0] || nome;
 
 interface Props {
-  propostas: ComercialProposta[];
   projects: Project[];
+  projectDisplays: SiengeProjectDisplay[];
+  unidades: SiengeTabelaVendaUnidade[];
+  versoes: SiengeTabelaVendaVersao[];
+  colunas: SiengeTabelaVendaColuna[];
 }
 
-export default function PropostasKanban({ propostas, projects }: Props) {
+export default function PropostasKanban({ projects, projectDisplays, unidades, versoes, colunas }: Props) {
   const queryClient = useQueryClient();
+  const [novaAberta, setNovaAberta] = useState(false);
+  const propostas = useQuery({ queryKey: ['comercialPropostas'], queryFn: fetchComercialPropostas, staleTime: 30_000 }).data ?? [];
   const [dragOver, setDragOver] = useState<PropostaEtapa | null>(null);
   const [arrastando, setArrastando] = useState<string | null>(null);
   const [aberta, setAberta] = useState<string | null>(null);
@@ -56,27 +62,35 @@ export default function PropostasKanban({ propostas, projects }: Props) {
   };
 
   return (
-    <section className="mt-3 rounded-xl border border-zinc-900/60 bg-[#0f0f12]">
-      <header className="flex items-center gap-2 px-3 py-2.5 border-b border-zinc-800/50">
+    <div className="h-full view-pad">
+    <section className="h-full flex flex-col rounded-xl border border-zinc-900/60 bg-[#0f0f12]">
+      <header className="flex items-center gap-2 px-3 py-2.5 border-b border-zinc-800/50 shrink-0">
         <h3 className="text-xs font-semibold text-zinc-200">Propostas</h3>
         <span className="text-[10px] font-mono text-zinc-500 bg-zinc-950 px-1.5 py-0.5 rounded border border-zinc-900/60">
           {propostas.length}
         </span>
         <span className="text-[10px] text-zinc-500 ml-auto hidden sm:inline">Arraste os cards entre as etapas.</span>
+        <button
+          type="button"
+          onClick={() => setNovaAberta(true)}
+          className="ml-auto sm:ml-2 inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold shadow-lg shadow-blue-500/30 ring-1 ring-blue-400/50 transition-colors shrink-0"
+        >
+          <Plus size={16} strokeWidth={3} /> Nova proposta
+        </button>
       </header>
 
       {erro && (
-        <p className="mx-3 mt-2 text-[11px] text-rose-300 bg-rose-500/[0.06] border border-rose-500/20 rounded-md px-2.5 py-1.5">{erro}</p>
+        <p className="mx-3 mt-2 shrink-0 text-[11px] text-rose-300 bg-rose-500/[0.06] border border-rose-500/20 rounded-md px-2.5 py-1.5">{erro}</p>
       )}
 
-      <div className="flex gap-2 overflow-x-auto scrollbar-minimal p-2">
+      <div className="flex-1 min-h-0 flex gap-2 overflow-x-auto scrollbar-minimal p-2">
         {PROPOSTA_ETAPAS.map(coluna => {
           const cards = propostas.filter(p => p.etapa === coluna.id);
           const alvo = dragOver === coluna.id;
           return (
             <div
               key={coluna.id}
-              className={`flex-1 min-w-[210px] rounded-xl border transition-colors flex flex-col ${
+              className={`flex-1 min-w-[210px] min-h-0 rounded-xl border transition-colors flex flex-col ${
                 alvo ? `${coluna.accentBg} ${coluna.accentBorder}` : 'border-transparent'
               }`}
               onDragOver={e => { e.preventDefault(); setDragOver(coluna.id); }}
@@ -96,7 +110,7 @@ export default function PropostasKanban({ propostas, projects }: Props) {
                 </span>
               </div>
 
-              <div className="px-1.5 pb-2 space-y-2 min-h-[120px] max-h-[460px] overflow-y-auto no-scrollbar">
+              <div className="flex-1 min-h-0 px-1.5 pb-2 space-y-2 overflow-y-auto no-scrollbar">
                 {cards.length === 0 ? (
                   <div className="h-20 border border-dashed border-zinc-900 rounded-xl flex flex-col items-center justify-center text-xs text-zinc-600 italic">
                     <Layers size={13} className="mb-1" />
@@ -139,7 +153,7 @@ export default function PropostasKanban({ propostas, projects }: Props) {
           onClick={() => setAberta(null)}
         >
           <div
-            className="w-full max-w-lg max-h-[85vh] overflow-y-auto scrollbar-minimal rounded-xl border border-zinc-800 bg-[#0f0f12] shadow-2xl"
+            className={`w-full ${proposta.autorizacao ? 'max-w-3xl' : 'max-w-lg'} max-h-[85vh] overflow-y-auto scrollbar-minimal rounded-xl border border-zinc-800 bg-[#0f0f12] shadow-2xl`}
             onClick={e => e.stopPropagation()}
           >
             <header className="flex items-start justify-between gap-3 px-4 py-3 border-b border-zinc-800/60">
@@ -166,10 +180,14 @@ export default function PropostasKanban({ propostas, projects }: Props) {
                 </div>
               </div>
 
-              <div>
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Fluxo de pagamento</span>
-                <p className="text-zinc-300 mt-0.5 whitespace-pre-wrap break-words">{proposta.fluxoPagamento || '—'}</p>
-              </div>
+              {proposta.autorizacao ? (
+                <AutorizacaoResumo autorizacao={proposta.autorizacao} />
+              ) : (
+                <div>
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Fluxo de pagamento</span>
+                  <p className="text-zinc-300 mt-0.5 whitespace-pre-wrap break-words">{proposta.fluxoPagamento || '—'}</p>
+                </div>
+              )}
 
               {proposta.anexos.length > 0 && (
                 <div>
@@ -212,6 +230,19 @@ export default function PropostasKanban({ propostas, projects }: Props) {
           </div>
         </div>
       )}
+
+      {novaAberta && (
+        <NovaPropostaModal
+          projects={projects}
+          projectDisplays={projectDisplays}
+          unidades={unidades}
+          versoes={versoes}
+          colunas={colunas}
+          propostas={propostas}
+          onClose={() => setNovaAberta(false)}
+        />
+      )}
     </section>
+    </div>
   );
 }

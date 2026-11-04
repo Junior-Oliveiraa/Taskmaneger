@@ -44,6 +44,7 @@ import ConfirmModal from './components/ConfirmModal';
 import SiengeView from './components/SiengeView';
 import ComercialInicio, { ComercialTabBar, ComercialTab } from './components/comercial/ComercialInicio';
 import ComercialHistorico from './components/comercial/ComercialHistorico';
+import PropostasKanban from './components/comercial/PropostasKanban';
 import DashboardView from './components/DashboardView';
 import HomeView from './components/HomeView';
 
@@ -1597,6 +1598,18 @@ export default function App() {
                 unidades={siengeTabelaVendas}
                 versoes={siengeTabelaVendaVersoes}
                 vendas={siengeVendas}
+              />
+            </div>
+          )}
+
+          {activeView === 'comercial' && comercialTab === 'propostas' && (
+            <div className="flex-1 min-h-0">
+              <PropostasKanban
+                projects={projects}
+                projectDisplays={siengeProjectDisplays}
+                unidades={siengeTabelaVendas}
+                versoes={siengeTabelaVendaVersoes}
+                colunas={siengeTabelaVendaColunas}
               />
             </div>
           )}

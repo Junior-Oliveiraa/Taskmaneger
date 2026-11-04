@@ -106,8 +106,58 @@ export interface PropostaAnexo {
   url: string;
 }
 
+export interface PropostaParcela {
+  descricao: string;
+  quantidade: number;
+  valorUnitario: number;
+  /** yyyy-mm-dd */
+  primeiroVencimento: string;
+  atualizacao: 'FIXA' | 'INCC';
+}
+
+export interface PropostaAutorizacao {
+  torre: string;
+  /** yyyy-mm */
+  dataContrato: string;
+  emails: string;
+  /** yyyy-mm */
+  vigenciaTabela: string;
+  areaPrivativa: number | null;
+  valorTabela: number;
+  formaPagamentoSinal: string;
+  parcelas: PropostaParcela[];
+  observacoes: string;
+}
+
+const centavos = (v: number) => Math.round(v * 100) / 100;
+
+// Tudo o que a ficha deriva do que foi digitado: o valor contratado é sempre a
+// soma das parcelas, para os dois nunca divergirem.
+export function calcularAutorizacao(a: Pick<PropostaAutorizacao, 'areaPrivativa' | 'valorTabela' | 'parcelas'>) {
+  const totais = a.parcelas.map(p => centavos(p.quantidade * p.valorUnitario));
+  const contratado = centavos(totais.reduce((s, t) => s + t, 0));
+  const area = a.areaPrivativa && a.areaPrivativa > 0 ? a.areaPrivativa : null;
+  let acumulado = 0;
+  return {
+    contratado,
+    m2Tabela: area ? a.valorTabela / area : null,
+    m2Contratado: area ? contratado / area : null,
+    difValor: centavos(contratado - a.valorTabela),
+    difPercentual: a.valorTabela > 0 ? (contratado / a.valorTabela - 1) * 100 : null,
+    linhas: totais.map(total => {
+      acumulado += total;
+      return {
+        total,
+        percentual: contratado > 0 ? (total / contratado) * 100 : 0,
+        acumulado: contratado > 0 ? (acumulado / contratado) * 100 : 0,
+      };
+    }),
+  };
+}
+
 export interface ComercialProposta {
   id: string;
+  autorizacao: PropostaAutorizacao | null;
   projectId: string;
   unidadeId: string | null;
   unidade: string | null;
@@ -125,6 +175,7 @@ export interface ComercialProposta {
 function toProposta(r: any): ComercialProposta {
   return {
     id: r.id,
+    autorizacao: r.autorizacao ?? null,
     projectId: r.project_id,
     unidadeId: r.unidade_id ?? null,
     unidade: r.unidade ?? null,
@@ -160,6 +211,7 @@ export async function criarProposta(params: {
   /** yyyy-mm-dd */
   enviadaEm: string;
   arquivos: File[];
+  autorizacao?: PropostaAutorizacao | null;
 }): Promise<void> {
   // O id nasce no cliente para os anexos já irem para a pasta da própria proposta.
   const id = crypto.randomUUID();
@@ -185,6 +237,8 @@ export async function criarProposta(params: {
     fluxo_pagamento: params.fluxoPagamento,
     anexos,
     enviada_em: params.enviadaEm,
+    // Só envia a coluna quando há ficha: o lançamento pelo Início não a usa.
+    ...(params.autorizacao ? { autorizacao: params.autorizacao } : {}),
   });
   if (error) throw error;
 }
