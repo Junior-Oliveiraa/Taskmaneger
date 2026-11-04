@@ -63,6 +63,55 @@ async function lerTudo<T>(tabela: string): Promise<T[]> {
   }
 }
 
+// ── Padronização de texto ────────────────────────────────────────────────────
+// O CV devolve o mesmo campo ora em CAIXA ALTA, ora em minúsculas. Tudo passa
+// por aqui ao carregar: nome próprio (pessoa, imobiliária, cidade) com cada
+// palavra em maiúscula; o resto só com a primeira letra.
+
+const CONECTIVOS = new Set(['de', 'da', 'do', 'das', 'dos', 'e', 'di', 'du', 'del', 'van', 'von']);
+/** Siglas que ficam em caixa alta mesmo dentro de um nome. */
+const SIGLAS_TEXTO = ['cv', 'crm', 'pj', 'pf', 'fgts', 'mcmv', 'sbpe', 'olx', 'rh', 'tv', 'spc'];
+const SIGLAS = new Set(['ltda', 'me', 'epp', 'eireli', 's/a', 'sa', 's.a.', 'ii', 'iii', 'iv', 'creci', ...SIGLAS_TEXTO]);
+/** Nomes próprios que costumam aparecer em texto comum (mídia, motivos). */
+const PROPRIOS = new Map<string, string>([
+  ...['uchoa', 'uchôa', 'instagram', 'facebook', 'google', 'whatsapp', 'youtube', 'tiktok', 'linkedin', 'caixa',
+    'zap', 'vivareal', 'orbit', 'sienge', 'botanic', 'martin', 'rivage', 'flow', 'gênova', 'serasa']
+    .map(p => [p, p.charAt(0).toUpperCase() + p.slice(1)] as [string, string]),
+  ...SIGLAS_TEXTO.map(p => [p, p.toUpperCase()] as [string, string]),
+]);
+
+const capitalizar = (p: string) => p.replace(/^(\p{L})/u, c => c.toUpperCase());
+
+/** "JOÃO DA SILVA" → "João da Silva"; "IMOB X LTDA" → "Imob X LTDA". */
+export function nomeProprio(v: string | null): string | null {
+  const s = v?.trim().replace(/\s+/g, ' ');
+  if (!s) return null;
+  return s.toLowerCase().split(' ').map((p, i) => {
+    if (SIGLAS.has(p)) return p.toUpperCase();
+    if (i > 0 && CONECTIVOS.has(p)) return p;
+    // "maria-josé" e "d'ávila" também levam maiúscula depois do hífen/apóstrofo.
+    return p.split(/([-'’])/).map(capitalizar).join('');
+  }).join(' ');
+}
+
+/** "INDICAÇÃO DE AMIGO" → "Indicação de amigo"; nomes conhecidos seguem maiúsculos. */
+export function textoComum(v: string | null): string | null {
+  const s = v?.trim().replace(/\s+/g, ' ');
+  if (!s) return null;
+  const out = s.toLowerCase().split(' ').map(p => PROPRIOS.get(p) ?? p).join(' ');
+  return capitalizar(out);
+}
+
+/**
+ * As duas primeiras palavras do nome, para caber nas listas; o nome inteiro vai
+ * no balão. Um conectivo entre elas fica ("Maria de Souza", não "Maria de").
+ */
+export function nomeCurto(nome: string): string {
+  const p = nome.split(' ');
+  if (p.length <= 2) return nome;
+  return CONECTIVOS.has(p[1].toLowerCase()) ? p.slice(0, 3).join(' ') : p.slice(0, 2).join(' ');
+}
+
 export async function fetchCvComercial(): Promise<CvDados> {
   const [reservas, unidades, sync] = await Promise.all([
     lerTudo<CvReserva>('cv_comercial_reservas'),
@@ -75,6 +124,13 @@ export async function fetchCvComercial(): Promise<CvDados> {
       ...r,
       valor_contrato: Number(r.valor_contrato) || 0,
       area_privativa: r.area_privativa == null ? null : Number(r.area_privativa),
+      imobiliaria: nomeProprio(r.imobiliaria),
+      corretor: nomeProprio(r.corretor),
+      cidade: nomeProprio(r.cidade),
+      midia: textoComum(r.midia),
+      motivo_cancelamento: textoComum(r.motivo_cancelamento),
+      motivo_distrato: textoComum(r.motivo_distrato),
+      estado_civil: textoComum(r.estado_civil),
     })),
     unidades,
     sync: (sync.data as CvSync | null) ?? null,
@@ -95,6 +151,10 @@ export interface FiltrosPainel {
   /** Período usado nas variações dos cartões; nulo esconde a comparação. */
   comparacao: Periodo | null;
   canal: string | null;
+  /** Só com canal escolhido. */
+  imobiliaria: string | null;
+  /** Só com imobiliária escolhida (ou canal de imobiliária única, como Autônomos). */
+  corretor: string | null;
 }
 
 export const hojeBrasilia = () =>
@@ -218,6 +278,10 @@ export interface LinhaEmpreendimento {
   vendaveis: number;
   pctVendido: number;
   vso: number;
+  /** Disponíveis + reservadas pelo valor de tabela; nulo se nenhuma tiver preço. */
+  valorEstoque: number | null;
+  /** Unidades do estoque sem preço na tabela de vendas. */
+  estoqueSemPreco: number;
   /** As vendas do período que somam o VGV da linha, mais recentes primeiro. */
   vendas: CvReserva[];
 }
@@ -276,6 +340,39 @@ export function valoresDeTabela(reservas: CvReserva[], orbit: VendaOrbit[]): Map
   return out;
 }
 
+/** Unidade da tabela de vendas do Orbit (versão principal), com o preço atual. */
+export interface PrecoOrbit {
+  projeto: string;
+  unidade: string;
+  valor: number;
+}
+
+/** Preço de tabela atual de cada unidade do CV, casada com o Orbit pelo número. */
+export function precosDasUnidades(unidades: CvUnidade[], orbit: PrecoOrbit[]): Map<number, number> {
+  const porProjeto = new Map<string, Map<string, number>>();
+  orbit.forEach(u => {
+    if (!(u.valor > 0)) return;
+    const p = nomeCurtoEmpreendimento(u.projeto).nome;
+    const m = porProjeto.get(p) ?? new Map<string, number>();
+    m.set(normUnidade(u.unidade), u.valor);
+    porProjeto.set(p, m);
+  });
+  const out = new Map<number, number>();
+  unidades.forEach(u => {
+    const m = porProjeto.get(nomeCurtoEmpreendimento(u.empreendimento).nome);
+    if (!m) return;
+    const n = normUnidade(u.unidade);
+    let v = m.get(n);
+    if (v === undefined && n) {
+      // "A-101" no Orbit x "101" no CV: só se o final não for ambíguo.
+      const fim = [...m.entries()].filter(([k]) => k.endsWith(n));
+      if (fim.length === 1) v = fim[0][1];
+    }
+    if (v !== undefined) out.set(Number(u.idunidade), v);
+  });
+  return out;
+}
+
 export interface Contagem { label: string; n: number }
 
 export interface Painel {
@@ -286,6 +383,8 @@ export interface Painel {
   empreendimentos: LinhaEmpreendimento[];
   estoqueTotal: Record<SituacaoEstoque, number>;
   canais: Fatia[];
+  /** As mesmas fatias no período de comparação. */
+  canaisAnterior: Fatia[] | null;
   imobiliarias: Fatia[];
   midias: Fatia[];
   midiasSemInfo: number;
@@ -421,16 +520,20 @@ function montarSerie(vendas: CvReserva[], p: Periodo): { serie: PontoSerie[]; gr
   return { serie, granularidade };
 }
 
-export function calcularPainel(dados: CvDados, f: FiltrosPainel): Painel {
+export function calcularPainel(dados: CvDados, f: FiltrosPainel, precos: Map<number, number> = new Map()): Painel {
   const noRecorte = (r: { idempreendimento: number }) =>
     !f.empreendimentos || f.empreendimentos.includes(Number(r.idempreendimento));
 
-  const reservas = dados.reservas.filter(r => noRecorte(r) && (!f.canal || r.canal === f.canal));
+  const reservas = dados.reservas.filter(r => noRecorte(r)
+    && (!f.canal || r.canal === f.canal)
+    && (!f.imobiliaria || r.imobiliaria === f.imobiliaria)
+    && (!f.corretor || r.corretor === f.corretor));
   const unidades = dados.unidades.filter(noRecorte);
 
   const estoqueVazio = (): Record<SituacaoEstoque, number> => ({ vendida: 0, reservada: 0, 'disponível': 0, bloqueada: 0 });
   const estoqueTotal = estoqueVazio();
   const estoquePor = new Map<number, Record<SituacaoEstoque, number>>();
+  const valorEstoquePor = new Map<number, { valor: number; comPreco: number; semPreco: number }>();
   const nomePor = new Map<number, string>();
   unidades.forEach(u => {
     const id = Number(u.idempreendimento);
@@ -439,6 +542,12 @@ export function calcularPainel(dados: CvDados, f: FiltrosPainel): Painel {
     if (s in e) { e[s] += 1; estoqueTotal[s] += 1; }
     estoquePor.set(id, e);
     nomePor.set(id, nomeEmpreendimento(u.empreendimento));
+    if (s === 'disponível' || s === 'reservada') {
+      const v = valorEstoquePor.get(id) ?? { valor: 0, comPreco: 0, semPreco: 0 };
+      const preco = precos.get(Number(u.idunidade));
+      if (preco !== undefined) { v.valor += preco; v.comPreco += 1; } else v.semPreco += 1;
+      valorEstoquePor.set(id, v);
+    }
   });
   const estoqueAberto = estoqueTotal['disponível'] + estoqueTotal.reservada;
 
@@ -457,7 +566,10 @@ export function calcularPainel(dados: CvDados, f: FiltrosPainel): Painel {
     const vs = vendas.filter(r => Number(r.idempreendimento) === id);
     const k = somarKpis(vs, [], [], estoque['disponível'] + estoque.reservada);
     const vendaveis = estoque.vendida + estoque.reservada + estoque['disponível'];
+    const ve = valorEstoquePor.get(id);
     return {
+      valorEstoque: ve && ve.comPreco > 0 ? ve.valor : null,
+      estoqueSemPreco: ve?.semPreco ?? 0,
       id,
       nome: nomePor.get(id) ?? String(id),
       vendidasPeriodo: k.unidades,
@@ -474,6 +586,7 @@ export function calcularPainel(dados: CvDados, f: FiltrosPainel): Painel {
   }).sort((a, b) => b.vgvPeriodo - a.vgvPeriodo || b.pctVendido - a.pctVendido);
 
   const canais = agruparFatias(vendas, r => r.canal).fatias;
+  const canaisAnterior = pa ? agruparFatias(vendasDe(pa), r => r.canal).fatias : null;
   const imobiliarias = topComOutras(agruparFatias(vendas, r => r.imobiliaria).fatias, 8, 'Outras');
   const midiasAg = agruparFatias(vendas, r => r.midia);
 
@@ -506,6 +619,7 @@ export function calcularPainel(dados: CvDados, f: FiltrosPainel): Painel {
     empreendimentos,
     estoqueTotal,
     canais,
+    canaisAnterior,
     imobiliarias,
     midias: topComOutras(midiasAg.fatias, 6, 'Outras'),
     midiasSemInfo: midiasAg.semInfo,

@@ -354,6 +354,8 @@ export function GraficoColunasMeta({ colunas, formatarEixo, formatarRotulo }: {
 
 export interface Barra {
   label: string;
+  /** Texto do balão nativo quando o label é abreviado; também serve de chave. */
+  titulo?: string;
   valor: number;
   rotulo: string;
   tip: React.ReactNode;
@@ -367,11 +369,11 @@ export function ListaBarras({ barras, cor = COR.azul }: { barras: Barra[]; cor?:
     <ul className="flex flex-col gap-2">
       {barras.map(b => (
         <li
-          key={b.label}
-          {...props(b.tip, `${b.label}: ${b.rotulo}`)}
+          key={b.titulo ?? b.label}
+          {...props(b.tip, `${b.titulo ?? b.label}: ${b.rotulo}`)}
           className="group grid grid-cols-[minmax(0,2fr)_minmax(0,3fr)] items-center gap-3 min-h-6 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
         >
-          <span className="text-xs leading-tight text-zinc-300 line-clamp-2" title={b.label}>{b.label}</span>
+          <span className="text-xs leading-tight text-zinc-300 line-clamp-2" title={b.titulo ?? b.label}>{b.label}</span>
           <span className="flex items-center gap-2 min-w-0">
             <span className="flex-1 min-w-0 h-3 flex items-center">
               <span
