@@ -1,8 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { AlertTriangle, ArrowDownRight, ArrowUpRight, Briefcase, Building2, ChevronRight, Clock3, Minus, RefreshCw, Store, UserRound } from 'lucide-react';
+import { AlertTriangle, ArrowDownRight, ArrowUpRight, Briefcase, Building2, ChevronRight, Clock3, Landmark, Minus, RefreshCw, Store, UserRound } from 'lucide-react';
 import {
-  CANAIS, CvDados, CvReserva, ValorTabela, VendaOrbit, valoresDeTabela, Desfecho, FiltrosPainel, Kpis, Painel, Periodo, SituacaoEstoque, SITUACOES_ESTOQUE,
+  CANAIS, FINANCIAMENTOS, financiamentoDe, CvDados, CvReserva, ValorTabela, VendaOrbit, valoresDeTabela, Desfecho, FiltrosPainel, Kpis, Painel, Periodo, SituacaoEstoque, SITUACOES_ESTOQUE,
   PrecoOrbit, calcularPainel, fetchCvComercial, hojeBrasilia, nomeCurto, nomeCurtoEmpreendimento, precosDasUnidades,
 } from '../../lib/cvComercial';
 import FiltroLista from './FiltroLista';
@@ -11,15 +11,8 @@ import { BOTAO_FILTRO, BOTAO_FILTRO_NEUTRO, ICONE_FILTRO } from './filtroEstilo'
 import SeletorPeriodo, { SelecaoPeriodo, periodoDeComparacao, resolverAtalho, rotuloComparacao, rotuloSelecao } from './SeletorPeriodo';
 import { BarraSegmentada, CardGrafico, COR, GraficoColunas, GraficoColunasMeta, Legenda, ListaBarras, Rosca, TipTitulo } from './cvCharts';
 
-// A meta ainda não existe em lugar nenhum. Este valor fictício, por empreendimento
-// e por mês, só serve para aprovar o layout e nunca chega à produção, onde o cartão
-// mostra "Não definida". Sai quando a meta real for cadastrada.
-// A meta muda de mês para mês, então ela é uma função do mês ('2026-03').
-export type MetaMensal = (mes: string) => number;
-const VARIACAO_EXEMPLO = [0.7, 0.8, 1.1, 0.9, 1.0, 1.3, 0.9, 1.2, 1.0, 1.1, 1.4, 1.6];
-const META_EXEMPLO_MENSAL: MetaMensal | null = (import.meta as any).env.DEV
-  ? mes => 1_000_000 * VARIACAO_EXEMPLO[Number(mes.slice(5, 7)) - 1]
-  : null;
+// As metas vêm da aba Metas (comercial_metas), por empreendimento e por mês.
+import { MetasComercial, ROTULO_FAIXA, faixaAtingimento, fetchMetasComercial, metaMensalDoRecorte } from '../../lib/comercialMetas';
 
 // ── Formatação ───────────────────────────────────────────────────────────────
 
@@ -177,6 +170,19 @@ function Diferenca({ contrato, tabela }: { contrato: number; tabela: number }) {
   );
 }
 
+const COR_FINANCIAMENTO: Record<string, string> = {
+  'Caixa': 'bg-sky-500/10 text-sky-300 border-sky-500/30',
+  'Banco privado': 'bg-violet-500/10 text-violet-300 border-violet-500/30',
+  'Caixa e banco privado': 'bg-amber-500/10 text-amber-300 border-amber-500/30',
+};
+
+function SeloFinanciamento({ valor }: { valor: string | null | undefined }) {
+  if (!valor) return <span className="text-zinc-600" title="O CV não tem condição de pagamento ativa para esta reserva">–</span>;
+  const cor = COR_FINANCIAMENTO[valor];
+  if (!cor) return <span className="text-zinc-500">{valor}</span>;
+  return <span className={`inline-block rounded border px-1.5 py-px text-[10px] font-semibold whitespace-nowrap ${cor}`}>{valor}</span>;
+}
+
 function VendasDoEmpreendimento({ vendas, tabelaPor }: { vendas: CvReserva[]; tabelaPor: Map<number, ValorTabela> }) {
   const comTabela = vendas.filter(v => tabelaPor.has(v.idreserva));
   const somaContrato = vendas.reduce((t, v) => t + v.valor_contrato, 0);
@@ -189,13 +195,14 @@ function VendasDoEmpreendimento({ vendas, tabelaPor }: { vendas: CvReserva[]; ta
   return (
     <div className="px-4 py-3 pl-10">
       <div className="overflow-x-auto custom-scrollbar">
-        <table className="w-full text-[11px] min-w-[760px]">
+        <table className="w-full text-[11px] min-w-[880px]">
           <thead>
             <tr className="text-zinc-500">
               <th className={`${th} text-left`}>Unidade</th>
               <th className={`${th} text-left`}>Data</th>
               <th className={`${th} text-left`}>Corretor</th>
               <th className={`${th} text-left`}>Imobiliária</th>
+              <th className={`${th} text-left`} title="Pelas séries da condição de pagamento vigente no CV CRM">Financiamento</th>
               <th className={`${th} text-right`}>Valor de contrato</th>
               <th className={`${th} text-right`} title="Valor da unidade na tabela de vendas no momento da venda">Valor de tabela</th>
               <th className={`${th} text-right`}>Diferença</th>
@@ -213,6 +220,7 @@ function VendasDoEmpreendimento({ vendas, tabelaPor }: { vendas: CvReserva[]; ta
                   <td className={`${td} tabular-nums whitespace-nowrap`}>{fmtData(v.data_venda)}</td>
                   <td className={`${td} max-w-[200px] truncate`}><Nome nome={v.corretor} /></td>
                   <td className={`${td} max-w-[200px] truncate`}><Nome nome={v.imobiliaria} /></td>
+                  <td className={td}><SeloFinanciamento valor={v.financiamento} /></td>
                   <td className={`${td} text-right tabular-nums whitespace-nowrap`}>{fmtMoeda(v.valor_contrato)}</td>
                   <td className={`${td} text-right tabular-nums whitespace-nowrap`}>
                     {t ? (
@@ -229,7 +237,7 @@ function VendasDoEmpreendimento({ vendas, tabelaPor }: { vendas: CvReserva[]; ta
           </tbody>
           <tfoot>
             <tr className="text-zinc-200 font-semibold">
-              <td className="px-3 pt-2" colSpan={4}>
+              <td className="px-3 pt-2" colSpan={5}>
                 {fmtInt(vendas.length)} {vendas.length === 1 ? 'venda' : 'vendas'}
                 {comTabela.length < vendas.length && (
                   <span className="ml-2 font-normal text-zinc-500">diferença calculada em {fmtInt(comTabela.length)} com valor de tabela</span>
@@ -253,8 +261,8 @@ const SEM_PRECOS: PrecoOrbit[] = [];
 
 const porNome = (a: string, b: string) => a.localeCompare(b, 'pt-BR');
 
-export function PainelDesempenho({ dados, hoje = hojeBrasilia(), metaMensal = META_EXEMPLO_MENSAL, vendasOrbit = SEM_ORBIT, precosOrbit = SEM_PRECOS }: {
-  dados: CvDados; hoje?: string; metaMensal?: MetaMensal | null; vendasOrbit?: VendaOrbit[]; precosOrbit?: PrecoOrbit[];
+export function PainelDesempenho({ dados, hoje = hojeBrasilia(), metas = null, vendasOrbit = SEM_ORBIT, precosOrbit = SEM_PRECOS }: {
+  dados: CvDados; hoje?: string; metas?: MetasComercial | null; vendasOrbit?: VendaOrbit[]; precosOrbit?: PrecoOrbit[];
 }) {
   const [empreendimentos, setEmpreendimentos] = useState<number[] | null>(null);
   const [aberto, setAberto] = useState<number | null>(null);
@@ -263,6 +271,12 @@ export function PainelDesempenho({ dados, hoje = hojeBrasilia(), metaMensal = ME
   const [canal, setCanalBruto] = useState<string | null>(null);
   const [imobiliaria, setImobiliariaBruta] = useState<string | null>(null);
   const [corretor, setCorretor] = useState<string | null>(null);
+  const [financiamento, setFinanciamento] = useState<string | null>(null);
+  // Só os tipos que existem nos dados, na ordem de FINANCIAMENTOS.
+  const opcoesFinanciamento = useMemo(() => {
+    const presentes = new Set(dados.reservas.map(financiamentoDe));
+    return FINANCIAMENTOS.filter(f => presentes.has(f));
+  }, [dados.reservas]);
   // Cada nível do filtro depende do anterior: trocar um zera os de baixo.
   const setCanal = (c: string | null) => { setCanalBruto(c); setImobiliariaBruta(null); setCorretor(null); };
   const setImobiliaria = (i: string | null) => { setImobiliariaBruta(i); setCorretor(null); };
@@ -301,9 +315,15 @@ export function PainelDesempenho({ dados, hoje = hojeBrasilia(), metaMensal = ME
   const comparacao = useMemo(() => periodoDeComparacao(selecao), [selecao]);
   const rotuloComp = rotuloComparacao(selecao.tipoComparacao);
 
+  // "Este mês": a meta é a do mês inteiro, então o gráfico vai até o último dia do mês.
+  const fimDoMes = useMemo(() => {
+    if (selecao.atalho !== 'este_mes') return null;
+    const [y, m] = selecao.ate.split('-').map(Number);
+    return new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
+  }, [selecao]);
   const filtros: FiltrosPainel = useMemo(
-    () => ({ empreendimentos, periodo, comparacao, canal, imobiliaria, corretor }),
-    [empreendimentos, periodo, comparacao, canal, imobiliaria, corretor],
+    () => ({ empreendimentos, periodo, comparacao, canal, imobiliaria, corretor, financiamento, fimSerie: fimDoMes }),
+    [empreendimentos, periodo, comparacao, canal, imobiliaria, corretor, financiamento, fimDoMes],
   );
   const painel: Painel = useMemo(() => calcularPainel(dados, filtros, precos), [dados, filtros, precos]);
 
@@ -325,14 +345,36 @@ export function PainelDesempenho({ dados, hoje = hojeBrasilia(), metaMensal = ME
   const totalCanais = painel.canais.reduce((s, c) => s + c.valor, 0);
   const totalVendasPerfil = painel.perfil.base;
 
-  const qtdEmpreendimentos = empreendimentos?.length ?? listaEmpreendimentos.length;
+  // Meta do recorte: soma das metas dos empreendimentos filtrados ("Todos" = todas).
+  const cvEmpreendimentos = useMemo(() => {
+    const m = new Map<number, string>();
+    dados.unidades.forEach(u => m.set(Number(u.idempreendimento), u.empreendimento));
+    return [...m.entries()].map(([id, nome]) => ({ id, nome }));
+  }, [dados.unidades]);
+  const metaMensal = useMemo(
+    () => (metas ? metaMensalDoRecorte(metas, cvEmpreendimentos, empreendimentos) : null),
+    [metas, cvEmpreendimentos, empreendimentos],
+  );
   // Meta de cada mês rateada pelos dias que o período cobre dele em cada ponto.
-  const temMeta = metaMensal !== null;
-  const metaDe = (p: { meses: Record<string, number> }) => (metaMensal === null ? null
-    : Object.entries(p.meses).reduce((t, [mes, frac]) => t + metaMensal(mes) * frac, 0) * qtdEmpreendimentos);
-  const metaTotal = temMeta ? painel.serie.reduce((t, p) => t + (metaDe(p) ?? 0), 0) : null;
+  const metaBruta = (p: { meses: Record<string, number> }) => (metaMensal === null ? 0
+    : Object.entries(p.meses).reduce((t, [mes, frac]) => t + metaMensal(mes) * frac, 0));
+  const somaMetas = painel.serie.reduce((t, p) => t + metaBruta(p), 0);
+  // Sem nenhuma meta cadastrada no recorte, o cartão mostra "Não definida".
+  const temMeta = somaMetas > 0;
+  const metaDe = (p: { meses: Record<string, number> }) => (temMeta ? metaBruta(p) : null);
+  const metaTotal = temMeta ? somaMetas : null;
   const atingido = metaTotal ? k.vgv / metaTotal : 0;
   const faixaMeta = faixaDaMeta(atingido);
+  const fatorSuper = metas?.fatorSuper ?? 1.5;
+  const superMeta = metaTotal === null ? null : metaTotal * fatorSuper;
+  const faixaPlanilha = faixaAtingimento(atingido, fatorSuper);
+  // Pontos depois do fim do período (os dias que ainda virão em "Este mês") só têm meta.
+  const ehFuturo = (p: { chave: string }) => fimDoMes !== null && p.chave > selecao.ate;
+  // Ritmo: quanto da meta do mês já deveria estar vendido até hoje.
+  const metaAteHoje = fimDoMes !== null && temMeta
+    ? painel.serie.filter(p => !ehFuturo(p)).reduce((t, p) => t + metaBruta(p), 0)
+    : null;
+  const ritmo = metaAteHoje ? k.vgv / metaAteHoje : null;
 
   // Curva de vendas: cada ponto carrega o acumulado desde o início do período.
   let acumulado = 0;
@@ -341,7 +383,8 @@ export function PainelDesempenho({ dados, hoje = hojeBrasilia(), metaMensal = ME
     acumulado += p.valor;
     const m = metaDe(p);
     metaAcumulada += m ?? 0;
-    return { ...p, valorPonto: p.valor, metaPonto: m, realizado: acumulado, meta: m === null ? null : metaAcumulada };
+    const futuro = ehFuturo(p);
+    return { ...p, futuro, valorPonto: p.valor, metaPonto: m, realizado: futuro ? null : acumulado, meta: m === null ? null : metaAcumulada };
   });
   const rotuloSerie = painel.granularidade === 'dia' ? 'Dia' : painel.granularidade === 'mês' ? 'Mês' : 'Trimestre';
 
@@ -387,6 +430,17 @@ export function PainelDesempenho({ dados, hoje = hojeBrasilia(), metaMensal = ME
           onAlternar={c => setCanal(c)}
           largura="w-52"
         />
+        <FiltroLista
+          icone={<Landmark size={13} />}
+          rotuloGrupo="Financiamento"
+          todos="Todos os financiamentos"
+          resumo={financiamento ?? "Todos os financiamentos"}
+          opcoes={opcoesFinanciamento.map(f => ({ id: f, label: f }))}
+          selecionados={financiamento ? [financiamento] : null}
+          onTodos={() => setFinanciamento(null)}
+          onAlternar={f => setFinanciamento(f)}
+          largura="w-60"
+        />
         {canal && !imobiliariaUnica && opcoesImobiliaria.length > 0 && (
           <FiltroLista
             icone={<Briefcase size={13} />}
@@ -423,11 +477,21 @@ export function PainelDesempenho({ dados, hoje = hojeBrasilia(), metaMensal = ME
           {/* Os dois cartões empilhados dividem a altura da curva ao lado. */}
           <div className="xl:col-span-4 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-1 xl:grid-rows-2 gap-3">
             <div className="min-w-0 flex flex-col justify-between gap-2 rounded-xl border border-zinc-800/80 bg-zinc-900/40 p-4 short:p-3">
-              <p className="text-[11px] font-medium text-zinc-500">VGV vendido · {rotuloPeriodo}</p>
-              <p className="text-[32px] short:text-[28px] leading-none font-bold text-zinc-100 tracking-tight">{fmtCompacto(k.vgv)}</p>
+              <p className="text-[11px] font-medium text-zinc-500" title="Tudo o que foi vendido no período, inclusive vendas que depois viraram distrato">VGV bruto vendido · {rotuloPeriodo}</p>
+              <p className="text-[32px] short:text-[28px] leading-none font-bold text-zinc-100 tracking-tight">{fmtCompacto(k.vgvBruto)}</p>
               <div className="flex items-center justify-between gap-2 flex-wrap">
                 <span className="text-xs text-zinc-400">{fmtInt(k.unidades)} {k.unidades === 1 ? 'unidade vendida' : 'unidades vendidas'}</span>
-                <Variacao rotulo={rotuloComp} atual={k.vgv} anterior={a?.vgv} />
+                <Variacao rotulo={rotuloComp} atual={k.vgvBruto} anterior={a?.vgvBruto} />
+              </div>
+              <div className="pt-2 border-t border-zinc-800/70 flex items-end justify-between gap-2 flex-wrap">
+                <div className="min-w-0" title={`${fmtMoeda(k.vgvBruto)} bruto − ${fmtMoeda(k.distratosValor)} em distratos do período`}>
+                  <p className="text-[11px] font-medium text-zinc-500">VGV líquido</p>
+                  <p className="text-lg font-bold text-zinc-100 leading-tight">{fmtCompacto(k.vgvLiquido)}</p>
+                  <p className="text-[11px] text-zinc-500">
+                    {k.distratosValor > 0 ? `− ${fmtCompacto(k.distratosValor)} em distratos` : 'Sem distratos no período'}
+                  </p>
+                </div>
+                <Variacao rotulo={rotuloComp} atual={k.vgvLiquido} anterior={a?.vgvLiquido} />
               </div>
             </div>
 
@@ -435,7 +499,11 @@ export function PainelDesempenho({ dados, hoje = hojeBrasilia(), metaMensal = ME
               <div className="flex items-center justify-between gap-2">
                 <p className="text-[11px] font-medium text-zinc-500">VGV meta</p>
                 {metaTotal !== null && (
-                  <span className="px-1.5 py-0.5 text-[10px] font-semibold text-amber-400 bg-amber-500/10 border border-amber-500/25 rounded-md">Exemplo</span>
+                  <span className={`px-1.5 py-0.5 text-[10px] font-semibold rounded-md border ${
+                    faixaPlanilha === 'super' ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/25'
+                      : faixaPlanilha === 'meta' ? 'text-blue-300 bg-blue-500/10 border-blue-500/25'
+                      : 'text-zinc-400 bg-zinc-800/60 border-zinc-700/60'
+                  }`}>{ROTULO_FAIXA[faixaPlanilha]}</span>
                 )}
               </div>
               {metaTotal !== null ? (
@@ -456,6 +524,20 @@ export function PainelDesempenho({ dados, hoje = hojeBrasilia(), metaMensal = ME
                       <span className={`font-semibold ${TEXTO_FAIXA[faixaMeta]}`}>{fmtPct(atingido)}</span> da meta ·{' '}
                       {k.vgv >= metaTotal ? `${fmtCompacto(k.vgv - metaTotal)} acima` : `faltam ${fmtCompacto(metaTotal - k.vgv)}`}
                     </p>
+                    {metaAteHoje !== null && ritmo !== null && (
+                      <p className="text-[11px] text-zinc-500 mt-0.5" title="Meta do mês rateada pelos dias que já passaram, comparada com o realizado">
+                        Esperado até hoje {fmtCompacto(metaAteHoje)} ·{' '}
+                        <span className={`font-semibold ${ritmo >= 1 ? 'text-emerald-400' : ritmo >= 0.8 ? 'text-amber-400' : 'text-red-400'}`}>
+                          {ritmo >= 1 ? 'no ritmo' : 'abaixo do ritmo'} ({fmtPct(ritmo, 0)})
+                        </span>
+                      </p>
+                    )}
+                    {superMeta !== null && (
+                      <p className="text-[11px] text-zinc-500 mt-0.5">
+                        Super Meta {fmtCompacto(superMeta)} ·{' '}
+                        {k.vgv >= superMeta ? <span className="text-emerald-400 font-semibold">batida</span> : `faltam ${fmtCompacto(superMeta - k.vgv)}`}
+                      </p>
+                    )}
                   </div>
                 </>
               ) : (
@@ -481,10 +563,10 @@ export function PainelDesempenho({ dados, hoje = hojeBrasilia(), metaMensal = ME
             tabela={{
               colunas: [rotuloSerie, 'Realizado', 'Meta', '% da meta', 'Realizado acumulado', 'Meta acumulada'],
               linhas: curva.map(p => [
-                p.label, fmtMoeda(p.valorPonto),
+                p.label, p.futuro ? '–' : fmtMoeda(p.valorPonto),
                 p.metaPonto === null ? '–' : fmtMoeda(p.metaPonto),
-                p.metaPonto ? fmtPct(p.valorPonto / p.metaPonto) : '–',
-                fmtMoeda(p.realizado),
+                p.metaPonto && !p.futuro ? fmtPct(p.valorPonto / p.metaPonto) : '–',
+                p.realizado === null ? '–' : fmtMoeda(p.realizado),
                 p.meta === null ? '–' : fmtMoeda(p.meta),
               ]),
             }}
@@ -497,8 +579,17 @@ export function PainelDesempenho({ dados, hoje = hojeBrasilia(), metaMensal = ME
                 label: p.label,
                 valor: p.valorPonto,
                 meta: p.metaPonto,
-                aria: `${p.labelLongo}: vendido ${fmtMoeda(p.valorPonto)}${p.metaPonto === null ? '' : `, meta ${fmtMoeda(p.metaPonto)}`}`,
-                tip: (
+                aria: p.futuro
+                  ? `${p.labelLongo}: ainda não chegou${p.metaPonto === null ? '' : `, meta ${fmtMoeda(p.metaPonto)}`}`
+                  : `${p.labelLongo}: vendido ${fmtMoeda(p.valorPonto)}${p.metaPonto === null ? '' : `, meta ${fmtMoeda(p.metaPonto)}`}`,
+                tip: p.futuro ? (
+                  <>
+                    <TipTitulo>{p.labelLongo}</TipTitulo>
+                    <p className="text-zinc-500">Ainda não chegou</p>
+                    {p.metaPonto !== null && <p className="tabular-nums">Meta: {fmtMoeda(p.metaPonto)}</p>}
+                    {p.meta !== null && <p className="tabular-nums text-zinc-500">Meta acumulada: {fmtMoeda(p.meta)}</p>}
+                  </>
+                ) : (
                   <>
                     <TipTitulo>{p.labelLongo}</TipTitulo>
                     <p className="tabular-nums">Realizado: {fmtMoeda(p.valorPonto)} · {fmtInt(p.unidades)} un.</p>
@@ -507,7 +598,7 @@ export function PainelDesempenho({ dados, hoje = hojeBrasilia(), metaMensal = ME
                       <p className="font-semibold" style={{ color: COR.verde }}>Meta superada em {fmtMoeda(p.valorPonto - p.metaPonto)}</p>
                     )}
                     <p className="tabular-nums text-zinc-500">
-                      Acumulado: {fmtMoeda(p.realizado)}{p.meta !== null && ` de ${fmtMoeda(p.meta)}`}
+                      Acumulado: {fmtMoeda(p.realizado ?? 0)}{p.meta !== null && ` de ${fmtMoeda(p.meta)}`}
                     </p>
                   </>
                 ),
@@ -866,6 +957,8 @@ export default function DesempenhoComercial() {
   });
   // Valor de tabela congelado pelo Orbit na venda; mesmas chaves do App, então vem do cache.
   const { data: siengeVendas } = useQuery({ queryKey: ['siengeVendas'], queryFn: fetchSiengeVendas });
+  // Sem a tabela de metas (ou com erro), o painel segue e o cartão mostra "Não definida".
+  const { data: metas } = useQuery({ queryKey: ['comercialMetas'], queryFn: fetchMetasComercial, staleTime: 60 * 1000, retry: 1 });
   const { data: projetos } = useQuery({ queryKey: ['projects'], queryFn: fetchProjects });
   const vendasOrbit = useMemo<VendaOrbit[]>(() => {
     const nomePor = new Map((projetos ?? []).map(p => [p.id, p.name]));
@@ -918,7 +1011,7 @@ export default function DesempenhoComercial() {
         ) : (
           <div className="flex flex-col h-full">
             <div className="view-pad-x pt-2.5 shrink-0"><AvisoSync dados={data} /></div>
-            <div className="flex-1 min-h-0"><PainelDesempenho dados={data} vendasOrbit={vendasOrbit} precosOrbit={precosOrbit} /></div>
+            <div className="flex-1 min-h-0"><PainelDesempenho dados={data} metas={metas ?? null} vendasOrbit={vendasOrbit} precosOrbit={precosOrbit} /></div>
           </div>
         )}
       </div>

@@ -91,9 +91,10 @@ export async function registrarMovimentoComercial(params: {
 // ─── Propostas ────────────────────────────────────────────────────────────
 // Acompanhamento da negociação. Não mexe na situação da unidade: é CRUD simples.
 
-export type PropostaEtapa = 'realizada' | 'em_analise' | 'contra_proposta' | 'analise_final' | 'venda';
+export type PropostaEtapa = 'visita' | 'realizada' | 'em_analise' | 'contra_proposta' | 'analise_final' | 'venda';
 
 export const PROPOSTA_ETAPAS: { id: PropostaEtapa; label: string; dot: string; accentBg: string; accentBorder: string }[] = [
+  { id: 'visita',          label: 'Visitas',              dot: 'bg-sky-400',     accentBg: 'bg-sky-500/[0.04]',     accentBorder: 'border-sky-500/30' },
   { id: 'realizada',       label: 'Propostas realizadas', dot: 'bg-violet-400',  accentBg: 'bg-violet-500/[0.04]',  accentBorder: 'border-violet-500/30' },
   { id: 'em_analise',      label: 'Propostas em análise', dot: 'bg-blue-400',    accentBg: 'bg-blue-500/[0.04]',    accentBorder: 'border-blue-500/30' },
   { id: 'contra_proposta', label: 'Contra proposta',      dot: 'bg-amber-400',   accentBg: 'bg-amber-500/[0.04]',   accentBorder: 'border-amber-500/30' },
@@ -113,14 +114,18 @@ export interface PropostaParcela {
   /** yyyy-mm-dd */
   primeiroVencimento: string;
   atualizacao: 'FIXA' | 'INCC';
+  /** Meses entre parcelas (0 = única). Ausente nas fichas anteriores ao campo. */
+  periodicidade?: number;
 }
 
 export interface PropostaAutorizacao {
   torre: string;
-  /** yyyy-mm */
+  /** yyyy-mm-dd (fichas antigas: yyyy-mm) */
   dataContrato: string;
   emails: string;
-  /** yyyy-mm */
+  /** Ausente nas fichas anteriores ao campo. */
+  telefone?: string;
+  /** yyyy-mm-dd (fichas antigas: yyyy-mm) */
   vigenciaTabela: string;
   areaPrivativa: number | null;
   valorTabela: number;

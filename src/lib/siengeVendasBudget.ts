@@ -2,8 +2,7 @@ import { Project, SiengeTabelaVendaUnidade, SiengeVenda, SiengeTitle, SiengeCate
 import { ALL_CATEGORIAS, CategoriaAnalysis, CategoriaRef } from './siengeMetasAnalysis';
 
 // 2% do VGV é o teto de orçamento de marketing/comercial adotado pela Uchôa —
-// mesmo percentual usado em toda a análise de metas (ver ORCAMENTO_ALVO_PCT em
-// SiengeMetasModal.tsx).
+// mesmo percentual usado em toda a análise de metas do Dashboard Analítico.
 export const ORCAMENTO_PCT = 0.02;
 
 // ─── Camada 1 — VGV real (vendas efetivamente confirmadas) ──────────────────

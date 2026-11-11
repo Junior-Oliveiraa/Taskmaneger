@@ -1,4 +1,4 @@
-// Sincroniza vendas, reservas, distratos e estoque do CV CRM para o Supabase.
+// Sincroniza vendas, reservas, distratos, condições de pagamento e estoque do CV CRM para o Supabase.
 // Alimenta a aba Desempenho do Dashboard do Comercial.
 //
 // Chamada pelo pg_cron de hora em hora (verify_jwt desligado no deploy). A função
@@ -104,12 +104,14 @@ serve(async () => {
     const reservasRaw = await cvdwTudo('reservas');
     const vendasRaw = await cvdwTudo('vendas');
     const distratosRaw = await cvdwTudo('distratos');
+    // Condições de pagamento: as séries dizem se o financiamento é Caixa ou banco privado.
+    const condicoesRaw = await cvdwTudo('reservas/condicoes');
     const estoque = await buscarEstoque();
 
     // Resposta vazia com HTTP 200 apagaria o painel inteiro.
     if (reservasRaw.length === 0 || estoque.length === 0) throw new Error('CV CRM devolveu carga vazia');
 
-    const reservas: CvReservaRow[] = montarReservas(reservasRaw, vendasRaw, distratosRaw);
+    const reservas: CvReservaRow[] = montarReservas(reservasRaw, vendasRaw, distratosRaw, condicoesRaw);
     await substituir(db, 'cv_comercial_reservas', 'idreserva', reservas as unknown as Record<string, unknown>[]);
     await substituir(db, 'cv_comercial_unidades', 'idunidade', estoque as unknown as Record<string, unknown>[]);
 

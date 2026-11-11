@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useLayoutEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Table2, BarChart3 } from 'lucide-react';
 
@@ -94,7 +94,7 @@ export function CardGrafico({ titulo, subtitulo, acao, tabela, rodape, children,
           )}
         </div>
       </header>
-      <div className="flex-1 min-w-0">
+      <div className="flex-1 min-w-0 min-h-0 flex flex-col">
         {verTabela && tabela ? <TabelaSimples {...tabela} /> : children}
       </div>
       {rodape && <p className="text-[11px] text-zinc-500 mt-3">{rodape}</p>}
@@ -240,7 +240,24 @@ export interface ColunaMeta {
   aria: string;
 }
 
-const ALTURA_META = 150;
+/** Altura mínima do gráfico; com espaço sobrando no card, ele cresce até ocupá-lo. */
+const ALTURA_META_MIN = 150;
+
+/** Altura atual do elemento, acompanhando o redimensionamento do card. */
+function useAltura<T extends HTMLElement>(inicial: number) {
+  const [el, setEl] = useState<T | null>(null);
+  const [altura, setAltura] = useState(inicial);
+  // Ref por callback: o elemento só existe quando há dados, e pode surgir depois.
+  useLayoutEffect(() => {
+    if (!el) return;
+    const medir = () => setAltura(Math.max(inicial, Math.round(el.getBoundingClientRect().height)));
+    medir();
+    const ro = new ResizeObserver(medir);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [el, inicial]);
+  return [setEl, altura] as const;
+}
 
 /**
  * Uma coluna por período com o realizado; a meta do período é um traço fino
@@ -253,6 +270,7 @@ export function GraficoColunasMeta({ colunas, formatarEixo, formatarRotulo }: {
   formatarRotulo: (n: number) => string;
 }) {
   const { props, camada } = useTip();
+  const [refPlot, ALTURA_META] = useAltura<HTMLDivElement>(ALTURA_META_MIN);
   const maximo = Math.max(0, ...colunas.flatMap(c => [c.valor, c.meta ?? 0]));
   if (maximo <= 0) return <SemDados />;
 
@@ -277,16 +295,19 @@ export function GraficoColunasMeta({ colunas, formatarEixo, formatarRotulo }: {
   const pontosMeta = n <= 31;
 
   return (
-    <div className="flex gap-2">
-      <div className="relative w-10 shrink-0" style={{ height: ALTURA_META }} aria-hidden>
+    <div className="flex-1 flex flex-col">
+      {/* A área do gráfico ocupa a sobra do card; posições internas são absolutas
+          para a altura medida não empurrar o card e crescer sem fim. */}
+      <div ref={refPlot} className="flex-1 flex gap-2" style={{ minHeight: ALTURA_META_MIN }}>
+      <div className="relative w-10 shrink-0" aria-hidden>
         {ticks.map(t => (
           <span key={t} className="absolute right-0 -translate-y-1/2 text-[10px] text-zinc-500 tabular-nums whitespace-nowrap" style={{ top: y(t) }}>
             {formatarEixo(t)}
           </span>
         ))}
       </div>
-      <div className="flex-1 min-w-0">
-        <div className="relative" style={{ height: ALTURA_META }}>
+      <div className="flex-1 min-w-0 relative">
+        <div className="absolute inset-0">
           {ticks.map(t => (
             <div key={t} className="absolute inset-x-0 h-px bg-zinc-800/50" style={{ top: y(t) }} />
           ))}
@@ -335,6 +356,9 @@ export function GraficoColunasMeta({ colunas, formatarEixo, formatarRotulo }: {
             </>
           )}
         </div>
+      </div>
+      </div>
+      <div className="pl-12">
         <div className="flex mt-1.5" aria-hidden>
           {colunas.map((c, i) => (
             <div key={c.chave} className="flex-1 min-w-0 flex justify-center text-[10px] text-zinc-500 whitespace-nowrap">

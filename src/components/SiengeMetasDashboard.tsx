@@ -1,11 +1,12 @@
 import React, { useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { BarChart3, Settings2, Eye, Building2, ChevronDown, Check, PieChart, TrendingUp, TrendingDown, Minus } from 'lucide-react';
-import { Project, SiengeTitle, SiengeProjectMeta, SiengeCategoriaOrcamento, SiengeProjectTotal, SiengeProjectDisplay, SiengeTabelaVendaUnidade, SiengeVenda, SiengeOrcamentoConfig } from '../types';
+import { BarChart3, Building2, ChevronDown, Check, PieChart, TrendingUp, TrendingDown, Minus, Target, RefreshCw } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { Project, SiengeTitle, SiengeCategoriaOrcamento, SiengeProjectTotal, SiengeTabelaVendaUnidade, SiengeVenda, SiengeOrcamentoConfig } from '../types';
 import { useAuth } from '../context/AuthContext';
 import MonthFilterDropdown, { MonthFilterValue } from './MonthFilterDropdown';
 import { MONTHS_FULL } from './MonthSelectDropdown';
-import SiengeMetasModal from './SiengeMetasModal';
+import { fetchMetasComercial, metasParaOrcamento, projetosDasMetas } from '../lib/comercialMetas';
 import SiengeAlocacaoModal from './SiengeAlocacaoModal';
 import SiengeSpendChart from './SiengeSpendChart';
 import { analyzeProjectsForPeriod, buildCategoriasBase } from '../lib/siengeMetasAnalysis';
@@ -17,16 +18,11 @@ import { canAccessMetasDashboard } from './SiengeView';
 interface SiengeMetasDashboardProps {
   titles: SiengeTitle[];
   projects: Project[];
-  projectMetas: SiengeProjectMeta[];
   categoriaOrcamento: SiengeCategoriaOrcamento[];
   projectTotais: SiengeProjectTotal[];
-  projectDisplays: SiengeProjectDisplay[];
-  onSaveProjectMeta: (meta: SiengeProjectMeta) => void;
-  onDeleteProjectMeta: (id: string) => void;
   onSaveCategoriaOrcamento: (item: SiengeCategoriaOrcamento) => void;
   onDeleteCategoriaOrcamento: (id: string) => void;
   onSaveProjectTotal: (total: SiengeProjectTotal) => void;
-  onSaveProjectDisplay: (display: SiengeProjectDisplay) => void;
   tabelaVendas: SiengeTabelaVendaUnidade[];
   vendas: SiengeVenda[];
   orcamentoConfig?: SiengeOrcamentoConfig;
@@ -117,8 +113,8 @@ function ProjectFilterDropdown({ projects, value, onChange }: { projects: Projec
 }
 
 export default function SiengeMetasDashboard({
-  titles, projects, projectMetas, categoriaOrcamento, projectTotais, projectDisplays,
-  onSaveProjectMeta, onDeleteProjectMeta, onSaveCategoriaOrcamento, onDeleteCategoriaOrcamento, onSaveProjectTotal, onSaveProjectDisplay,
+  titles, projects, categoriaOrcamento, projectTotais,
+  onSaveCategoriaOrcamento, onDeleteCategoriaOrcamento, onSaveProjectTotal,
   tabelaVendas,
   vendas, orcamentoConfig, onSaveOrcamentoConfig, taxonomy,
 }: SiengeMetasDashboardProps) {
@@ -126,27 +122,24 @@ export default function SiengeMetasDashboard({
   const now = new Date();
   const [filterMonth, setFilterMonth] = useState<MonthFilterValue>({ year: now.getFullYear(), month: now.getMonth() });
   const [filterProjectId, setFilterProjectId] = useState<string>('all');
-  const [showMetasPanel, setShowMetasPanel] = useState(false);
   const [showAlocacaoPanel, setShowAlocacaoPanel] = useState(false);
   /** Linha aberta no comparativo (chave da categoria), com os títulos que a compõem. */
   const [openCategoria, setOpenCategoria] = useState<string | null>(null);
 
   const allowed = canAccessMetasDashboard(currentUser);
 
-  // Empreendimentos ocultados (via "Ajustar Metas") somem do dashboard, mas
-  // continuam existindo normalmente no resto do app — e na própria "Ajustar Metas",
-  // onde podem ser reexibidos e reordenados.
+  // Metas de VGV: vêm de Comercial > Dashboard > Metas (fonte única). Cada
+  // empreendimento das metas aponta para um empreendimento do Orbit.
+  const metasQuery = useQuery({ queryKey: ['comercialMetas'], queryFn: fetchMetasComercial, staleTime: 60 * 1000 });
+  const projectMetas = useMemo(() => (metasQuery.data ? metasParaOrcamento(metasQuery.data) : []), [metasQuery.data]);
+
+  // Aparecem os empreendimentos do Orbit vinculados a alguma meta comercial, na
+  // ordem das colunas da aba Metas.
   const visibleProjects = useMemo(() => {
-    const displayOf = (id: string) => projectDisplays.find(d => d.projectId === id);
-    return projects
-      .filter(p => !displayOf(p.id)?.hidden)
-      .sort((a, b) => {
-        const oa = displayOf(a.id)?.sortOrder ?? Number.MAX_SAFE_INTEGER;
-        const ob = displayOf(b.id)?.sortOrder ?? Number.MAX_SAFE_INTEGER;
-        if (oa !== ob) return oa - ob;
-        return projects.indexOf(a) - projects.indexOf(b);
-      });
-  }, [projects, projectDisplays]);
+    const ordem = metasQuery.data ? projetosDasMetas(metasQuery.data) : [];
+    const porId = new Map(projects.map(p => [p.id, p]));
+    return ordem.map(id => porId.get(id)).filter((p): p is Project => !!p);
+  }, [projects, metasQuery.data]);
 
   const scopedProjects = useMemo(
     () => filterProjectId === 'all' ? visibleProjects : visibleProjects.filter(p => p.id === filterProjectId),
@@ -313,27 +306,7 @@ export default function SiengeMetasDashboard({
   return (
     <div className="flex flex-col h-full overflow-hidden bg-[#0A0A0A]">
       <AnimatePresence mode="wait">
-        {showMetasPanel ? (
-          <motion.div
-            key="metas-panel"
-            initial={{ opacity: 0, x: 24 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: 24 }}
-            transition={{ duration: 0.2, ease: 'easeOut' }}
-            className="flex-1 flex flex-col overflow-hidden min-h-0"
-          >
-            <SiengeMetasModal
-              projects={projects}
-              metas={projectMetas}
-              projectDisplays={projectDisplays}
-              onSaveMeta={onSaveProjectMeta}
-              onDeleteMeta={onDeleteProjectMeta}
-              onSaveProjectDisplay={onSaveProjectDisplay}
-              tabelaVendas={tabelaVendas}
-              onClose={() => setShowMetasPanel(false)}
-            />
-          </motion.div>
-        ) : showAlocacaoPanel ? (
+        {showAlocacaoPanel ? (
           <motion.div
             key="alocacao-panel"
             initial={{ opacity: 0, x: 24 }}
@@ -422,10 +395,12 @@ export default function SiengeMetasDashboard({
                 </div>
 
                 <div className="flex items-center gap-2 shrink-0 ml-auto">
-                  <button onClick={() => setShowMetasPanel(true)} className={CTRL_PRIMARY}>
-                    {hasMetas ? <Settings2 size={12} className="shrink-0" /> : <Eye size={12} className="shrink-0" />}
-                    {hasMetas ? 'Ajustar Metas' : 'Ver Metas'}
-                  </button>
+                  <span
+                    title="As metas de VGV são cadastradas em Comercial › Dashboard › Metas"
+                    className="hidden md:inline-flex items-center gap-1.5 text-[11px] text-zinc-500 whitespace-nowrap"
+                  >
+                    <Target size={12} className="shrink-0" /> Metas: Comercial › Metas
+                  </span>
                   <button onClick={() => setShowAlocacaoPanel(true)} className={CTRL_NEUTRAL}>
                     <PieChart size={12} className="shrink-0" />
                     Alocação de Orçamento
@@ -435,13 +410,20 @@ export default function SiengeMetasDashboard({
             </div>
 
             <div className="flex-1 overflow-y-auto view-pad-x view-pad-y flex flex-col view-gap">
-              {!hasMetas ? (
-                <div className="flex flex-col items-center justify-center py-16 text-[#6B6B70] gap-2">
+              {metasQuery.isLoading ? (
+                <div className="flex items-center justify-center py-16 text-[#6B6B70] gap-2 text-sm">
+                  <RefreshCw size={16} className="animate-spin" /> Carregando metas
+                </div>
+              ) : !hasMetas ? (
+                <div className="flex flex-col items-center justify-center py-16 text-[#6B6B70] gap-2 text-center">
                   <BarChart3 size={28} strokeWidth={1.5} />
-                  <p className="text-sm">Nenhum empreendimento com meta de VGV cadastrada para este período.</p>
-                  <button onClick={() => setShowMetasPanel(true)} className="mt-1 text-xs text-blue-400 hover:text-blue-300 transition-colors">
-                    + Ver Metas
-                  </button>
+                  <p className="text-sm">
+                    {metasQuery.isError ? 'Não foi possível carregar as metas.' : 'Nenhum empreendimento com meta de VGV cadastrada para este período.'}
+                  </p>
+                  <p className="text-xs text-zinc-600 max-w-md">
+                    As metas são cadastradas em Comercial › Dashboard › Metas. Cada empreendimento de lá precisa estar
+                    vinculado a um empreendimento do Orbit (menu ⋯ da coluna) para aparecer aqui.
+                  </p>
                 </div>
               ) : (
                 <>
@@ -585,7 +567,7 @@ export default function SiengeMetasDashboard({
                         {
                           label: 'Meta/Mês',
                           value: formatCurrency(metaMes),
-                          tip: a.vgvEstimado ? 'VGV estimado a partir do VGV total ÷ unidades disponíveis' : 'Orçamento projetado pela meta de VGV do período',
+                          tip: 'Orçamento projetado: 2% da meta de VGV do período',
                         },
                         {
                           label: 'Orçamento Real',
@@ -593,9 +575,9 @@ export default function SiengeMetasDashboard({
                           tip: 'Fatia do VGV efetivamente vendido no período',
                         },
                         {
-                          label: 'Unid. Meta',
-                          value: a.unidadesMeta.toLocaleString('pt-BR', { maximumFractionDigits: 2 }),
-                          tip: 'Unidades previstas na meta do período',
+                          label: 'VGV Meta',
+                          value: formatCurrency(a.vgvMeta),
+                          tip: 'Meta de VGV do período, cadastrada em Comercial › Metas',
                         },
                       ].map(m => (
                         <div key={m.label} title={m.tip} className="flex flex-col gap-1 px-3 py-2.5">

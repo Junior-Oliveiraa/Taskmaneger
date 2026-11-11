@@ -30,6 +30,8 @@ export interface CvReservaRow {
   sexo: string | null;
   estado_civil: string | null;
   cidade: string | null;
+  /** 'Caixa', 'Banco privado', 'Caixa e banco privado' ou 'Sem financiamento'; nulo sem condição ativa. */
+  financiamento: string | null;
 }
 
 export interface CvUnidadeRow {
@@ -106,9 +108,35 @@ export function normalizarArea(v: unknown): number | null {
   return a >= 2000 ? a / 1000 : a;
 }
 
-export function montarReservas(reservas: Raw[], vendas: Raw[], distratos: Raw[]): CvReservaRow[] {
+/**
+ * Tipo de financiamento pelas séries da condição de pagamento. A reserva guarda
+ * todas as simulações (troca de Caixa para privado e vice-versa); só as linhas
+ * com ativo = 'S' são a condição vigente.
+ */
+export function financiamentoPorReserva(condicoes: Raw[]): Map<string, string> {
+  const series = new Map<string, Set<string>>();
+  condicoes.forEach(c => {
+    if (c.ativo !== 'S') return;
+    const id = String(c.idreserva);
+    const s = series.get(id) ?? new Set<string>();
+    const nome = String(c.serie ?? '');
+    if (/financ/i.test(nome) && /caixa/i.test(nome)) s.add('caixa');
+    else if (/financ/i.test(nome) && /privad/i.test(nome)) s.add('privado');
+    series.set(id, s);
+  });
+  const out = new Map<string, string>();
+  series.forEach((s, id) => out.set(id,
+    s.has('caixa') && s.has('privado') ? 'Caixa e banco privado'
+      : s.has('caixa') ? 'Caixa'
+      : s.has('privado') ? 'Banco privado'
+      : 'Sem financiamento'));
+  return out;
+}
+
+export function montarReservas(reservas: Raw[], vendas: Raw[], distratos: Raw[], condicoes: Raw[] = []): CvReservaRow[] {
   const vendaPor = new Map(vendas.map(v => [String(v.idreserva), v]));
   const distratoPor = new Map(distratos.map(d => [String(d.idreserva), d]));
+  const financiamentoPor = financiamentoPorReserva(condicoes);
 
   return reservas.map(r => {
     const venda = vendaPor.get(String(r.idreserva));
@@ -141,6 +169,7 @@ export function montarReservas(reservas: Raw[], vendas: Raw[], distratos: Raw[])
       sexo: normalizarSexo(r.sexo),
       estado_civil: normalizarEstadoCivil(r.estado_civil),
       cidade: texto(r.cidade),
+      financiamento: financiamentoPor.get(String(r.idreserva)) ?? null,
     };
   });
 }

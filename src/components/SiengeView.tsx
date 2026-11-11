@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { SiengeTitle, SiengeMensalidade, SiengeLote, SiengeFatura, Project, SiengeAlcadaConfig, SiengeProjectMeta, SiengeCategoriaOrcamento, SiengeTitleStatusHistoryEntry, SiengeProjectTotal, SiengeProjectDisplay, SiengeTabelaVendaUnidade, SiengeTabelaVendaVersao, SiengeTabelaVendaConfig, SiengeTabelaVendaColuna, SiengeTabelaVendaRevisao, SiengeVenda, SiengeOrcamentoConfig, SiengeCalculoRegra, SiengeValidacao, SiengeVendaSituacao } from '../types';
+import { SiengeTitle, SiengeMensalidade, SiengeLote, SiengeFatura, Project, SiengeAlcadaConfig, SiengeCategoriaOrcamento, SiengeTitleStatusHistoryEntry, SiengeProjectTotal, SiengeProjectDisplay, SiengeTabelaVendaUnidade, SiengeTabelaVendaVersao, SiengeTabelaVendaConfig, SiengeTabelaVendaColuna, SiengeTabelaVendaRevisao, SiengeVenda, SiengeOrcamentoConfig, SiengeCalculoRegra, SiengeValidacao, SiengeVendaSituacao } from '../types';
 import { SiengeTaxonomy } from '../lib/siengeCategorias';
 import SiengeKanban from './SiengeKanban';
 import SiengeLotes from './SiengeLotes';
@@ -37,16 +37,12 @@ interface SiengeViewProps {
   onSaveAlcadaConfig: (config: SiengeAlcadaConfig) => Promise<void> | void;
   editingMap?: Record<string, { name: string; avatarUrl?: string; color: string }>;
   onTitlePresence?: (titleId: string | null) => void;
-  projectMetas: SiengeProjectMeta[];
   categoriaOrcamento: SiengeCategoriaOrcamento[];
   projectTotais: SiengeProjectTotal[];
   projectDisplays: SiengeProjectDisplay[];
-  onSaveProjectMeta: (meta: SiengeProjectMeta) => void;
-  onDeleteProjectMeta: (id: string) => void;
   onSaveCategoriaOrcamento: (item: SiengeCategoriaOrcamento) => void;
   onDeleteCategoriaOrcamento: (id: string) => void;
   onSaveProjectTotal: (total: SiengeProjectTotal) => void;
-  onSaveProjectDisplay: (display: SiengeProjectDisplay) => void;
   tabelaVendas: SiengeTabelaVendaUnidade[];
   tabelaVendaVersoes: SiengeTabelaVendaVersao[];
   tabelaVendaConfigs: SiengeTabelaVendaConfig[];
@@ -106,7 +102,7 @@ export default function SiengeView({
   titles, statusHistory, lotes, faturas, projects, currentProjectFilter, alcadaConfig,
   onSaveTitle, onDeleteTitle, onSaveLote, onDeleteLote, onSaveFatura, onDeleteFatura, onSaveAlcadaConfig,
   editingMap, onTitlePresence,
-  projectMetas, categoriaOrcamento, projectTotais, projectDisplays, onSaveProjectMeta, onDeleteProjectMeta, onSaveCategoriaOrcamento, onDeleteCategoriaOrcamento, onSaveProjectTotal, onSaveProjectDisplay,
+  categoriaOrcamento, projectTotais, projectDisplays, onSaveCategoriaOrcamento, onDeleteCategoriaOrcamento, onSaveProjectTotal,
   tabelaVendas, tabelaVendaVersoes, tabelaVendaConfigs, onSaveTabelaVendaVersao, onDuplicarTabelaVendaVersao, onDefinirVersaoPrincipal, onDeleteTabelaVendaVersao, onSaveTabelaVendaConfig, tabelaVendaRevisoes, onSaveTabelaVenda, onDeleteTabelaVenda, onClearTabelaVenda, onApplyTabelaVendaReajuste, onSetTabelaVendaMargem, onReverterTabelaVendaRevisao, onAlterarSituacaoUnidades,
   vendas, orcamentoConfig, onSaveOrcamentoConfig,
   tabelaVendaColunas, onSaveTabelaVendaColuna, onDeleteTabelaVendaColuna, calculoRegras, onSaveCalculoRegra, onDeleteCalculoRegra,
@@ -123,7 +119,7 @@ export default function SiengeView({
   const tab = forcedTab ?? activeTab;
 
   // Mesma regra de visibilidade/ordem usada no Dashboard Analítico — empreendimentos
-  // ocultados via "Ajustar Metas" também somem da Tabela de Vendas.
+  // ocultados (sienge_project_display) também somem da Tabela de Vendas.
   const visibleProjects = useMemo(() => {
     const displayOf = (id: string) => projectDisplays.find(d => d.projectId === id);
     return projects
@@ -287,16 +283,11 @@ export default function SiengeView({
           <SiengeMetasDashboard
             titles={titles}
             projects={projects}
-            projectMetas={projectMetas}
             categoriaOrcamento={categoriaOrcamento}
             projectTotais={projectTotais}
-            projectDisplays={projectDisplays}
-            onSaveProjectMeta={onSaveProjectMeta}
-            onDeleteProjectMeta={onDeleteProjectMeta}
             onSaveCategoriaOrcamento={onSaveCategoriaOrcamento}
             onDeleteCategoriaOrcamento={onDeleteCategoriaOrcamento}
             onSaveProjectTotal={onSaveProjectTotal}
-            onSaveProjectDisplay={onSaveProjectDisplay}
             tabelaVendas={tabelaVendas}
             vendas={vendas}
             orcamentoConfig={orcamentoConfig}

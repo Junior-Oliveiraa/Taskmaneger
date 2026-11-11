@@ -21,8 +21,8 @@ import { useAuth } from './context/AuthContext';
 import { useNotifications } from './context/NotificationContext';
 import Login from './components/Login';
 
-import { Task, TaskStatus, Project, Label, ViewType, SiengeTitle, SiengeMensalidade, SiengeLote, SiengeFatura, SiengeProjectMeta, SiengeCategoriaOrcamento, SiengeProjectTotal, SiengeProjectDisplay, SiengeTabelaVendaUnidade, SiengeTabelaVendaColuna, SiengeCalculoRegra, SiengeValidacao } from './types';
-import { fetchTasks, fetchTaskBriefings, fetchProjects, fetchLabels, saveTask, patchTask, deleteTask, saveProject, renameProject, deleteProject, fetchSiengeTitles, saveSiengeTitle, deleteSiengeTitle, fetchSiengeMensalidades, saveSiengeMensalidade, deleteSiengeMensalidade, fetchSiengeLotes, saveSiengeLote, deleteSiengeLote, fetchSiengeFaturas, saveSiengeFatura, deleteSiengeFatura, fetchSiengeAlcadaConfig, saveSiengeAlcadaConfig, SiengeTitleConflictError, fetchSiengeProjectMetas, saveSiengeProjectMeta, deleteSiengeProjectMeta, fetchSiengeCategoriaOrcamentos, saveSiengeCategoriaOrcamento, deleteSiengeCategoriaOrcamento, fetchSiengeTitleStatusHistory, fetchSiengeProjectTotais, saveSiengeProjectTotal, fetchSiengeProjectDisplays, saveSiengeProjectDisplay, fetchSiengeTabelaVendas, fetchSiengeTabelaVendaVersoes, saveSiengeTabelaVendaVersao, deleteSiengeTabelaVendaVersao, duplicarSiengeTabelaVendaVersao, definirVersaoPrincipal, fetchSiengeTabelaVendaConfigs, saveSiengeTabelaVendaConfig, saveSiengeTabelaVenda, deleteSiengeTabelaVenda, deleteAllSiengeTabelaVendasByProject, fetchSiengeTabelaVendaColunas, saveSiengeTabelaVendaColuna, deleteSiengeTabelaVendaColuna, fetchSiengeTabelaVendaRevisoes, applySiengeTabelaVendasReajuste, setSiengeTabelaVendasMargem, reverterSiengeTabelaVendasRevisao, alterarSituacaoUnidades, fetchSiengeVendas, fetchSiengeOrcamentoConfig, saveSiengeOrcamentoConfig, fetchSiengeCalculoRegras, saveSiengeCalculoRegra, deleteSiengeCalculoRegra, fetchSiengeValidacoes, saveSiengeValidacao, deleteSiengeValidacao, fetchSiengeCentrosCusto, addSiengeCentroCusto, fetchSiengeCategorias, addSiengeCategoria, renameSiengeCategoria, deleteSiengeCategoria, fetchSiengeSubcategorias, addSiengeSubcategoria, deleteSiengeSubcategoria } from './lib/api';
+import { Task, TaskStatus, Project, Label, ViewType, SiengeTitle, SiengeMensalidade, SiengeLote, SiengeFatura, SiengeCategoriaOrcamento, SiengeProjectTotal, SiengeProjectDisplay, SiengeTabelaVendaUnidade, SiengeTabelaVendaColuna, SiengeCalculoRegra, SiengeValidacao } from './types';
+import { fetchTasks, fetchTaskBriefings, fetchProjects, fetchLabels, saveTask, patchTask, deleteTask, saveProject, renameProject, deleteProject, fetchSiengeTitles, saveSiengeTitle, deleteSiengeTitle, fetchSiengeMensalidades, saveSiengeMensalidade, deleteSiengeMensalidade, fetchSiengeLotes, saveSiengeLote, deleteSiengeLote, fetchSiengeFaturas, saveSiengeFatura, deleteSiengeFatura, fetchSiengeAlcadaConfig, saveSiengeAlcadaConfig, SiengeTitleConflictError, fetchSiengeCategoriaOrcamentos, saveSiengeCategoriaOrcamento, deleteSiengeCategoriaOrcamento, fetchSiengeTitleStatusHistory, fetchSiengeProjectTotais, saveSiengeProjectTotal, fetchSiengeProjectDisplays, fetchSiengeTabelaVendas, fetchSiengeTabelaVendaVersoes, saveSiengeTabelaVendaVersao, deleteSiengeTabelaVendaVersao, duplicarSiengeTabelaVendaVersao, definirVersaoPrincipal, fetchSiengeTabelaVendaConfigs, saveSiengeTabelaVendaConfig, saveSiengeTabelaVenda, deleteSiengeTabelaVenda, deleteAllSiengeTabelaVendasByProject, fetchSiengeTabelaVendaColunas, saveSiengeTabelaVendaColuna, deleteSiengeTabelaVendaColuna, fetchSiengeTabelaVendaRevisoes, applySiengeTabelaVendasReajuste, setSiengeTabelaVendasMargem, reverterSiengeTabelaVendasRevisao, alterarSituacaoUnidades, fetchSiengeVendas, fetchSiengeOrcamentoConfig, saveSiengeOrcamentoConfig, fetchSiengeCalculoRegras, saveSiengeCalculoRegra, deleteSiengeCalculoRegra, fetchSiengeValidacoes, saveSiengeValidacao, deleteSiengeValidacao, fetchSiengeCentrosCusto, addSiengeCentroCusto, fetchSiengeCategorias, addSiengeCategoria, renameSiengeCategoria, deleteSiengeCategoria, fetchSiengeSubcategorias, addSiengeSubcategoria, deleteSiengeSubcategoria } from './lib/api';
 import { buildSiengeTaxonomy } from './lib/siengeCategorias';
 import { supabase } from './lib/supabase';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -199,7 +199,6 @@ export default function App() {
   const { data: siengeFaturas = [], isLoading: isFaturasLoading } = useQuery({ queryKey: ['siengeFaturas'], queryFn: fetchSiengeFaturas, enabled: authReady, refetchInterval: REALTIME_FALLBACK_POLL_MS });
   const { data: siengeMensalidades = [] } = useQuery({ queryKey: ['siengeMensalidades'], queryFn: fetchSiengeMensalidades, enabled: authReady, refetchInterval: REALTIME_FALLBACK_POLL_MS });
   const { data: siengeAlcadaConfig = {} } = useQuery({ queryKey: ['siengeAlcadaConfig'], queryFn: fetchSiengeAlcadaConfig, enabled: authReady, refetchInterval: REALTIME_FALLBACK_POLL_MS });
-  const { data: siengeProjectMetas = [] } = useQuery({ queryKey: ['siengeProjectMetas'], queryFn: fetchSiengeProjectMetas, enabled: authReady, refetchInterval: REALTIME_FALLBACK_POLL_MS });
   const { data: siengeCategoriaOrcamento = [] } = useQuery({ queryKey: ['siengeCategoriaOrcamento'], queryFn: fetchSiengeCategoriaOrcamentos, enabled: authReady, refetchInterval: REALTIME_FALLBACK_POLL_MS });
   const { data: siengeProjectTotais = [] } = useQuery({ queryKey: ['siengeProjectTotais'], queryFn: fetchSiengeProjectTotais, enabled: authReady, refetchInterval: REALTIME_FALLBACK_POLL_MS });
   const { data: siengeProjectDisplays = [] } = useQuery({ queryKey: ['siengeProjectDisplays'], queryFn: fetchSiengeProjectDisplays, enabled: authReady, refetchInterval: REALTIME_FALLBACK_POLL_MS });
@@ -564,7 +563,6 @@ export default function App() {
         if (table === 'sienge_titles') invalidate('siengeTitles');
         else if (table === 'sienge_lotes') invalidate('siengeLotes');
         else if (table === 'sienge_faturas') invalidate('siengeFaturas');
-        else if (table === 'sienge_project_metas') invalidate('siengeProjectMetas');
         else if (table === 'sienge_categoria_orcamento') invalidate('siengeCategoriaOrcamento');
         else if (table === 'sienge_project_totais') invalidate('siengeProjectTotais');
         else if (table === 'sienge_project_display') invalidate('siengeProjectDisplays');
@@ -577,6 +575,7 @@ export default function App() {
         else if (table === 'sienge_vendas') invalidate('siengeVendas');
         else if (table === 'comercial_movimentos') invalidate('comercialMovimentos');
         else if (table === 'comercial_propostas') invalidate('comercialPropostas');
+        else if (table === 'comercial_metas' || table === 'comercial_metas_empreendimentos' || table === 'comercial_metas_config') invalidate('comercialMetas');
         else if (table === 'sienge_unidade_historico') invalidate('siengeUnidadeHistorico');
         else if (table === 'sienge_orcamento_config') invalidate('siengeOrcamentoConfig');
         else if (table === 'sienge_calculo_regras') invalidate('siengeCalculoRegras');
@@ -1318,7 +1317,7 @@ export default function App() {
       // O cascade do banco levou tarefas, unidades, vendas, metas e LP junto —
       // recarrega tudo que pode ter encolhido em vez de tentar espelhar na mão.
       ['tasks', 'siengeTabelaVendas', 'siengeTabelaVendaVersoes', 'siengeVendas',
-       'siengeProjectMetas', 'siengeCategoriaOrcamento', 'siengeTabelaVendaColunas',
+       'comercialMetas', 'siengeCategoriaOrcamento', 'siengeTabelaVendaColunas',
        'siengeCalculoRegras', 'siengeValidacoes']
         .forEach(k => queryClient.invalidateQueries({ queryKey: [k] }));
     } catch (e: any) {
@@ -1711,19 +1710,9 @@ export default function App() {
                 queryClient.setQueryData<SiengeFatura[]>(['siengeFaturas'], prev => (prev || []).filter(f => f.id !== id));
                 deleteSiengeFatura(id).catch(console.error);
               }}
-              projectMetas={siengeProjectMetas}
               categoriaOrcamento={siengeCategoriaOrcamento}
               projectTotais={siengeProjectTotais}
               projectDisplays={siengeProjectDisplays}
-              onSaveProjectDisplay={async (display) => {
-                queryClient.setQueryData<SiengeProjectDisplay[]>(['siengeProjectDisplays'], prev => {
-                  const exists = (prev || []).find(d => d.projectId === display.projectId);
-                  return exists
-                    ? (prev || []).map(d => d.projectId === display.projectId ? display : d)
-                    : [display, ...(prev || [])];
-                });
-                saveSiengeProjectDisplay(display).catch(console.error);
-              }}
               onSaveProjectTotal={async (total) => {
                 queryClient.setQueryData<SiengeProjectTotal[]>(['siengeProjectTotais'], prev => {
                   const exists = (prev || []).find(t => t.id === total.id);
@@ -1732,19 +1721,6 @@ export default function App() {
                     : [total, ...(prev || [])];
                 });
                 saveSiengeProjectTotal(total).catch(console.error);
-              }}
-              onSaveProjectMeta={async (meta) => {
-                queryClient.setQueryData<SiengeProjectMeta[]>(['siengeProjectMetas'], prev => {
-                  const exists = (prev || []).find(m => m.id === meta.id);
-                  return exists
-                    ? (prev || []).map(m => m.id === meta.id ? meta : m)
-                    : [meta, ...(prev || [])];
-                });
-                saveSiengeProjectMeta(meta).catch(console.error);
-              }}
-              onDeleteProjectMeta={async (id) => {
-                queryClient.setQueryData<SiengeProjectMeta[]>(['siengeProjectMetas'], prev => (prev || []).filter(m => m.id !== id));
-                deleteSiengeProjectMeta(id).catch(console.error);
               }}
               onSaveCategoriaOrcamento={async (item) => {
                 queryClient.setQueryData<SiengeCategoriaOrcamento[]>(['siengeCategoriaOrcamento'], prev => {

@@ -158,7 +158,7 @@ export default function ComercialInicio({ projects, projectDisplays, unidades, v
       { chave: 'leads', titulo: 'Leads', icone: <Users size={13} />, cor: 'text-blue-400',
         total: String(leads.length), sub: `${leads.filter(l => noMesAtual(l.entradaEm)).length} neste mês` },
       { chave: 'propostas', titulo: 'Propostas', icone: <FileText size={13} />, cor: 'text-violet-400',
-        total: String(propostas.filter(p => p.etapa !== 'venda').length),
+        total: String(propostas.filter(p => p.etapa !== 'venda' && p.etapa !== 'visita').length),
         sub: `${propostas.filter(p => p.etapa === 'venda').length} chegaram à venda` },
       { chave: 'reservas', titulo: 'Reservas', icone: <Bookmark size={13} />, cor: 'text-amber-400',
         total: String(unidadesPrincipais.filter(u => u.situacao === 'reservado').length),

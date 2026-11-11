@@ -1,90 +1,85 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Paperclip, Plus, Trash2, X } from 'lucide-react';
+import {
+  AlertCircle, Check, FileText, Paperclip, UploadCloud, X,
+} from 'lucide-react';
 import {
   Project, SiengeProjectDisplay, SiengeTabelaVendaColuna, SiengeTabelaVendaUnidade, SiengeTabelaVendaVersao, SiengeVendaSituacao,
 } from '../../types';
 import { SITUACAO_LABELS } from '../../lib/siengeVendasTabela';
 import { fetchCrmLeads } from '../../lib/crmApi';
+import { fetchCvComercial, nomeProprio } from '../../lib/cvComercial';
 import {
-  ComercialProposta, PropostaAutorizacao, PropostaParcela, calcularAutorizacao, criarProposta, fetchComercialMovimentos,
+  ComercialProposta, PropostaAutorizacao, calcularAutorizacao, criarProposta, fetchComercialMovimentos,
 } from '../../lib/comercialApi';
-import { Campo, CrmButton, inputCls, selectCls } from '../crm/CrmShared';
+import { CrmButton } from '../crm/CrmShared';
+import { AutoCompletar, SelectLista } from './CampoLista';
+import SeletorData from './SeletorData';
+import { Campo, ValorInput, campoCls, mesCurto, moedaBr, numeroBr, percentualBr } from './PropostaCampos';
+import FluxoPagamentoEditor, { CORES_FLUXO, LinhaFluxo, linhaUsada, linhasGenericas, novaLinha } from './FluxoPagamentoEditor';
+import { PERIODICIDADES, fluxoDaTabela } from '../../lib/propostaFluxo';
+import { fetchSiengeCalculoRegras, fetchSiengeValidacoes } from '../../lib/api';
 
 const SITUACOES_PROPOSTA: SiengeVendaSituacao[] = ['disponivel', 'reservado'];
 
-const numeroBr = (v: number) => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const moedaBr = (v: number) => `R$ ${numeroBr(v)}`;
-const percentualBr = (v: number) => `${numeroBr(v)}%`;
 // Datas puras: formatadas sem passar por Date, que as leria como UTC.
 const dataBr = (iso: string) => (iso ? iso.split('-').reverse().join('/') : '—');
-const MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
-const mesBr = (iso: string) => {
-  const [ano, mes] = iso.split('-');
-  return ano && mes ? `${MESES[Number(mes) - 1]}/${ano.slice(2)}` : '—';
+const FORMAS_SINAL = ['PIX', 'TED', 'Boleto', 'Cartão de crédito', 'Cartão de débito', 'Cheque', 'Dinheiro'];
+
+const chave = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+// (00) 0000-0000 ou (00) 00000-0000, conforme a quantidade de dígitos.
+const mascaraTelefone = (bruto: string) => {
+  const d = bruto.replace(/\D/g, '').replace(/^55(?=\d{10,11}$)/, '').slice(0, 11);
+  if (d.length <= 2) return d ? `(${d}` : '';
+  const meio = d.length > 10 ? 7 : 6;
+  return `(${d.slice(0, 2)}) ${d.slice(2, meio)}${d.length > meio ? `-${d.slice(meio)}` : ''}`;
 };
+// Propostas antigas guardavam só o mês (AAAA-MM); as novas, a data completa.
+const dataOuMesBr = (iso: string) => (iso.length === 10 ? dataBr(iso) : mesCurto(iso));
 
 const hoje = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 
-// Digita-se da direita para a esquerda, em centavos: "5572501" vira 55.725,01.
-function ValorInput({ value, onChange, placeholder = '0,00' }: {
-  value: number | null;
-  onChange: (v: number | null) => void;
-  placeholder?: string;
+function Secao({ numero, titulo, descricao, acao, children }: {
+  numero: number;
+  titulo: string;
+  descricao?: string;
+  acao?: React.ReactNode;
+  children: React.ReactNode;
 }) {
   return (
-    <input
-      inputMode="numeric"
-      className={`${inputCls} text-right tabular-nums`}
-      placeholder={placeholder}
-      value={value === null ? '' : numeroBr(value)}
-      onChange={e => {
-        const digitos = e.target.value.replace(/\D/g, '');
-        onChange(digitos ? Number(digitos) / 100 : null);
-      }}
-    />
+    <section className="space-y-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-start gap-3 min-w-0">
+          <span className="mt-0.5 w-5 h-5 shrink-0 rounded-md bg-zinc-800/80 text-[11px] font-semibold text-zinc-300 grid place-items-center tabular-nums">
+            {numero}
+          </span>
+          <div className="min-w-0">
+            <h3 className="text-[13px] font-semibold text-zinc-100 leading-5">{titulo}</h3>
+            {descricao && <p className="text-[11px] text-zinc-500 leading-4">{descricao}</p>}
+          </div>
+        </div>
+        {acao}
+      </div>
+      {children}
+    </section>
   );
 }
 
-function Calculado({ label, valor, destaque }: { label: string; valor: string; destaque?: boolean }) {
+// ── Painel de resumo ────────────────────────────────────────────────────────
+
+function LinhaResumo({ rotulo, valor, fraco }: { rotulo: string; valor: string; fraco?: boolean }) {
   return (
-    <div className="flex flex-col gap-1.5">
-      <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">{label}</span>
-      <span className={`px-2.5 py-1.5 rounded-md border text-xs text-right tabular-nums ${
-        destaque ? 'border-amber-500/30 bg-amber-500/[0.08] text-amber-200 font-semibold' : 'border-zinc-900 bg-zinc-950/60 text-zinc-300'
-      }`}>
-        {valor}
-      </span>
+    <div className="flex items-baseline justify-between gap-3 text-[12px]">
+      <span className="text-zinc-500">{rotulo}</span>
+      <span className={`tabular-nums text-right ${fraco ? 'text-zinc-600' : 'text-zinc-200'}`}>{valor}</span>
     </div>
   );
 }
 
-interface LinhaForm {
-  id: string;
-  descricao: string;
-  quantidade: number | null;
-  valorUnitario: number | null;
-  primeiroVencimento: string;
-  atualizacao: PropostaParcela['atualizacao'];
-}
-
-const novaLinha = (descricao: string, quantidade: number | null, atualizacao: PropostaParcela['atualizacao']): LinhaForm => ({
-  id: crypto.randomUUID(), descricao, quantidade, valorUnitario: null, primeiroVencimento: '', atualizacao,
-});
-
-const linhasIniciais = () => [
-  novaLinha('Sinal', 1, 'FIXA'),
-  novaLinha('Mensal', null, 'INCC'),
-  novaLinha('Semestral', null, 'INCC'),
-  novaLinha('Antecipação', 1, 'INCC'),
-  novaLinha('Financiamento Bancário', 1, 'INCC'),
-];
-
-// Linha sem valor é modelo não usado (nem toda proposta tem semestral) e fica de fora.
-const linhaUsada = (l: LinhaForm) => !!l.valorUnitario;
+// ── Modal ───────────────────────────────────────────────────────────────────
 
 interface Props {
   projects: Project[];
@@ -100,22 +95,33 @@ export default function NovaPropostaModal({ projects, projectDisplays, unidades,
   const queryClient = useQueryClient();
   const movimentos = useQuery({ queryKey: ['comercialMovimentos'], queryFn: fetchComercialMovimentos, staleTime: 30_000 }).data ?? [];
   const leads = useQuery({ queryKey: ['crmLeads'], queryFn: fetchCrmLeads, staleTime: 30_000 }).data ?? [];
+  // Mesma consulta do painel Desempenho: compartilha o cache.
+  const cv = useQuery({ queryKey: ['cvComercial'], queryFn: fetchCvComercial, staleTime: 5 * 60 * 1000, retry: 1 }).data;
+  // Regras e validações da Tabela de Vendas: definem o fluxo padrão de cada unidade.
+  const regras = useQuery({ queryKey: ['siengeCalculoRegras'], queryFn: fetchSiengeCalculoRegras }).data ?? [];
+  const validacoes = useQuery({ queryKey: ['siengeValidacoes'], queryFn: fetchSiengeValidacoes }).data ?? [];
 
   const [projectId, setProjectId] = useState('');
   const [torre, setTorre] = useState('Única');
   const [unidadeId, setUnidadeId] = useState('');
-  const [dataContrato, setDataContrato] = useState(hoje().slice(0, 7));
+  const [dataContrato, setDataContrato] = useState(hoje);
   const [cliente, setCliente] = useState('');
   const [corretor, setCorretor] = useState('');
   const [imobiliaria, setImobiliaria] = useState('');
   const [emails, setEmails] = useState('');
+  const [telefone, setTelefone] = useState('');
   const [vigenciaTabela, setVigenciaTabela] = useState('');
   const [areaPrivativa, setAreaPrivativa] = useState<number | null>(null);
   const [valorTabela, setValorTabela] = useState<number | null>(null);
   const [formaSinal, setFormaSinal] = useState('');
-  const [linhas, setLinhas] = useState<LinhaForm[]>(linhasIniciais);
+  const [linhas, setLinhas] = useState<LinhaFluxo[]>(() => linhasGenericas(hoje()));
+  // Depois que o fluxo é mexido, trocar unidade ou data não o sobrescreve mais.
+  const [fluxoEditado, setFluxoEditado] = useState(false);
+  // Valor que o fluxo precisa somar; null = segue o valor de tabela.
+  const [alvoManual, setAlvoManual] = useState<number | null>(null);
   const [observacoes, setObservacoes] = useState('');
   const [arquivos, setArquivos] = useState<File[]>([]);
+  const [arrastando, setArrastando] = useState(false);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
@@ -138,16 +144,86 @@ export default function NovaPropostaModal({ projects, projectDisplays, unidades,
     [unidadesPrincipais, projectId]
   );
 
-  const corretores = useMemo(
-    () => Array.from(new Set([...movimentos, ...propostas].map(m => m.corretor))).sort((a, b) => a.localeCompare(b, 'pt-BR')),
-    [movimentos, propostas]
+  const unidadeSel = unidadesElegiveis.find(u => u.id === unidadeId);
+
+  // Fluxo padrão da unidade na Tabela de Vendas; vencimentos a partir da data do contrato.
+  const modelo = useMemo(
+    () => (unidadeSel ? fluxoDaTabela(unidadeSel, regras, validacoes, colunas, dataContrato) : null),
+    [unidadeSel, regras, validacoes, colunas, dataContrato]
   );
-  const imobiliarias = useMemo(
-    () => Array.from(new Set([...movimentos, ...propostas].map(m => m.imobiliaria).filter((v): v is string => !!v)))
-      .sort((a, b) => a.localeCompare(b, 'pt-BR')),
-    [movimentos, propostas]
-  );
+  const chaveModelo = JSON.stringify(modelo);
+  const aplicarModelo = () => {
+    setLinhas(modelo?.length ? modelo.map(p => novaLinha(p)) : linhasGenericas(dataContrato));
+    setFluxoEditado(false);
+  };
+  // Enquanto o fluxo não foi personalizado, ele acompanha a unidade e a data do contrato.
+  useEffect(() => {
+    if (!fluxoEditado) aplicarModelo();
+  }, [chaveModelo]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const editarFluxo = (ls: LinhaFluxo[]) => { setLinhas(ls); setFluxoEditado(true); };
+
+  // Imobiliárias e corretores: os do painel (CV CRM) mais os já usados em movimentos
+  // e propostas, para quem foi adicionado aqui reaparecer na próxima ficha.
+  const { imobiliarias, corretoresPorImobiliaria, todosCorretores } = useMemo(() => {
+    const pares: { imobiliaria: string | null; corretor: string | null }[] = [
+      ...(cv?.reservas ?? []),
+      ...movimentos,
+      ...propostas,
+    ];
+    const imobs = new Map<string, string>();
+    const corrs = new Map<string, string>();
+    const vinculos = new Map<string, Set<string>>();
+    for (const p of pares) {
+      const i = nomeProprio(p.imobiliaria);
+      const c = nomeProprio(p.corretor);
+      if (i) imobs.set(chave(i), imobs.get(chave(i)) ?? i);
+      if (c) corrs.set(chave(c), corrs.get(chave(c)) ?? c);
+      if (i && c) {
+        const s = vinculos.get(chave(i)) ?? new Set<string>();
+        s.add(corrs.get(chave(c))!);
+        vinculos.set(chave(i), s);
+      }
+    }
+    const ordenar = (xs: Iterable<string>) => [...xs].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+    return {
+      imobiliarias: ordenar(imobs.values()),
+      corretoresPorImobiliaria: new Map([...vinculos].map(([k, s]) => [k, ordenar(s)])),
+      todosCorretores: ordenar(corrs.values()),
+    };
+  }, [cv, movimentos, propostas]);
+
+  // Com imobiliária escolhida, só os corretores dela (como no filtro do painel).
+  const vinculadosImob = imobiliaria ? corretoresPorImobiliaria.get(chave(imobiliaria)) : undefined;
+  const corretores = vinculadosImob?.length ? vinculadosImob : todosCorretores;
+
+  const escolherImobiliaria = (v: string) => {
+    setImobiliaria(v);
+    const vinc = v ? corretoresPorImobiliaria.get(chave(v)) : undefined;
+    if (corretor && vinc?.length && !vinc.includes(corretor)) setCorretor('');
+  };
+
+  // Formas padrão primeiro; depois as que já foram digitadas em outras fichas.
+  const formasSinal = useMemo(() => {
+    const vistas = new Set(FORMAS_SINAL.map(chave));
+    const extras: string[] = [];
+    for (const p of propostas) {
+      const f = p.autorizacao?.formaPagamentoSinal?.trim();
+      if (f && !vistas.has(chave(f))) { vistas.add(chave(f)); extras.push(f); }
+    }
+    return [...FORMAS_SINAL, ...extras.sort((a, b) => a.localeCompare(b, 'pt-BR'))];
+  }, [propostas]);
+
   const clientes = useMemo(() => Array.from(new Set(leads.map(l => l.nome))).slice(0, 200), [leads]);
+
+  // Escolher um lead do CRM traz o contato dele, sem sobrescrever o que já foi digitado.
+  const alterarCliente = (nome: string) => {
+    setCliente(nome);
+    const lead = leads.find(l => l.nome === nome);
+    if (!lead) return;
+    if (lead.telefone && !telefone) setTelefone(mascaraTelefone(lead.telefone));
+    if (lead.email && !emails) setEmails(lead.email);
+  };
 
   const escolherUnidade = (id: string) => {
     setUnidadeId(id);
@@ -160,8 +236,10 @@ export default function NovaPropostaModal({ projects, projectDisplays, unidades,
     setAreaPrivativa(Number.isFinite(area) && area > 0 ? area : null);
   };
 
-  const alterarLinha = (id: string, campos: Partial<LinhaForm>) =>
-    setLinhas(ls => ls.map(l => (l.id === id ? { ...l, ...campos } : l)));
+  const anexar = (lista: FileList | null) => {
+    const novos = Array.from(lista ?? []).filter(f => f.type.startsWith('image/') || f.type === 'application/pdf');
+    if (novos.length) setArquivos(a => [...a, ...novos]);
+  };
 
   // Todas as linhas entram no cálculo (as vazias valem zero) para o índice bater com a tabela.
   const calculo = calcularAutorizacao({
@@ -177,15 +255,37 @@ export default function NovaPropostaModal({ projects, projectDisplays, unidades,
   });
 
   const usadas = linhas.filter(linhaUsada);
+  const parcelasCompletas = usadas.length > 0 && !usadas.some(l => !l.descricao.trim() || !l.quantidade || !l.primeiroVencimento);
+  const telefoneValido = telefone.replace(/\D/g, '').length >= 10;
+  const alvo = alvoManual ?? valorTabela ?? 0;
+  const saldo = Math.round((alvo - calculo.contratado) * 100) / 100;
+  const temSaldo = Math.abs(saldo) >= 0.01;
   const pendencia = !projectId ? 'Escolha o empreendimento.'
     : !unidadeId ? 'Escolha a unidade.'
-    : !cliente.trim() ? 'Informe o cliente.'
+    : !cliente.trim() ? 'Informe o nome do cliente.'
+    : !telefoneValido ? 'Informe o telefone do cliente.'
     : !corretor.trim() ? 'Informe o corretor.'
     : !valorTabela ? 'Informe o valor de tabela.'
     : usadas.length === 0 ? 'Preencha ao menos uma parcela.'
-    : usadas.some(l => !l.descricao.trim() || !l.quantidade || !l.primeiroVencimento)
-      ? 'Complete descrição, quantidade e 1º vencimento das parcelas com valor.'
+    : !parcelasCompletas ? 'Complete descrição, quantidade e 1º vencimento das parcelas com valor.'
+    : temSaldo ? (saldo > 0 ? `Distribua o saldo de ${moedaBr(saldo)} no fluxo de pagamento.` : `O fluxo passou ${moedaBr(-saldo)} do valor da proposta.`)
     : null;
+
+  const checklist: [string, boolean][] = [
+    ['Empreendimento e unidade', !!projectId && !!unidadeId],
+    ['Cliente e telefone', !!cliente.trim() && telefoneValido],
+    ['Corretor', !!corretor.trim()],
+    ['Valor de tabela', !!valorTabela],
+    ['Fluxo de pagamento fechado', parcelasCompletas && !temSaldo],
+  ];
+  const concluidos = checklist.filter(([, ok]) => ok).length;
+
+  const projetoNome = projects.find(p => p.id === projectId)?.name;
+  const dif = calculo.difPercentual;
+  const temComparacao = !!valorTabela && calculo.contratado > 0;
+  // Proporção contratado/tabela na barra; 100% da tabela fica fixo a 80% da largura.
+  const proporcao = temComparacao ? Math.min(calculo.contratado / valorTabela!, 1.25) : 0;
+  const tomDif = !temComparacao || dif === null || Math.abs(dif) < 0.005 ? 'neutro' : dif < 0 ? 'desconto' : 'agio';
 
   const salvar = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -194,6 +294,7 @@ export default function NovaPropostaModal({ projects, projectDisplays, unidades,
       torre: torre.trim(),
       dataContrato,
       emails: emails.trim(),
+      telefone: telefone.trim(),
       vigenciaTabela,
       areaPrivativa,
       valorTabela: valorTabela!,
@@ -205,6 +306,7 @@ export default function NovaPropostaModal({ projects, projectDisplays, unidades,
         valorUnitario: l.valorUnitario!,
         primeiroVencimento: l.primeiroVencimento,
         atualizacao: l.atualizacao,
+        periodicidade: l.periodicidade,
       })),
     };
     setSalvando(true);
@@ -213,7 +315,7 @@ export default function NovaPropostaModal({ projects, projectDisplays, unidades,
       await criarProposta({
         projectId,
         unidadeId,
-        unidade: unidadesElegiveis.find(u => u.id === unidadeId)?.unidade ?? null,
+        unidade: unidadeSel?.unidade ?? null,
         cliente: cliente.trim(),
         corretor: corretor.trim(),
         imobiliaria: imobiliaria.trim() || null,
@@ -232,192 +334,329 @@ export default function NovaPropostaModal({ projects, projectDisplays, unidades,
 
   return (
     // Sem fechar ao clicar fora: um clique perdido apagaria a ficha inteira.
-    <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-3 sm:p-4">
+    <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4">
       <form
         onSubmit={salvar}
-        className="w-full max-w-5xl max-h-[92vh] flex flex-col rounded-xl border border-zinc-800 bg-[#0f0f12] shadow-2xl"
+        className="w-full max-w-7xl h-[94vh] sm:h-[90vh] flex flex-col overflow-hidden rounded-2xl border border-zinc-800/80 bg-[#0e0e11] shadow-2xl shadow-black/60"
       >
-        <header className="flex items-center justify-between gap-3 px-4 py-3 border-b border-zinc-800/60 shrink-0">
-          <div className="min-w-0">
-            <h2 className="text-sm font-semibold text-zinc-100">Nova proposta</h2>
-            <p className="text-[11px] text-zinc-500">Autorização de proposta de compra e venda · Diretoria Comercial</p>
+        <header className="flex items-center justify-between gap-3 px-5 sm:px-6 py-4 border-b border-zinc-800/70 shrink-0">
+          <div className="flex items-center gap-3 min-w-0">
+            <span className="w-9 h-9 shrink-0 rounded-xl bg-blue-500/10 border border-blue-500/20 grid place-items-center text-blue-300">
+              <FileText size={16} />
+            </span>
+            <div className="min-w-0">
+              <h2 className="text-[15px] font-semibold text-zinc-50 leading-5">Nova proposta</h2>
+              <p className="text-[12px] text-zinc-500 truncate">Autorização de proposta de compra e venda · Diretoria Comercial</p>
+            </div>
           </div>
-          <button type="button" onClick={onClose} className="text-zinc-500 hover:text-zinc-200" title="Fechar">
+          <button
+            type="button" onClick={onClose} title="Fechar"
+            className="w-8 h-8 grid place-items-center rounded-lg text-zinc-500 hover:text-zinc-100 hover:bg-zinc-800/70 transition-colors"
+          >
             <X size={16} />
           </button>
         </header>
 
-        <div className="flex-1 min-h-0 overflow-y-auto scrollbar-minimal p-4 space-y-5">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            <Campo label="Empreendimento">
-              <select className={selectCls} value={projectId} onChange={e => { setProjectId(e.target.value); setUnidadeId(''); }}>
-                <option value="">Selecione…</option>
-                {projetosComTabela.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-              </select>
-            </Campo>
-            <Campo label="Torre">
-              <input className={inputCls} value={torre} onChange={e => setTorre(e.target.value)} />
-            </Campo>
-            <Campo
-              label="Unidade"
-              hint={projectId && unidadesElegiveis.length === 0 ? 'Nenhuma unidade disponível ou reservada neste empreendimento.' : undefined}
+        <div className="flex-1 min-h-0 overflow-y-auto lg:overflow-hidden flex flex-col lg:flex-row scrollbar-minimal">
+          {/* ── Formulário ── */}
+          <div className="flex-1 min-w-0 lg:overflow-y-auto scrollbar-minimal px-5 sm:px-6 py-6 space-y-8">
+            <Secao numero={1} titulo="Imóvel" descricao="Unidades disponíveis ou reservadas na versão principal da Tabela de Vendas.">
+              <div className="grid grid-cols-1 sm:grid-cols-6 gap-x-4 gap-y-4">
+                <Campo label="Empreendimento" obrigatorio className="sm:col-span-3">
+                  <SelectLista
+                    value={projectId}
+                    onChange={v => { if (v !== projectId) { setProjectId(v); setUnidadeId(''); } }}
+                    opcoes={projetosComTabela.map(p => ({ value: p.id, label: p.name }))}
+                    textoVazio="Nenhum empreendimento com tabela de vendas."
+                  />
+                </Campo>
+                <Campo
+                  label="Unidade" obrigatorio className="sm:col-span-3"
+                  hint={projectId && unidadesElegiveis.length === 0
+                    ? 'Nenhuma unidade disponível ou reservada neste empreendimento.'
+                    : undefined}
+                >
+                  <SelectLista
+                    value={unidadeId}
+                    disabled={!projectId}
+                    placeholder={projectId ? 'Selecione…' : 'Escolha o empreendimento primeiro'}
+                    onChange={escolherUnidade}
+                    opcoes={unidadesElegiveis.map(u => ({
+                      value: u.id,
+                      label: `${u.imovel ? `${u.imovel} · ` : ''}${u.unidade}`,
+                      detalhe: SITUACAO_LABELS[u.situacao],
+                      tomDetalhe: u.situacao === 'disponivel' ? 'verde' : 'ambar',
+                    }))}
+                    textoVazio="Nenhuma unidade disponível ou reservada."
+                  />
+                </Campo>
+                <Campo label="Torre" className="sm:col-span-2">
+                  <input className={campoCls} value={torre} onChange={e => setTorre(e.target.value)} />
+                </Campo>
+                <Campo label="Data do contrato" className="sm:col-span-2">
+                  <SeletorData value={dataContrato} onChange={setDataContrato} />
+                </Campo>
+                <Campo label="Vigência da tabela" className="sm:col-span-2">
+                  <SeletorData value={vigenciaTabela} onChange={setVigenciaTabela} />
+                </Campo>
+              </div>
+            </Secao>
+
+            <div className="h-px bg-zinc-800/60" />
+
+            <Secao numero={2} titulo="Cliente e intermediação">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-4">
+                <Campo label="Nome" obrigatorio className="sm:col-span-2">
+                  <AutoCompletar value={cliente} onChange={alterarCliente} sugestoes={clientes} placeholder="Nome completo do cliente" />
+                </Campo>
+                <Campo label="Telefone" obrigatorio>
+                  <input
+                    type="tel" inputMode="tel" className={`${campoCls} tabular-nums`} placeholder="(00) 00000-0000"
+                    value={telefone} onChange={e => setTelefone(mascaraTelefone(e.target.value))}
+                  />
+                </Campo>
+                <Campo label="E-mail">
+                  <input type="email" className={campoCls} value={emails} onChange={e => setEmails(e.target.value)} placeholder="cliente@exemplo.com" />
+                </Campo>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-4 pt-1">
+                <Campo label="Imobiliária">
+                  <SelectLista
+                    value={imobiliaria}
+                    onChange={escolherImobiliaria}
+                    opcoes={imobiliarias.map(i => ({ value: i, label: i }))}
+                    placeholder="Selecione a imobiliária"
+                    criar="Adicionar imobiliária"
+                    textoVazio="Nenhuma imobiliária cadastrada."
+                  />
+                </Campo>
+                <Campo
+                  label="Corretor" obrigatorio
+                  hint={vinculadosImob?.length ? `${vinculadosImob.length} ${vinculadosImob.length === 1 ? 'corretor' : 'corretores'} desta imobiliária.` : undefined}
+                >
+                  <SelectLista
+                    value={corretor}
+                    onChange={setCorretor}
+                    opcoes={corretores.map(c => ({ value: c, label: c }))}
+                    placeholder="Selecione o corretor"
+                    criar="Adicionar corretor"
+                    textoVazio="Nenhum corretor cadastrado."
+                  />
+                </Campo>
+              </div>
+            </Secao>
+
+            <div className="h-px bg-zinc-800/60" />
+
+            <Secao numero={3} titulo="Valores de referência" descricao="O valor contratado é a soma do fluxo de pagamento abaixo.">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-4 gap-y-4">
+                <Campo label="Área privativa">
+                  <ValorInput value={areaPrivativa} onChange={setAreaPrivativa} sufixo="m²" />
+                </Campo>
+                <Campo label="Valor de tabela" obrigatorio>
+                  <ValorInput value={valorTabela} onChange={setValorTabela} prefixo="R$" />
+                </Campo>
+                <Campo label="Pagamento do sinal">
+                  <SelectLista
+                    value={formaSinal}
+                    onChange={setFormaSinal}
+                    opcoes={formasSinal.map(f => ({ value: f, label: f }))}
+                    placeholder="Selecione a forma"
+                    criar="Usar"
+                  />
+                </Campo>
+              </div>
+            </Secao>
+
+            <div className="h-px bg-zinc-800/60" />
+
+            <Secao
+              numero={4}
+              titulo="Fluxo de pagamento"
+              descricao="Parte do fluxo padrão da Tabela de Vendas e pode ser remodelado para o cliente pelo menu ⋯ de cada linha."
             >
-              <select className={selectCls} value={unidadeId} disabled={!projectId} onChange={e => escolherUnidade(e.target.value)}>
-                <option value="">{projectId ? 'Selecione…' : 'Escolha o empreendimento'}</option>
-                {unidadesElegiveis.map(u => (
-                  <option key={u.id} value={u.id}>
-                    {u.imovel ? `${u.imovel} · ` : ''}{u.unidade} — {SITUACAO_LABELS[u.situacao]}
-                  </option>
-                ))}
-              </select>
-            </Campo>
-            <Campo label="Data do contrato">
-              <input type="month" className={inputCls} value={dataContrato} onChange={e => setDataContrato(e.target.value)} />
-            </Campo>
-            <Campo label="Cliente">
-              <input className={inputCls} value={cliente} onChange={e => setCliente(e.target.value)} placeholder="Nome do cliente" list="proposta-clientes" />
-              <datalist id="proposta-clientes">{clientes.map(n => <option key={n} value={n} />)}</datalist>
-            </Campo>
-            <Campo label="E-mails">
-              <input className={inputCls} value={emails} onChange={e => setEmails(e.target.value)} placeholder="email@exemplo.com" />
-            </Campo>
-            <Campo label="Corretor">
-              <input className={inputCls} value={corretor} onChange={e => setCorretor(e.target.value)} placeholder="Nome do corretor" list="proposta-corretores" />
-              <datalist id="proposta-corretores">{corretores.map(n => <option key={n} value={n} />)}</datalist>
-            </Campo>
-            <Campo label="Imobiliária (opcional)">
-              <input className={inputCls} value={imobiliaria} onChange={e => setImobiliaria(e.target.value)} placeholder="Nome da imobiliária" list="proposta-imobiliarias" />
-              <datalist id="proposta-imobiliarias">{imobiliarias.map(n => <option key={n} value={n} />)}</datalist>
-            </Campo>
-          </div>
+              <FluxoPagamentoEditor
+                linhas={linhas}
+                onChange={editarFluxo}
+                percentuais={calculo.linhas}
+                contratado={calculo.contratado}
+                alvo={alvo}
+                alvoManual={alvoManual !== null}
+                onAlvo={setAlvoManual}
+                valorTabela={valorTabela}
+                dataContrato={dataContrato}
+                origem={modelo?.length && unidadeSel ? `${projetoNome ?? ''} · unidade ${unidadeSel.unidade}` : null}
+                modificado={fluxoEditado}
+                onRestaurar={aplicarModelo}
+              />
+            </Secao>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-4 border-t border-zinc-800/50">
-            <Campo label="Vigência da tabela">
-              <input type="month" className={inputCls} value={vigenciaTabela} onChange={e => setVigenciaTabela(e.target.value)} />
-            </Campo>
-            <Campo label="Área privativa (m²)">
-              <ValorInput value={areaPrivativa} onChange={setAreaPrivativa} />
-            </Campo>
-            <Campo label="Valor de tabela (R$)">
-              <ValorInput value={valorTabela} onChange={setValorTabela} />
-            </Campo>
-            <Calculado label="Valor contratado" valor={moedaBr(calculo.contratado)} destaque />
-            <Calculado label="Valor m² tabela" valor={calculo.m2Tabela === null ? '—' : moedaBr(calculo.m2Tabela)} />
-            <Calculado label="Valor m² contratado" valor={calculo.m2Contratado === null ? '—' : moedaBr(calculo.m2Contratado)} />
-            <Calculado label="Diferença (R$)" valor={valorTabela ? moedaBr(calculo.difValor) : '—'} />
-            <Calculado label="Diferença (%)" valor={calculo.difPercentual === null ? '—' : percentualBr(calculo.difPercentual)} />
-            <Campo label="Forma de pagamento do sinal">
-              <input className={inputCls} value={formaSinal} onChange={e => setFormaSinal(e.target.value)} placeholder="TED, PIX, boleto…" />
-            </Campo>
-          </div>
+            <div className="h-px bg-zinc-800/60" />
 
-          <div className="pt-4 border-t border-zinc-800/50">
-            <div className="flex items-center justify-between gap-2 mb-2">
-              <h3 className="text-xs font-semibold text-zinc-200">Fluxo de pagamento</h3>
-              <CrmButton size="xs" onClick={() => setLinhas(ls => [...ls, novaLinha('', 1, 'INCC')])}>
-                <Plus size={11} /> Adicionar linha
-              </CrmButton>
-            </div>
-            <div className="overflow-x-auto scrollbar-minimal">
-              <table className="w-full min-w-[860px] text-xs">
-                <thead>
-                  <tr className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500 text-left">
-                    <th className="pb-1.5 pr-2 font-semibold">Descrição</th>
-                    <th className="pb-1.5 pr-2 font-semibold w-16">Quant.</th>
-                    <th className="pb-1.5 pr-2 font-semibold w-28">Vl. unit. (R$)</th>
-                    <th className="pb-1.5 pr-2 font-semibold w-28 text-right">Vl. total</th>
-                    <th className="pb-1.5 pr-2 font-semibold w-32">1º venc.</th>
-                    <th className="pb-1.5 pr-2 font-semibold w-20">Atualiz.</th>
-                    <th className="pb-1.5 pr-2 font-semibold w-16 text-right">% item</th>
-                    <th className="pb-1.5 pr-2 font-semibold w-16 text-right">% acum.</th>
-                    <th className="pb-1.5 w-6" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {linhas.map((l, i) => (
-                    <tr key={l.id}>
-                      <td className="py-0.5 pr-2">
-                        <input className={inputCls} value={l.descricao} onChange={e => alterarLinha(l.id, { descricao: e.target.value })} placeholder="Descrição" />
-                      </td>
-                      <td className="py-0.5 pr-2">
-                        <input
-                          type="number" min={1} step={1} className={`${inputCls} text-right`} value={l.quantidade ?? ''}
-                          onChange={e => alterarLinha(l.id, { quantidade: e.target.value ? Math.max(0, Math.floor(Number(e.target.value))) : null })}
-                        />
-                      </td>
-                      <td className="py-0.5 pr-2">
-                        <ValorInput value={l.valorUnitario} onChange={v => alterarLinha(l.id, { valorUnitario: v })} />
-                      </td>
-                      <td className="py-0.5 pr-2 text-right tabular-nums text-zinc-200">{numeroBr(calculo.linhas[i].total)}</td>
-                      <td className="py-0.5 pr-2">
-                        <input type="date" className={inputCls} value={l.primeiroVencimento} onChange={e => alterarLinha(l.id, { primeiroVencimento: e.target.value })} />
-                      </td>
-                      <td className="py-0.5 pr-2">
-                        <select className={selectCls} value={l.atualizacao} onChange={e => alterarLinha(l.id, { atualizacao: e.target.value as PropostaParcela['atualizacao'] })}>
-                          <option value="FIXA">FIXA</option>
-                          <option value="INCC">INCC</option>
-                        </select>
-                      </td>
-                      <td className="py-0.5 pr-2 text-right tabular-nums text-zinc-400">{percentualBr(calculo.linhas[i].percentual)}</td>
-                      <td className="py-0.5 pr-2 text-right tabular-nums text-zinc-400">{percentualBr(calculo.linhas[i].acumulado)}</td>
-                      <td className="py-0.5 text-right">
-                        <button type="button" onClick={() => setLinhas(ls => ls.filter(x => x.id !== l.id))} className="text-zinc-600 hover:text-rose-400" title="Remover linha">
-                          <Trash2 size={12} />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr className="border-t border-zinc-800 font-semibold text-zinc-100">
-                    <td colSpan={3} className="pt-2 pr-2">Total</td>
-                    <td className="pt-2 pr-2 text-right tabular-nums text-amber-200">{numeroBr(calculo.contratado)}</td>
-                    <td colSpan={5} />
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-4 border-t border-zinc-800/50">
-            <Campo label="Observações">
-              <textarea className={`${inputCls} min-h-[72px] resize-y`} value={observacoes} onChange={e => setObservacoes(e.target.value)} />
-            </Campo>
-            {/* Não usa <Campo>: o <label> faria o clique no rótulo abrir o seletor de arquivos. */}
-            <div className="flex flex-col gap-1.5">
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Print ou anexo</span>
-              <label className="inline-flex items-center gap-1.5 self-start text-[11px] px-2 py-1.5 rounded-md border border-zinc-800 bg-zinc-900 text-zinc-400 hover:text-zinc-200 cursor-pointer transition-colors">
-                <Paperclip size={11} /> Anexar arquivo
-                <input
-                  type="file" multiple accept="image/*,application/pdf" className="hidden"
-                  onChange={e => {
-                    const novos = Array.from(e.target.files ?? []);
-                    e.target.value = '';
-                    setArquivos(a => [...a, ...novos]);
-                  }}
-                />
-              </label>
-              {arquivos.map((f, i) => (
-                <div key={`${f.name}-${i}`} className="flex items-center justify-between gap-2 text-[11px] text-zinc-300 bg-[#121214] border border-zinc-900/60 rounded-md px-2 py-1">
-                  <span className="truncate">{f.name}</span>
-                  <button type="button" onClick={() => setArquivos(a => a.filter((_, j) => j !== i))} className="text-zinc-500 hover:text-zinc-200" title="Remover">
-                    <X size={11} />
-                  </button>
+            <Secao numero={5} titulo="Observações e anexos">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Campo label="Observações">
+                  <textarea
+                    className={`${campoCls} h-auto min-h-[112px] py-2.5 resize-y leading-relaxed`}
+                    value={observacoes} onChange={e => setObservacoes(e.target.value)}
+                    placeholder="Condições especiais, combinados com o cliente…"
+                  />
+                </Campo>
+                {/* Não usa <Campo>: o <label> faria o clique no rótulo abrir o seletor de arquivos. */}
+                <div className="flex flex-col gap-1.5 min-w-0">
+                  <span className="text-[11px] font-medium text-zinc-400">Print ou anexo</span>
+                  <label
+                    onDragOver={e => { e.preventDefault(); setArrastando(true); }}
+                    onDragLeave={() => setArrastando(false)}
+                    onDrop={e => { e.preventDefault(); setArrastando(false); anexar(e.dataTransfer.files); }}
+                    className={`flex flex-col items-center justify-center gap-1.5 min-h-[112px] rounded-lg border border-dashed px-4 py-5 text-center cursor-pointer transition-colors ${
+                      arrastando ? 'border-blue-500/60 bg-blue-500/[0.06]' : 'border-zinc-800 bg-zinc-950/40 hover:border-zinc-700 hover:bg-zinc-900/40'
+                    }`}
+                  >
+                    <UploadCloud size={18} className={arrastando ? 'text-blue-300' : 'text-zinc-500'} />
+                    <span className="text-[12px] text-zinc-300">
+                      Arraste arquivos ou <span className="text-blue-400">clique para escolher</span>
+                    </span>
+                    <span className="text-[11px] text-zinc-600">Imagens ou PDF, até 15 MB cada.</span>
+                    <input
+                      type="file" multiple accept="image/*,application/pdf" className="hidden"
+                      onChange={e => { anexar(e.target.files); e.target.value = ''; }}
+                    />
+                  </label>
+                  {arquivos.length > 0 && (
+                    <ul className="space-y-1.5 pt-1">
+                      {arquivos.map((f, i) => (
+                        <li key={`${f.name}-${i}`} className="flex items-center gap-2 text-[12px] text-zinc-300 bg-zinc-900/60 border border-zinc-800/80 rounded-lg pl-2.5 pr-1 h-8">
+                          <Paperclip size={12} className="shrink-0 text-zinc-500" />
+                          <span className="truncate flex-1">{f.name}</span>
+                          <span className="shrink-0 text-[11px] text-zinc-600 tabular-nums">{(f.size / 1024 / 1024).toFixed(1)} MB</span>
+                          <button
+                            type="button" onClick={() => setArquivos(a => a.filter((_, j) => j !== i))} title="Remover"
+                            className="w-6 h-6 grid place-items-center rounded-md text-zinc-500 hover:text-zinc-100 hover:bg-zinc-800"
+                          >
+                            <X size={12} />
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
-              ))}
-              <span className="text-[10px] text-zinc-600">Imagens ou PDF, até 15 MB cada.</span>
-            </div>
+              </div>
+            </Secao>
+
+            {erro && (
+              <p className="flex items-start gap-2 text-[12px] text-rose-200 bg-rose-500/[0.07] border border-rose-500/25 rounded-lg px-3 py-2.5">
+                <AlertCircle size={14} className="shrink-0 mt-px text-rose-400" /> {erro}
+              </p>
+            )}
           </div>
 
-          {erro && <p className="text-[11px] text-rose-300 bg-rose-500/[0.06] border border-rose-500/20 rounded-md px-2.5 py-1.5">{erro}</p>}
+          {/* ── Resumo ── */}
+          <aside className="lg:w-[300px] shrink-0 border-t lg:border-t-0 lg:border-l border-zinc-800/70 bg-[#0b0b0d] lg:overflow-y-auto scrollbar-minimal px-5 sm:px-6 py-6 space-y-6">
+            <div>
+              <p className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Resumo</p>
+              <p className="mt-2 text-[13px] font-medium text-zinc-100 truncate">
+                {projetoNome ?? <span className="text-zinc-600 font-normal">Empreendimento não definido</span>}
+              </p>
+              <p className="text-[12px] text-zinc-500 truncate">
+                {unidadeSel ? `${torre ? `Torre ${torre} · ` : ''}Unidade ${unidadeSel.unidade}` : 'Unidade não definida'}
+                {cliente.trim() && ` · ${cliente.trim()}`}
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-zinc-800/80 bg-zinc-900/30 p-4 space-y-4">
+              <div>
+                <p className="text-[11px] text-zinc-500">Valor contratado</p>
+                <p className="mt-1 text-[24px] leading-7 font-semibold tracking-tight tabular-nums text-zinc-50">{moedaBr(calculo.contratado)}</p>
+                <div className="mt-2 flex items-center gap-2">
+                  <span className={`inline-flex items-center rounded-md px-1.5 py-0.5 text-[11px] font-medium tabular-nums ${
+                    tomDif === 'desconto' ? 'bg-rose-500/10 text-rose-300'
+                      : tomDif === 'agio' ? 'bg-emerald-500/10 text-emerald-300'
+                      : 'bg-zinc-800 text-zinc-400'
+                  }`}>
+                    {temComparacao && dif !== null ? `${dif > 0 ? '+' : ''}${percentualBr(dif)}` : '—'}
+                  </span>
+                  <span className="text-[11px] text-zinc-500">
+                    {tomDif === 'desconto' ? 'abaixo da tabela' : tomDif === 'agio' ? 'acima da tabela' : temComparacao ? 'igual à tabela' : 'sem comparação'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Barra contratado vs. tabela: o traço marca 100% da tabela. */}
+              <div className="relative h-1.5 rounded-full bg-zinc-800">
+                <div
+                  className={`absolute inset-y-0 left-0 rounded-full transition-[width] duration-300 ${
+                    tomDif === 'desconto' ? 'bg-rose-400/80' : tomDif === 'agio' ? 'bg-emerald-400/80' : 'bg-zinc-500'
+                  }`}
+                  style={{ width: `${(proporcao / 1.25) * 100}%` }}
+                />
+                <div className="absolute -top-1 -bottom-1 w-px bg-zinc-400" style={{ left: '80%' }} title="Valor de tabela" />
+              </div>
+
+              <div className="space-y-2 pt-1">
+                <LinhaResumo rotulo="Valor de tabela" valor={valorTabela ? moedaBr(valorTabela) : '—'} fraco={!valorTabela} />
+                <LinhaResumo rotulo="Diferença" valor={valorTabela ? moedaBr(calculo.difValor) : '—'} fraco={!valorTabela} />
+                <div className="h-px bg-zinc-800/70 my-1" />
+                <LinhaResumo rotulo="m² tabela" valor={calculo.m2Tabela === null ? '—' : moedaBr(calculo.m2Tabela)} fraco={calculo.m2Tabela === null} />
+                <LinhaResumo rotulo="m² contratado" valor={calculo.m2Contratado === null ? '—' : moedaBr(calculo.m2Contratado)} fraco={calculo.m2Contratado === null} />
+              </div>
+            </div>
+
+            <div>
+              <p className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-2.5">Composição</p>
+              {calculo.contratado > 0 ? (
+                <>
+                  <div className="flex h-2 rounded-full overflow-hidden bg-zinc-800 gap-px">
+                    {linhas.map((l, i) => linhaUsada(l) && (
+                      <div key={l.id} className={CORES_FLUXO[i % CORES_FLUXO.length]} style={{ width: `${calculo.linhas[i].percentual}%` }} />
+                    ))}
+                  </div>
+                  <ul className="mt-3 space-y-1.5">
+                    {linhas.map((l, i) => linhaUsada(l) && (
+                      <li key={l.id} className="flex items-center gap-2 text-[12px]">
+                        <span className={`w-2 h-2 rounded-sm shrink-0 ${CORES_FLUXO[i % CORES_FLUXO.length]}`} />
+                        <span className="text-zinc-400 truncate flex-1">{l.descricao || 'Sem descrição'}</span>
+                        <span className="text-zinc-300 tabular-nums">{percentualBr(calculo.linhas[i].percentual)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              ) : (
+                <p className="text-[12px] text-zinc-600">Preencha o fluxo para ver a distribuição.</p>
+              )}
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-2.5">
+                <p className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Para salvar</p>
+                <span className="text-[11px] tabular-nums text-zinc-500">{concluidos}/{checklist.length}</span>
+              </div>
+              <ul className="space-y-2">
+                {checklist.map(([rotulo, ok]) => (
+                  <li key={rotulo} className="flex items-center gap-2.5 text-[12px]">
+                    <span className={`w-4 h-4 shrink-0 rounded-full grid place-items-center transition-colors ${
+                      ok ? 'bg-emerald-500/15 text-emerald-300' : 'border border-zinc-700'
+                    }`}>
+                      {ok && <Check size={10} strokeWidth={3} />}
+                    </span>
+                    <span className={ok ? 'text-zinc-400 line-through decoration-zinc-700' : 'text-zinc-300'}>{rotulo}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </aside>
         </div>
 
-        <footer className="flex items-center justify-between gap-3 px-4 py-3 border-t border-zinc-800/60 shrink-0">
-          <span className="text-[11px] text-zinc-500 min-w-0">{pendencia ?? 'A proposta entra em "Propostas realizadas".'}</span>
+        <footer className="flex items-center justify-between gap-3 px-5 sm:px-6 py-3.5 border-t border-zinc-800/70 bg-[#0e0e11] shrink-0">
+          <span className={`flex items-center gap-1.5 text-[12px] min-w-0 ${pendencia ? 'text-zinc-400' : 'text-emerald-300/90'}`}>
+            {pendencia ? <AlertCircle size={13} className="shrink-0 text-amber-400/80" /> : <Check size={13} className="shrink-0" />}
+            <span className="truncate">{pendencia ?? 'Pronta. A proposta entra em "Propostas realizadas".'}</span>
+          </span>
           <div className="flex items-center gap-2 shrink-0">
             <CrmButton onClick={onClose}>Cancelar</CrmButton>
             <CrmButton type="submit" variant="primary" disabled={!!pendencia || salvando}>
-              <Plus size={12} /> {salvando ? 'Salvando…' : 'Salvar proposta'}
+              <Check size={12} /> {salvando ? 'Salvando…' : 'Salvar proposta'}
             </CrmButton>
           </div>
         </footer>
@@ -431,9 +670,10 @@ export function AutorizacaoResumo({ autorizacao: a }: { autorizacao: PropostaAut
   const c = calcularAutorizacao(a);
   const dados: [string, string][] = [
     ['Torre', a.torre || '—'],
-    ['Data do contrato', mesBr(a.dataContrato)],
-    ['Vigência da tabela', mesBr(a.vigenciaTabela)],
-    ['E-mails', a.emails || '—'],
+    ['Data do contrato', dataOuMesBr(a.dataContrato)],
+    ['Vigência da tabela', dataOuMesBr(a.vigenciaTabela)],
+    ['Telefone', a.telefone || '—'],
+    ['E-mail', a.emails || '—'],
     ['Área privativa', a.areaPrivativa ? `${numeroBr(a.areaPrivativa)} m²` : '—'],
     ['Valor de tabela', moedaBr(a.valorTabela)],
     ['Valor contratado', moedaBr(c.contratado)],
@@ -472,7 +712,7 @@ export function AutorizacaoResumo({ autorizacao: a }: { autorizacao: PropostaAut
             {a.parcelas.map((p, i) => (
               <tr key={i} className="border-b border-zinc-900">
                 <td className="py-1.5 pr-2">{p.descricao}</td>
-                <td className="py-1.5 pr-2 text-right">{p.quantidade}</td>
+                <td className="py-1.5 pr-2 text-right">{p.quantidade}{p.periodicidade !== undefined && p.quantidade > 1 && <span className="text-zinc-500"> · {PERIODICIDADES.find(x => x.meses === p.periodicidade)?.plural}</span>}</td>
                 <td className="py-1.5 pr-2 text-right">{numeroBr(p.valorUnitario)}</td>
                 <td className="py-1.5 pr-2 text-right">{numeroBr(c.linhas[i].total)}</td>
                 <td className="py-1.5 pr-2 text-right">{dataBr(p.primeiroVencimento)}</td>

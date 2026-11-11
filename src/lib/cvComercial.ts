@@ -30,6 +30,8 @@ export interface CvReserva {
   sexo: string | null;
   estado_civil: string | null;
   cidade: string | null;
+  /** Pelas séries ativas da condição de pagamento; nulo quando o CV não tem condição. */
+  financiamento?: string | null;
 }
 
 export interface CvUnidade {
@@ -155,6 +157,13 @@ export interface FiltrosPainel {
   imobiliaria: string | null;
   /** Só com imobiliária escolhida (ou canal de imobiliária única, como Autônomos). */
   corretor: string | null;
+  /** Um de FINANCIAMENTOS; nulo = todos. */
+  financiamento?: string | null;
+  /**
+   * Estende o eixo da série além do fim do período (yyyy-mm-dd), sem vendas:
+   * em "Este mês" a meta cobre o mês inteiro, inclusive os dias que ainda virão.
+   */
+  fimSerie?: string | null;
 }
 
 export const hojeBrasilia = () =>
@@ -232,6 +241,10 @@ export function desfechoDaReserva(situacao: string): Desfecho {
 
 export const CANAIS = ['Imobiliárias', 'Autônomos', 'House', 'Não classificado'];
 
+/** Valores gravados pela cvcrm-sync; "Sem informação" agrupa as reservas sem condição no CV. */
+export const FINANCIAMENTOS = ['Caixa', 'Banco privado', 'Caixa e banco privado', 'Sem financiamento', 'Sem informação'];
+export const financiamentoDe = (r: CvReserva) => r.financiamento ?? 'Sem informação';
+
 export const FAIXAS_ETARIAS = ['18–29', '30–39', '40–49', '50–59', '60+'];
 
 export type SituacaoEstoque = 'vendida' | 'reservada' | 'disponível' | 'bloqueada';
@@ -254,7 +267,12 @@ export interface PontoSerie {
 }
 
 export interface Kpis {
+  /** Vendas ativas (situação Vendida) do período: base de ticket, meta, curva e tabelas. */
   vgv: number;
+  /** Tudo o que foi vendido no período, inclusive o que depois virou distrato. */
+  vgvBruto: number;
+  /** Bruto menos o valor dos distratos do período (pela data do distrato). */
+  vgvLiquido: number;
   unidades: number;
   ticket: number;
   precoM2: number;
@@ -407,20 +425,30 @@ export interface Painel {
 
 const ehVenda = (r: CvReserva) => r.situacao === 'Vendida';
 
-function somarKpis(vendas: CvReserva[], preVendas: CvReserva[], distratos: CvReserva[], estoqueAberto: number): Kpis {
-  const vgv = vendas.reduce((s, r) => s + r.valor_contrato, 0);
+const somaValor = (rows: CvReserva[]) => rows.reduce((s, r) => s + r.valor_contrato, 0);
+
+function somarKpis(
+  vendas: CvReserva[], preVendas: CvReserva[], distratos: CvReserva[], estoqueAberto: number,
+  /** Vendas do período que depois viraram distrato: entram no bruto. */
+  vendasDistratadas: CvReserva[] = [],
+): Kpis {
+  const vgv = somaValor(vendas);
+  const vgvBruto = vgv + somaValor(vendasDistratadas);
+  const distratosValor = somaValor(distratos);
   const comValor = vendas.filter(r => r.valor_contrato > 0);
   const comArea = comValor.filter(r => r.area_privativa && r.area_privativa > 0);
   const area = comArea.reduce((s, r) => s + (r.area_privativa as number), 0);
   const unidades = vendas.length;
   return {
     vgv,
+    vgvBruto,
+    vgvLiquido: vgvBruto - distratosValor,
     unidades,
     ticket: comValor.length ? comValor.reduce((s, r) => s + r.valor_contrato, 0) / comValor.length : 0,
     precoM2: area > 0 ? comArea.reduce((s, r) => s + r.valor_contrato, 0) / area : 0,
     vso: unidades + estoqueAberto > 0 ? unidades / (unidades + estoqueAberto) : 0,
     distratos: distratos.length,
-    distratosValor: distratos.reduce((s, r) => s + r.valor_contrato, 0),
+    distratosValor,
     taxaDistrato: unidades + distratos.length > 0 ? distratos.length / (unidades + distratos.length) : 0,
     preVenda: preVendas.length,
     preVendaValor: preVendas.reduce((s, r) => s + r.valor_contrato, 0),
@@ -527,7 +555,8 @@ export function calcularPainel(dados: CvDados, f: FiltrosPainel, precos: Map<num
   const reservas = dados.reservas.filter(r => noRecorte(r)
     && (!f.canal || r.canal === f.canal)
     && (!f.imobiliaria || r.imobiliaria === f.imobiliaria)
-    && (!f.corretor || r.corretor === f.corretor));
+    && (!f.corretor || r.corretor === f.corretor)
+    && (!f.financiamento || financiamentoDe(r) === f.financiamento));
   const unidades = dados.unidades.filter(noRecorte);
 
   const estoqueVazio = (): Record<SituacaoEstoque, number> => ({ vendida: 0, reservada: 0, 'disponível': 0, bloqueada: 0 });
@@ -555,12 +584,19 @@ export function calcularPainel(dados: CvDados, f: FiltrosPainel, precos: Map<num
   const preVendasDe = (p: Periodo) => reservas.filter(r => r.situacao === 'Termo Assinado' && dentro(r.data_cad, p));
   const distratosDe = (p: Periodo) => reservas.filter(r => r.situacao === 'Distrato' && dentro(r.data_distrato ?? r.data_cad, p));
 
-  const vendas = vendasDe(f.periodo);
-  const kpis = somarKpis(vendas, preVendasDe(f.periodo), distratosDe(f.periodo), estoqueAberto);
-  const pa = f.comparacao;
-  const anterior = pa ? somarKpis(vendasDe(pa), preVendasDe(pa), distratosDe(pa), estoqueAberto) : null;
+  // A venda distratada deixa de ser "Vendida" no CV, mas foi venda na data dela: conta no bruto.
+  const vendasDistratadasDe = (p: Periodo) => reservas.filter(r => r.situacao === 'Distrato' && dentro(r.data_venda ?? r.data_cad, p));
+  const kpisDe = (p: Periodo) => somarKpis(vendasDe(p), preVendasDe(p), distratosDe(p), estoqueAberto, vendasDistratadasDe(p));
 
-  const { serie, granularidade } = montarSerie(vendas, f.periodo);
+  const vendas = vendasDe(f.periodo);
+  const kpis = kpisDe(f.periodo);
+  const pa = f.comparacao;
+  const anterior = pa ? kpisDe(pa) : null;
+
+  const { serie, granularidade } = montarSerie(vendas, {
+    de: f.periodo.de,
+    ate: f.fimSerie && f.periodo.ate && f.fimSerie > f.periodo.ate ? f.fimSerie : f.periodo.ate,
+  });
 
   const empreendimentos: LinhaEmpreendimento[] = [...estoquePor.entries()].map(([id, estoque]) => {
     const vs = vendas.filter(r => Number(r.idempreendimento) === id);
