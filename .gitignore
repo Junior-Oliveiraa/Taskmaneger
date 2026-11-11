@@ -8,3 +8,4 @@ coverage/
 !.env.example
 .mcp.json
 public/version.json
+.vercel
