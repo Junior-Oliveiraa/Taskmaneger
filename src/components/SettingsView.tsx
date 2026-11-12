@@ -9,30 +9,32 @@ import {
   Users,
   MessageCircle,
   Sparkles,
+  ShieldCheck,
 } from 'lucide-react';
 import ConfirmModal from './ConfirmModal';
-import { useAuth } from '../context/AuthContext';
 import ProfileSettings from './settings/ProfileSettings';
 import UsersSettings from './settings/UsersSettings';
 import WhatsAppSettings from './settings/WhatsAppSettings';
+import PerfisAcessoSettings from './settings/PerfisAcessoSettings';
+import { usePermissoes } from '../lib/permissoes';
 
 interface SettingsViewProps {
   isDarkMode: boolean;
   onToggleDarkMode: () => void;
 }
 
-type SettingsTab = 'profile' | 'appearance' | 'users' | 'whatsapp';
+type SettingsTab = 'profile' | 'appearance' | 'users' | 'perfis' | 'whatsapp';
 
 const TABS: { id: SettingsTab; label: string; icon: React.ElementType; adminOnly?: boolean }[] = [
-  { id: 'profile',    label: 'Perfil',     icon: User },
-  { id: 'appearance', label: 'Aparência',  icon: Palette },
-  { id: 'users',      label: 'Usuários',   icon: Users,         adminOnly: true },
-  { id: 'whatsapp',   label: 'WhatsApp',   icon: MessageCircle, adminOnly: true },
+  { id: 'profile',    label: 'Perfil',            icon: User },
+  { id: 'appearance', label: 'Aparência',         icon: Palette },
+  { id: 'users',      label: 'Usuários',          icon: Users,         adminOnly: true },
+  { id: 'perfis',     label: 'Perfis e acessos',  icon: ShieldCheck,   adminOnly: true },
+  { id: 'whatsapp',   label: 'WhatsApp',          icon: MessageCircle, adminOnly: true },
 ];
 
 export default function SettingsView({ isDarkMode, onToggleDarkMode }: SettingsViewProps) {
-  const { currentUser } = useAuth();
-  const isAdmin = currentUser?.permissionLevel === 1;
+  const { isAdmin } = usePermissoes();
   const [activeTab, setActiveTab] = useState<SettingsTab>('profile');
 
   const visibleTabs = TABS.filter(t => !t.adminOnly || isAdmin);
@@ -84,6 +86,7 @@ export default function SettingsView({ isDarkMode, onToggleDarkMode }: SettingsV
           )}
 
           {activeTab === 'users' && isAdmin && <UsersSettings />}
+          {activeTab === 'perfis' && isAdmin && <PerfisAcessoSettings />}
           {activeTab === 'whatsapp' && isAdmin && <WhatsAppSettings />}
         </div>
       </div>

@@ -4,6 +4,7 @@ import { LayoutDashboard, Building2, X, ArrowDown, ArrowUp, Mail, EyeOff, Eye, T
 import { Project, SiengeTabelaVendaUnidade, SiengeTabelaVendaVersao, SiengeVendaSituacao } from '../types';
 import { formatMoeda } from '../lib/lpCorretor';
 import RelatorioVendasEmailPanel from './RelatorioVendasEmailPanel';
+import { usePermissoes } from '../lib/permissoes';
 import { fetchRelatorioVendasConfig, saveRelatorioVendasProjetosExcluidos, fetchRelatorioVendasBaseline } from '../lib/api';
 
 // ── Comparação com a semana anterior ────────────────────────────────────────
@@ -174,6 +175,8 @@ export default function SiengeVendasDashboard({ projects: todosProjects, unidade
   const [situacoesVisiveis, setSituacoesVisiveis] = useState<SiengeVendaSituacao[]>(SITUACOES);
   const [ocultarVazios, setOcultarVazios] = useState(true);
   const [isEmailPanelOpen, setIsEmailPanelOpen] = useState(false);
+  // Configurar o e-mail automático é exclusivo do administrador.
+  const { isAdmin } = usePermissoes();
   const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'ordem', dir: 'asc' });
 
   // Cada versão tem os próprios valores; só a principal alimenta VGV — as
@@ -328,6 +331,7 @@ export default function SiengeVendasDashboard({ projects: todosProjects, unidade
             <p className="text-[11px] text-zinc-600">Unidades e VGV por situação</p>
           </div>
         </div>
+        {isAdmin && (
         <button
           type="button"
           onClick={() => setIsEmailPanelOpen(o => !o)}
@@ -339,10 +343,11 @@ export default function SiengeVendasDashboard({ projects: todosProjects, unidade
         >
           <Mail size={13} /> Relatório por e-mail
         </button>
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto view-pad-x view-pad-y flex flex-col view-gap-sm">
-        {isEmailPanelOpen && <RelatorioVendasEmailPanel />}
+        {isAdmin && isEmailPanelOpen && <RelatorioVendasEmailPanel />}
 
         {/* Filtros */}
         <div className="flex items-center gap-2 flex-wrap">

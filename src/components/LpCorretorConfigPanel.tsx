@@ -4,6 +4,7 @@ import { LpCorretorConfig, LpCorretorFichaItem, LpCorretorImagem, LpCorretorImov
 import { LpCorretorSlugConflictError, fetchLpCorretorConfigs, publicarTabelaLpCorretorVersao, regenerarTokenValidacaoLp, saveLpCorretorConfig } from '../lib/api';
 import { REGRA_PREFIX, lpCorretorUrl, lpValidacaoUrl, slugifyLpSlug } from '../lib/lpCorretor';
 import { mergeColunasRegras } from '../lib/siengeVendasTabela';
+import { usePermissoes } from '../lib/permissoes';
 import { UPLOAD_LIMITS, sanitizeFileName, uploadToStorage } from '../lib/storage';
 
 interface LpCorretorConfigPanelProps {
@@ -256,6 +257,7 @@ export default function LpCorretorConfigPanel({ projectId, projectName, terceiro
   // rotacionar é sempre "este link não pode mais valer", e isso não pode ficar
   // pendurado num botão que a pessoa talvez não aperte. Escreve nos dois
   // estados para o campo não contar como alteração não salva.
+  const { isAdmin } = usePermissoes();
   const regenerarToken = async () => {
     if (!config || regenerando) return;
     setRegenerando(true);
@@ -554,6 +556,7 @@ export default function LpCorretorConfigPanel({ projectId, projectName, terceiro
                   <ExternalLink size={13} />
                 </span>
               )}
+              {isAdmin && (
               <button
                 type="button"
                 onClick={regenerarToken}
@@ -563,6 +566,7 @@ export default function LpCorretorConfigPanel({ projectId, projectName, terceiro
               >
                 <RefreshCw size={13} className={regenerando ? 'animate-spin' : ''} />
               </button>
+              )}
             </div>
 
             {!validacaoNoAr && (

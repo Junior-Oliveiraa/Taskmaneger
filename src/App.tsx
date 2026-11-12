@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo, Suspense, lazy } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Columns3, 
@@ -14,7 +14,8 @@ import {
   Filter,
   Sparkles,
   Loader2,
-  Layers
+  Layers,
+  Eye
 } from 'lucide-react';
 
 import { useAuth } from './context/AuthContext';
@@ -29,6 +30,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSyncManager } from './lib/SyncManager';
 import { USERS } from './lib/users';
 import { startVersionWatcher } from './lib/versionCheck';
+import { usePermissoes, Modulo, MODULOS_COMERCIAL } from './lib/permissoes';
 
 import Sidebar from './components/Sidebar';
 import CommandBar from './components/CommandBar';
@@ -36,17 +38,34 @@ import TaskSheet from './components/TaskSheet';
 import KanbanView from './components/KanbanView';
 import ListView from './components/ListView';
 import CalendarView from './components/CalendarView';
-import CrmView from './components/crm/CrmView';
-import ProjectsView from './components/ProjectsView';
-import SettingsView from './components/SettingsView';
 import InboxView from './components/InboxView';
 import ConfirmModal from './components/ConfirmModal';
-import SiengeView from './components/SiengeView';
-import ComercialInicio, { ComercialTabBar, ComercialTab } from './components/comercial/ComercialInicio';
-import ComercialHistorico from './components/comercial/ComercialHistorico';
-import PropostasKanban from './components/comercial/PropostasKanban';
-import DashboardView from './components/DashboardView';
+import { ComercialTabBar, ComercialTab, ABAS_COMERCIAL } from './components/comercial/ComercialTabs';
 import HomeView from './components/HomeView';
+
+// Módulos carregados sob demanda: o código de cada área só é baixado quando
+// alguém com acesso a abre. A proteção real é o RLS no banco; isto apenas
+// evita entregar de graça, a quem não usa a área, o código dela.
+const CrmView = lazy(() => import('./components/crm/CrmView'));
+const ProjectsView = lazy(() => import('./components/ProjectsView'));
+const SettingsView = lazy(() => import('./components/SettingsView'));
+const SiengeView = lazy(() => import('./components/SiengeView'));
+const ComercialInicio = lazy(() => import('./components/comercial/ComercialInicio'));
+const ComercialHistorico = lazy(() => import('./components/comercial/ComercialHistorico'));
+const PropostasKanban = lazy(() => import('./components/comercial/PropostasKanban'));
+const DashboardView = lazy(() => import('./components/DashboardView'));
+
+/** Módulo(s) que liberam cada tela. Telas fora do mapa são de todos. */
+const MODULOS_DA_TELA: Partial<Record<ViewType, Modulo[]>> = {
+  tasks_board: ['tarefas'],
+  tasks_list: ['tarefas'],
+  calendar: ['tarefas'],
+  crm: ['crm'],
+  projects: ['empreendimentos'],
+  sienge: ['financas', 'financas_orcamento'],
+  comercial: MODULOS_COMERCIAL,
+  dashboard: ['analytics'],
+};
 
 // Espelha o breakpoint `nbs` do index.css (largura < 1280px). Manter os dois
 // em sincronia: é o limiar em que a sidebar deixa de caber junto do conteúdo.
@@ -64,6 +83,7 @@ export type EditorPresence = { name: string; avatarUrl?: string; color: string }
 
 export default function App() {
   const { currentUser, loading, updateProfile } = useAuth();
+  const permissoes = usePermissoes();
   const { addNotification } = useNotifications();
   const previousTasksRef = useRef<Task[]>([]);
   const isFirstRender = useRef(true);
@@ -220,7 +240,26 @@ export default function App() {
     [siengeCentrosCusto, siengeCategorias, siengeSubcategorias]
   );
 
-  const isDataLoading = isTasksLoading || isProjectsLoading || isLabelsLoading || isSiengeLoading || isLotesLoading || isFaturasLoading;
+  const isDataLoading = isTasksLoading || isProjectsLoading || isLabelsLoading || isSiengeLoading || isLotesLoading || isFaturasLoading || permissoes.carregando;
+
+  // Telas e abas que o perfil pode abrir. Se a tela atual deixou de ser
+  // permitida (perfil alterado, atalho, notificação), volta para o Início.
+  const podeVerTela = (view: ViewType) => {
+    const mods = MODULOS_DA_TELA[view];
+    return !mods || permissoes.podeAlgum(mods);
+  };
+  const abasComercial = ABAS_COMERCIAL.filter(a => permissoes.pode(a.modulo)).map(a => a.id);
+  useEffect(() => {
+    if (permissoes.carregando) return;
+    if (!podeVerTela(activeView)) setActiveView('home');
+    if (abasComercial.length > 0 && !abasComercial.includes(comercialTab)) setComercialTab(abasComercial[0]);
+  });
+  // Módulo da tela aberta, para o aviso de somente leitura.
+  const moduloAtual: Modulo | null =
+    activeView === 'comercial' ? (ABAS_COMERCIAL.find(a => a.id === comercialTab)?.modulo ?? null)
+    : activeView === 'sienge' ? (permissoes.pode('financas') ? 'financas' : 'financas_orcamento')
+    : MODULOS_DA_TELA[activeView]?.[0] ?? null;
+  const somenteLeitura = !!moduloAtual && permissoes.nivel(moduloAtual) === 'ver';
   
   // Custom Confirm Modal state for task sheet closure
   const [confirmModalData, setConfirmModalData] = useState<{
@@ -1503,6 +1542,12 @@ export default function App() {
           transition={{ duration: 0.16, ease: 'easeOut' }}
           className="flex-1 flex flex-col overflow-hidden min-h-0"
         >
+          {somenteLeitura && (
+            <div className="shrink-0 flex items-center gap-2 view-pad-x py-1.5 text-[11px] text-sky-300/90 bg-sky-500/10 border-b border-sky-500/20">
+              <Eye size={12} /> Somente leitura: seu perfil pode consultar esta área, mas não alterar.
+            </div>
+          )}
+          <Suspense fallback={<div className="flex-1 flex items-center justify-center"><Loader2 size={20} className="text-zinc-600 animate-spin" /></div>}>
           {activeView === 'home' && (
             <HomeView
               tasks={tasks}
@@ -1586,7 +1631,7 @@ export default function App() {
           )}
 
           {activeView === 'comercial' && (
-            <ComercialTabBar tab={comercialTab} onChange={setComercialTab} />
+            <ComercialTabBar tab={comercialTab} onChange={setComercialTab} permitidas={abasComercial} />
           )}
 
           {activeView === 'comercial' && comercialTab === 'inicio' && (
@@ -1889,6 +1934,7 @@ export default function App() {
               labels={labels}
             />
           )}
+          </Suspense>
           </motion.div>
         </AnimatePresence>
         </div>

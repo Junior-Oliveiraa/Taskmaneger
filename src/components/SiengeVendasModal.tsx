@@ -4,6 +4,7 @@ import { Project, SiengeTabelaVendaVersao, SiengeTabelaVendaConfig, SiengeTabela
 
 import SiengeVendasTable from './SiengeVendasTable';
 import LpCorretorConfigPanel from './LpCorretorConfigPanel';
+import { usePermissoes } from '../lib/permissoes';
 import { ColunaOuRegra, calcValidacaoParcelas, calcValidacaoValorUnidade, colunaBaseLabel, baseReajustavel, exportSiengeVendasCsv, formatCurrencyInput, getColunaBaseValue, getMargem, isDiferencaOk, MARGEM_VALOR_TABELA_KEY, margemEfetiva, mergeColunasRegras, parseCurrencyInput, parseSiengeVendasCsv, parseSiengeVendasXlsx, REGRA_KEY_PREFIX, REGRA_VINCULO_PREFIX, unidadeValidacaoPendente } from '../lib/siengeVendasTabela';
 
 const SITUACAO_FILTER_LABELS: Record<SiengeVendaSituacao, string> = {
@@ -951,7 +952,8 @@ function formatDateTime(iso: string): string {
 function RevisaoRow({ revisao: r, projectColunas, onReverter }: {
   revisao: SiengeTabelaVendaRevisao;
   projectColunas: SiengeTabelaVendaColuna[];
-  onReverter: (revisao: SiengeTabelaVendaRevisao) => void;
+  /** Ausente para quem não é administrador: reverter é ação exclusiva dele. */
+  onReverter?: (revisao: SiengeTabelaVendaRevisao) => void;
 }) {
   const [showUnidades, setShowUnidades] = useState(false);
   const positivo = r.percentual >= 0;
@@ -1004,7 +1006,7 @@ function RevisaoRow({ revisao: r, projectColunas, onReverter }: {
             <span className="text-[10px] font-medium text-amber-400/80 whitespace-nowrap shrink-0">
               Revertida em {formatDateTime(r.revertidaEm!)}
             </span>
-          ) : r.temBackup ? (
+          ) : r.temBackup && onReverter ? (
             <button
               type="button"
               onClick={() => onReverter(r)}
@@ -1553,6 +1555,9 @@ export default function SiengeVendasModal({
   onSaveUnidade, onDeleteUnidade, onClearUnidades, onApplyReajuste, onSetMargem, onReverterRevisao, onAlterarSituacao, onSaveColuna, onDeleteColuna, onSaveRegra, onDeleteRegra,
   validacoes, onSaveValidacao, onDeleteValidacao, onClose,
 }: SiengeVendasModalProps) {
+  // Excluir versão/unidades, limpar e reverter são exclusivos do administrador
+  // (o banco também recusa — ver migração perfis_de_acesso).
+  const { isAdmin } = usePermissoes();
   // "Limpar Tabela" some com todas as unidades do empreendimento sem gerar
   // revisão/backup — mais destrutivo que um reajuste (que sempre pode ser
   // revertido). Por isso exige digitar a palavra, igual ao fluxo de reverter.
@@ -2261,6 +2266,7 @@ export default function SiengeVendasModal({
                 )}
                 {/* Apagar a principal fica bloqueado: sem principal, os números
                     financeiros ficariam sem fonte e a venda sem onde congelar. */}
+                {isAdmin && (
                 <button
                   type="button"
                   onClick={() => {
@@ -2275,6 +2281,7 @@ export default function SiengeVendasModal({
                 >
                   <Trash2 size={13} />
                 </button>
+                )}
               </div>
             )}
           </div>
@@ -2391,8 +2398,9 @@ export default function SiengeVendasModal({
               {projectVendas.length > 0 && <span className={TOOL_BADGE}>{projectVendas.length}</span>}
             </button>
 
-            <span className={TOOL_SEP} />
+            {isAdmin && <span className={TOOL_SEP} />}
 
+            {isAdmin && (
             <button
               type="button"
               onClick={() => setShowLimparModal(true)}
@@ -2402,6 +2410,7 @@ export default function SiengeVendasModal({
             >
               <Trash2 size={13} /> Limpar Tabela
             </button>
+            )}
           </div>
         )}
 
@@ -2941,7 +2950,7 @@ export default function SiengeVendasModal({
                 ) : (
                   <div className="flex flex-col gap-1.5 max-h-72 overflow-y-auto custom-scrollbar">
                     {projectRevisoes.map(r => (
-                      <RevisaoRow key={r.id} revisao={r} projectColunas={projectColunas} onReverter={abrirReverter} />
+                      <RevisaoRow key={r.id} revisao={r} projectColunas={projectColunas} onReverter={isAdmin ? abrirReverter : undefined} />
                     ))}
                   </div>
                 )}
@@ -2990,6 +2999,7 @@ export default function SiengeVendasModal({
               editavel={edicaoLivre}
               onSave={onSaveUnidade}
               onDelete={onDeleteUnidade}
+              podeExcluir={isAdmin}
               onSaveColuna={onSaveColuna}
               onSaveRegra={onSaveRegra}
             />

@@ -6,6 +6,7 @@ import {
 import { useAuth, UserProfile } from '../context/AuthContext';
 import { SiengeAlcadaConfig, SiengeCategoriaDef } from '../types';
 import { SiengeTaxonomy } from '../lib/siengeCategorias';
+import { usePermissoes } from '../lib/permissoes';
 
 interface SiengeConfigPanelProps {
   alcadaConfig: SiengeAlcadaConfig;
@@ -366,6 +367,7 @@ function CentroCustoSection({
 export default function SiengeConfigPanel({
   alcadaConfig, onSaveAlcadaConfig, taxonomy, onAddCentroCusto, onAddCategoria, onRenameCategoria, onDeleteCategoria, onAddSubcategoria, onDeleteSubcategoria, onClose,
 }: SiengeConfigPanelProps) {
+  const { isAdmin } = usePermissoes();
   const categoriasByCentro = (centroCusto: string): SiengeCategoriaDef[] =>
     (taxonomy.categoriasPorCentro[centroCusto] || []).map(categoria => ({
       id: taxonomy.categoriaIdFor[`${centroCusto}::${categoria}`],
@@ -402,7 +404,8 @@ export default function SiengeConfigPanel({
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto view-pad flex flex-col view-gap-sm">
-        <AlcadaSection alcadaConfig={alcadaConfig} onSaveAlcadaConfig={onSaveAlcadaConfig} />
+        {/* Alçada é configuração exclusiva do administrador. */}
+        {isAdmin && <AlcadaSection alcadaConfig={alcadaConfig} onSaveAlcadaConfig={onSaveAlcadaConfig} />}
 
         {taxonomy.centrosCusto.map(cc => (
           <CentroCustoSection

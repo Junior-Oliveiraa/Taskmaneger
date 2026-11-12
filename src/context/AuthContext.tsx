@@ -8,10 +8,16 @@ export interface UserProfile extends User {
   /** E.164 sem símbolos (ex.: 5511999999999) — usado pela integração WhatsApp. */
   phone?: string;
   preferences?: any;
+  /** Perfil de acesso (users_profile.perfil). Ver src/lib/permissoes.ts. */
+  perfil?: string;
+  /**
+   * Legado: 1 = administrador ou master, 2 = demais. Derivado do perfil — as
+   * telas antigas ainda checam `permissionLevel === 1`.
+   */
   permissionLevel?: number;
 }
 
-const PROFILE_COLUMNS = 'id, name, email, role, phone, preferences, avatar_url';
+const PROFILE_COLUMNS = 'id, name, email, role, phone, preferences, avatar_url, perfil';
 
 interface AuthContextType {
   currentUser: UserProfile | null;
@@ -35,9 +41,8 @@ function formatUser(u: any): UserProfile {
     phone: u.phone || undefined,
     preferences: u.preferences || {},
     avatarUrl: u.avatar_url,
-    permissionLevel: u.preferences?.permissionLevel
-      ? Number(u.preferences.permissionLevel)
-      : (u.name?.toLowerCase().includes('cidnei') ? 1 : 2),
+    perfil: u.perfil || 'assistente',
+    permissionLevel: u.perfil === 'administrador' || u.perfil === 'master' ? 1 : 2,
     initials: u.name.split(' ').map((n: string) => n[0]).join('').substring(0, 2).toUpperCase(),
   };
 }
@@ -129,9 +134,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     const payload: any = {};
+    // E-mail e perfil não passam por aqui: o banco recusa a troca feita pelo
+    // próprio usuário (trigger protege_campos_perfil).
     if (updates.name        !== undefined) payload.name       = updates.name;
-    if (updates.email       !== undefined) payload.email      = updates.email;
-    if (updates.role        !== undefined) payload.role       = updates.role;
+    if (updates.role       !== undefined) payload.role       = updates.role;
     if (updates.phone       !== undefined) payload.phone      = updates.phone || null;
     if (updates.preferences !== undefined) payload.preferences = updates.preferences;
     if (updates.avatarUrl   !== undefined) payload.avatar_url = updates.avatarUrl;

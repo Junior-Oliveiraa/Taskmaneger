@@ -28,6 +28,8 @@ interface SiengeVendasTableProps {
   editavel: boolean;
   onSave: (item: SiengeTabelaVendaUnidade) => void;
   onDelete: (id: string) => void;
+  /** Excluir unidade é exclusivo do administrador. */
+  podeExcluir?: boolean;
   onSaveColuna: (coluna: SiengeTabelaVendaColuna) => void;
   onSaveRegra: (regra: SiengeCalculoRegra) => void;
 }
@@ -293,7 +295,7 @@ function DynamicCell({ coluna, text, editavel, casas, onChange, onCommit }: { co
 }
 
 
-function VendaRow({ item, index, colunas, merged, regras, validacoesParcelas, validacoesValorUnidade, mostrarValidacao, terceiros, editavel, onSave, onDelete, onHistorico }: {
+function VendaRow({ item, index, colunas, merged, regras, validacoesParcelas, validacoesValorUnidade, mostrarValidacao, terceiros, editavel, podeExcluir, onSave, onDelete, onHistorico }: {
   item: SiengeTabelaVendaUnidade;
   index: number;
   colunas: SiengeTabelaVendaColuna[];
@@ -306,6 +308,7 @@ function VendaRow({ item, index, colunas, merged, regras, validacoesParcelas, va
   editavel: boolean;
   onSave: (item: SiengeTabelaVendaUnidade) => void;
   onDelete: (id: string) => void;
+  podeExcluir?: boolean;
   onHistorico: (item: SiengeTabelaVendaUnidade) => void;
 }) {
   // Com edição livre ligada o campo é sempre um input ativo (máscara de
@@ -460,7 +463,7 @@ function VendaRow({ item, index, colunas, merged, regras, validacoesParcelas, va
               <Check size={11} strokeWidth={3} />
             </button>
           )}
-          {editavel && (
+          {editavel && podeExcluir && (
             <button
               type="button"
               onClick={() => onDelete(item.id)}
@@ -630,7 +633,7 @@ function sum(values: number[]): number {
   return values.reduce((s, v) => s + v, 0);
 }
 
-export default function SiengeVendasTable({ projectId, versaoId, unidades, allUnidadeNames, colunas, regras, validacoes, mostrarValidacao, terceiros, editavel, onSave, onDelete, onSaveColuna, onSaveRegra }: SiengeVendasTableProps) {
+export default function SiengeVendasTable({ projectId, versaoId, unidades, allUnidadeNames, colunas, regras, validacoes, mostrarValidacao, terceiros, editavel, podeExcluir, onSave, onDelete, onSaveColuna, onSaveRegra }: SiengeVendasTableProps) {
   const [addingNew, setAddingNew] = useState(false);
   const [historicoDe, setHistoricoDe] = useState<SiengeTabelaVendaUnidade | null>(null);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
@@ -776,6 +779,7 @@ export default function SiengeVendasTable({ projectId, versaoId, unidades, allUn
               editavel={editavel}
               onSave={onSave}
               onDelete={onDelete}
+              podeExcluir={podeExcluir}
               onHistorico={setHistoricoDe}
             />
           ))}

@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { FolderPlus, Image as ImageIcon, Megaphone, Tag, History, Copy, Check, ChevronRight, PieChart, Edit2, Building2, Trash2, AlertTriangle, Loader2, X } from 'lucide-react';
 import { Project, Task } from '../types';
 import { fetchProjectDeleteImpact, ProjectDeleteImpact } from '../lib/api';
+import { usePermissoes } from '../lib/permissoes';
 
 interface ProjectsViewProps {
   projects: Project[];
@@ -185,6 +186,9 @@ export default function ProjectsView({
   onDeleteProject
 }: ProjectsViewProps) {
   const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
+  // Criar/editar segue o módulo; renomear e excluir são do administrador.
+  const { pode, isAdmin } = usePermissoes();
+  const podeEditar = pode('empreendimentos', 'editar');
   // Referências, e não document.querySelector: o seletor global pegava o
   // primeiro `.overflow-y-auto` do documento, que é o do menu lateral. Clicar
   // em editar rolava o menu e deixava o formulário fora da tela — parecia que
@@ -301,6 +305,7 @@ export default function ProjectsView({
           </span>
         </div>
 
+        {podeEditar && (
         <button
           onClick={() => {
             if (showAddForm && !editingProjectId) {
@@ -321,6 +326,7 @@ export default function ProjectsView({
           <FolderPlus size={12} />
           <span>Novo Empreendimento</span>
         </button>
+        )}
       </div>
 
       {/* Add Project collapsible Inline Form */}
@@ -342,6 +348,8 @@ export default function ProjectsView({
                 placeholder="Ex. Green Park..."
                 value={newProjName}
                 onChange={(e) => setNewProjName(e.target.value)}
+                disabled={!!editingProjectId && !isAdmin}
+                title={editingProjectId && !isAdmin ? 'Renomear empreendimento é exclusivo do administrador' : undefined}
                 className="w-full bg-[#08080a] border border-zinc-900 p-2 text-xs rounded text-zinc-200 outline-none focus:border-zinc-750"
               />
             </div>
@@ -472,6 +480,7 @@ export default function ProjectsView({
                     hover — descobrir que dá para renomear não deveria depender
                     de passar o mouse no lugar certo. */}
                 <div className="absolute top-2.5 left-2.5 flex items-center gap-1">
+                  {podeEditar && (
                   <button
                     onClick={(e) => { e.stopPropagation(); handleEditClick(project); }}
                     className="p-1.5 bg-black/50 backdrop-blur-sm rounded text-zinc-400 opacity-70 group-hover:opacity-100 hover:text-white hover:bg-black/70 transition-all border border-white/10"
@@ -479,6 +488,8 @@ export default function ProjectsView({
                   >
                     <Edit2 size={11} />
                   </button>
+                  )}
+                  {isAdmin && (
                   <button
                     onClick={(e) => { e.stopPropagation(); setProjectToDelete(project); }}
                     className="p-1.5 bg-black/50 backdrop-blur-sm rounded text-zinc-400 opacity-70 group-hover:opacity-100 hover:text-red-400 hover:bg-black/70 transition-all border border-white/10"
@@ -486,6 +497,7 @@ export default function ProjectsView({
                   >
                     <Trash2 size={11} />
                   </button>
+                  )}
                 </div>
               </div>
 

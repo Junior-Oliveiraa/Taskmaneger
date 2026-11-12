@@ -2,7 +2,10 @@
 //
 // Precisa viver numa Edge Function porque `auth.admin` exige a service role,
 // que jamais pode ir para o bundle do frontend. Todo acesso é validado contra
-// o JWT de quem chamou: só `preferences.permissionLevel === 1` passa.
+// o JWT de quem chamou: só o perfil `administrador` passa.
+//
+// O perfil `administrador` não é atribuído por aqui — é único e definido na
+// migração 20261112120000_perfis_de_acesso.
 
 // @ts-ignore
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
@@ -35,6 +38,12 @@ function normalizePhone(raw?: string | null): string | null {
   return digits.length >= 12 && digits.length <= 13 ? digits : null;
 }
 
+const PERFIS_ATRIBUIVEIS = ['master', 'analista', 'assistente', 'financeiro'];
+
+function perfilValido(perfil: unknown): string | null {
+  return typeof perfil === 'string' && PERFIS_ATRIBUIVEIS.includes(perfil) ? perfil : null;
+}
+
 serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
 
@@ -50,12 +59,12 @@ serve(async (req: Request) => {
 
     const { data: callerProfile } = await admin
       .from('users_profile')
-      .select('preferences')
+      .select('perfil')
       .eq('id', userData.user.id)
       .maybeSingle();
 
-    if (Number(callerProfile?.preferences?.permissionLevel) !== 1) {
-      return json({ error: 'Acesso restrito a administradores.' }, 403);
+    if (callerProfile?.perfil !== 'administrador') {
+      return json({ error: 'Acesso restrito ao administrador.' }, 403);
     }
 
     const { action, payload } = await req.json();
@@ -64,17 +73,18 @@ serve(async (req: Request) => {
       case 'list': {
         const { data, error } = await admin
           .from('users_profile')
-          .select('id, name, email, role, phone, avatar_url, preferences')
+          .select('id, name, email, role, phone, avatar_url, preferences, perfil')
           .order('name');
         if (error) throw error;
         return json({ users: data });
       }
 
       case 'create': {
-        const { email, password, name, role, phone, permissionLevel } = payload || {};
+        const { email, password, name, role, phone, perfil } = payload || {};
         if (!email || !password || !name) {
           return json({ error: 'Nome, e-mail e senha são obrigatórios.' }, 400);
         }
+        const perfilNovo = perfilValido(perfil) ?? 'assistente';
 
         const { data: created, error: createError } = await admin.auth.admin.createUser({
           email: String(email).trim().toLowerCase(),
@@ -92,7 +102,7 @@ serve(async (req: Request) => {
             name,
             role: role || 'Membro',
             phone: normalizePhone(phone),
-            preferences: { permissionLevel: Number(permissionLevel) || 2 },
+            perfil: perfilNovo,
           })
           .eq('id', created.user.id);
         if (profileError) throw profileError;
@@ -101,9 +111,18 @@ serve(async (req: Request) => {
       }
 
       case 'update': {
-        const { id, name, role, phone, permissionLevel, password } = payload || {};
+        const { id, name, role, phone, perfil, password } = payload || {};
         if (!id) return json({ error: 'id é obrigatório.' }, 400);
 
+        const { data: alvo } = await admin
+          .from('users_profile')
+          .select('perfil')
+          .eq('id', id)
+          .maybeSingle();
+
+        if (password && alvo?.perfil === 'administrador' && id !== userData.user.id) {
+          return json({ error: 'A senha do administrador só pode ser trocada por ele mesmo.' }, 400);
+        }
         if (password) {
           const { error } = await admin.auth.admin.updateUserById(id, { password });
           if (error) throw error;
@@ -113,17 +132,12 @@ serve(async (req: Request) => {
         if (name !== undefined) updates.name = name;
         if (role !== undefined) updates.role = role;
         if (phone !== undefined) updates.phone = normalizePhone(phone);
-        if (permissionLevel !== undefined) {
-          const { data: current } = await admin
-            .from('users_profile')
-            .select('preferences')
-            .eq('id', id)
-            .maybeSingle();
-          // Preserva as demais preferências do usuário (ex.: filtros de notificação).
-          updates.preferences = {
-            ...(current?.preferences || {}),
-            permissionLevel: Number(permissionLevel) || 2,
-          };
+        // O administrador não muda de perfil por aqui, e ninguém vira
+        // administrador por aqui.
+        if (perfil !== undefined && alvo?.perfil !== 'administrador') {
+          const novo = perfilValido(perfil);
+          if (!novo) return json({ error: 'Perfil inválido.' }, 400);
+          updates.perfil = novo;
         }
 
         if (Object.keys(updates).length > 0) {
@@ -139,6 +153,10 @@ serve(async (req: Request) => {
         if (!id) return json({ error: 'id é obrigatório.' }, 400);
         if (id === userData.user.id) {
           return json({ error: 'Você não pode remover a própria conta.' }, 400);
+        }
+        const { data: alvoDelete } = await admin.from('users_profile').select('perfil').eq('id', id).maybeSingle();
+        if (alvoDelete?.perfil === 'administrador') {
+          return json({ error: 'A conta do administrador não pode ser removida.' }, 400);
         }
 
         const { error } = await admin.auth.admin.deleteUser(id);

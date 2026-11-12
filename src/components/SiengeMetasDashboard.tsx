@@ -13,7 +13,7 @@ import { analyzeProjectsForPeriod, buildCategoriasBase } from '../lib/siengeMeta
 import { CENTRO_CUSTO_LABELS, SiengeTaxonomy } from '../lib/siengeCategorias';
 import { analyzeProjectBudgetReal, analyzeProjectBudgetPeriodo, categoriaKey, getRitmoMes, getTitulosNoPeriodo, ORCAMENTO_PCT, RitmoMes } from '../lib/siengeVendasBudget';
 
-import { canAccessMetasDashboard } from './SiengeView';
+import { usePermissoes } from '../lib/permissoes';
 
 interface SiengeMetasDashboardProps {
   titles: SiengeTitle[];
@@ -126,7 +126,7 @@ export default function SiengeMetasDashboard({
   /** Linha aberta no comparativo (chave da categoria), com os títulos que a compõem. */
   const [openCategoria, setOpenCategoria] = useState<string | null>(null);
 
-  const allowed = canAccessMetasDashboard(currentUser);
+  const allowed = usePermissoes().pode('financas_orcamento');
 
   // Metas de VGV: vêm de Comercial > Dashboard > Metas (fonte única). Cada
   // empreendimento das metas aponta para um empreendimento do Orbit.

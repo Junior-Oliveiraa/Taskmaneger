@@ -33,8 +33,8 @@ import {
   Home
 } from 'lucide-react';
 import { ViewType, Project, Task } from '../types';
-import { canAccessMetasDashboard } from './SiengeView';
 import { useAuth } from '../context/AuthContext';
+import { usePermissoes, MODULOS_COMERCIAL } from '../lib/permissoes';
 import { useNotifications } from '../context/NotificationContext';
 import { useMediaQuery, SHORT_SCREEN } from '../hooks/useMediaQuery';
 
@@ -71,6 +71,8 @@ export default function Sidebar({
   onSelectTask
 }: SidebarProps) {
   const { currentUser, logout } = useAuth();
+  const { pode, podeAlgum } = usePermissoes();
+  const verTarefas = pode('tarefas');
   const { notifications, addNotification, markAsViewed, postpone, markAsImportant } = useNotifications();
   
   const [showAllNotifications, setShowAllNotifications] = useState(false);
@@ -394,6 +396,7 @@ export default function Sidebar({
                 {!collapsed && <span className="relative z-10">Início</span>}
               </button>
 
+              {verTarefas && (<>
               <button
                 onClick={() => navigateToTasks('board')}
                 className={`relative w-full flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
@@ -448,7 +451,9 @@ export default function Sidebar({
                 <Calendar size={14} className={`relative z-10 ${activeView === 'calendar' ? 'text-zinc-200' : 'text-zinc-550'}`} />
                 {!collapsed && <span className="relative z-10">Calendário</span>}
               </button>
+              </>)}
 
+              {pode('crm') && (
               <button
                 onClick={() => setActiveView('crm')}
                 className={`relative w-full flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
@@ -463,9 +468,11 @@ export default function Sidebar({
                 <Headset size={14} className={`relative z-10 ${activeView === 'crm' ? 'text-zinc-200' : 'text-zinc-550'}`} />
                 {!collapsed && <span className="relative z-10">CRM</span>}
               </button>
+              )}
 
               {!collapsed && <div className="border-t border-zinc-900/80 my-1" />}
 
+              {podeAlgum(['financas', 'financas_orcamento']) && (
               <button
                 onClick={() => setActiveView('sienge')}
                 className={`relative w-full flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
@@ -480,10 +487,9 @@ export default function Sidebar({
                 <Receipt size={14} className={`relative z-10 ${activeView === 'sienge' ? 'text-blue-400' : 'text-zinc-550'}`} />
                 {!collapsed && <span className="relative z-10">Finanças</span>}
               </button>
+              )}
 
-              {/* Tabela de Vendas e Dashboard viraram abas daqui; a regra de
-                  acesso é a mesma de quando eram itens próprios do menu. */}
-              {canAccessMetasDashboard(currentUser) && (
+              {podeAlgum(MODULOS_COMERCIAL) && (
                 <button
                   onClick={() => setActiveView('comercial')}
                   className={`relative w-full flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
@@ -529,6 +535,7 @@ export default function Sidebar({
 
               {!collapsed && <div className="border-t border-zinc-900/80 my-1" />}
 
+              {pode('empreendimentos') && (
               <button
                 onClick={() => {
                   setActiveView('projects');
@@ -551,8 +558,9 @@ export default function Sidebar({
                   </div>
                 )}
               </button>
+              )}
 
-              {Number(currentUser?.permissionLevel) === 1 && (
+              {pode('analytics') && (
                 <button
                   onClick={() => {
                     setActiveView('dashboard');
@@ -597,7 +605,7 @@ export default function Sidebar({
               </div>
             </div>
           )}
-          {!showAllNotifications && (
+          {!showAllNotifications && verTarefas && (
             <div className="grid grid-cols-2 gap-1 mt-1 px-1">
             {projects.map(project => {
               const projectCount = tasks.filter(t => t.projectId === project.id).length;

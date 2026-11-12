@@ -8,17 +8,7 @@ import SiengeMetasDashboard from './SiengeMetasDashboard';
 import SiengeVendasModal from './SiengeVendasModal';
 import SiengeVendasDashboard from './SiengeVendasDashboard';
 import ComercialDashboard from './comercial/ComercialDashboard';
-import { useAuth } from '../context/AuthContext';
-
-// Exportado: o Sidebar usa o mesmo e-mail para decidir se mostra "Tabela de
-// Vendas" como item próprio do menu — mesma regra de acesso de sempre, só que
-// checada num lugar novo agora que a aba saiu daqui.
-export const METAS_DASHBOARD_EMAIL = 'cidnei@uchoaempreendimentos.com.br';
-
-// Administradores (permissionLevel 1) enxergam tudo; fora deles, só o e-mail
-// acima tem acesso às telas de vendas e metas.
-export const canAccessMetasDashboard = (user?: { email?: string; permissionLevel?: number } | null) =>
-  !!user && (Number(user.permissionLevel) === 1 || user.email === METAS_DASHBOARD_EMAIL);
+import { usePermissoes } from '../lib/permissoes';
 
 interface SiengeViewProps {
   titles: SiengeTitle[];
@@ -111,12 +101,14 @@ export default function SiengeView({
   mensalidades, onSaveMensalidade, onDeleteMensalidade,
   forcedTab,
 }: SiengeViewProps) {
-  const [activeTab, setActiveTab] = useState<'titulos' | 'lotes' | 'faturas' | 'metas' | 'vendas' | 'vendas_dashboard'>('titulos');
+  // Títulos/lotes/faturas pedem o módulo Finanças; a aba Metas, o de orçamento.
+  const { pode } = usePermissoes();
+  const verTitulos = pode('financas');
+  const showMetasTab = pode('financas_orcamento');
+  const [activeTab, setActiveTab] = useState<'titulos' | 'lotes' | 'faturas' | 'metas' | 'vendas' | 'vendas_dashboard'>(verTitulos ? 'titulos' : 'metas');
   const openLotes = lotes.filter(l => l.status === 'aberto');
   const openFaturas = faturas.filter(f => f.status === 'aberto');
-  const { currentUser } = useAuth();
-  const showMetasTab = canAccessMetasDashboard(currentUser);
-  const tab = forcedTab ?? activeTab;
+  const tab = forcedTab ?? (!verTitulos && activeTab !== 'metas' ? 'metas' : activeTab);
 
   // Mesma regra de visibilidade/ordem usada no Dashboard Analítico — empreendimentos
   // ocultados (sienge_project_display) também somem da Tabela de Vendas.
@@ -138,6 +130,7 @@ export default function SiengeView({
           próprio menu lateral, e uma barra de abas com uma aba só seria ruído. */}
       {!forcedTab && (
       <div className="flex items-center gap-4 xl:gap-6 view-pad-x pt-4 short:pt-2.5 border-b border-zinc-800/60 shrink-0 overflow-x-auto no-scrollbar">
+        {verTitulos && (<>
         <button
           onClick={() => setActiveTab('titulos')}
           className={`pb-3 short:pb-2 text-sm short:text-[13px] font-semibold whitespace-nowrap shrink-0 transition-colors border-b-2 ${
@@ -178,6 +171,7 @@ export default function SiengeView({
             </span>
           )}
         </button>
+        </>)}
         {showMetasTab && (
           <button
             onClick={() => setActiveTab('metas')}

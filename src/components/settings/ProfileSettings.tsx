@@ -56,7 +56,6 @@ export default function ProfileSettings({ onClose }: ProfileSettingsProps) {
     try {
       const updates: any = {};
       if (name !== currentUser.name) updates.name = name;
-      if (email !== currentUser.email) updates.email = email;
       if (role !== currentUser.role) updates.role = role;
 
       // Telefone vai para o banco em E.164; vazio limpa o cadastro.
@@ -160,7 +159,8 @@ export default function ProfileSettings({ onClose }: ProfileSettingsProps) {
         <div className="grid grid-cols-2 gap-4">
           <div className="flex flex-col gap-1">
             <label className={labelClass}>E-mail</label>
-            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required className={inputClass} />
+            {/* Somente leitura: o e-mail identifica o login e só o administrador o altera. */}
+            <input type="email" value={email} readOnly disabled className={`${inputClass} disabled:opacity-50`} />
           </div>
           <div className="flex flex-col gap-1">
             <label className={labelClass}>WhatsApp</label>

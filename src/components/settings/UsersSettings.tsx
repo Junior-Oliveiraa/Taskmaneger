@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
 import { maskPhoneInput, formatPhoneDisplay } from '../../lib/phone';
 import ConfirmModal from '../ConfirmModal';
+import { PERFIS, PERFIS_CONFIGURAVEIS, rotuloPerfil } from '../../lib/permissoes';
 
 interface AdminUser {
   id: string;
@@ -12,6 +13,7 @@ interface AdminUser {
   role?: string;
   phone?: string;
   preferences?: any;
+  perfil?: string;
 }
 
 interface FormState {
@@ -21,10 +23,10 @@ interface FormState {
   role: string;
   phone: string;
   password: string;
-  permissionLevel: number;
+  perfil: string;
 }
 
-const EMPTY_FORM: FormState = { name: '', email: '', role: '', phone: '', password: '', permissionLevel: 2 };
+const EMPTY_FORM: FormState = { name: '', email: '', role: '', phone: '', password: '', perfil: 'assistente' };
 
 /**
  * Chama a Edge Function `admin-users`, que roda com service role e revalida
@@ -85,7 +87,7 @@ export default function UsersSettings() {
           name: form.name,
           role: form.role,
           phone: form.phone,
-          permissionLevel: form.permissionLevel,
+          perfil: form.perfil,
           password: form.password || undefined,
         });
       } else {
@@ -94,7 +96,7 @@ export default function UsersSettings() {
           email: form.email,
           role: form.role,
           phone: form.phone,
-          permissionLevel: form.permissionLevel,
+          perfil: form.perfil,
           password: form.password,
         });
       }
@@ -156,7 +158,7 @@ export default function UsersSettings() {
                 <th className="text-left font-medium px-3 py-2">E-mail</th>
                 <th className="text-left font-medium px-3 py-2">Cargo</th>
                 <th className="text-left font-medium px-3 py-2">WhatsApp</th>
-                <th className="text-left font-medium px-3 py-2">Nível</th>
+                <th className="text-left font-medium px-3 py-2">Perfil</th>
                 <th className="w-20"></th>
               </tr>
             </thead>
@@ -164,7 +166,7 @@ export default function UsersSettings() {
               {users.map(u => (
                 <tr key={u.id} className="border-t border-zinc-900 text-zinc-300 hover:bg-zinc-900/30">
                   <td className="px-3 py-2 font-medium flex items-center gap-1.5">
-                    {Number(u.preferences?.permissionLevel) === 1 && (
+                    {u.perfil === 'administrador' && (
                       <ShieldCheck size={12} className="text-blue-400 shrink-0" />
                     )}
                     {u.name}
@@ -175,7 +177,7 @@ export default function UsersSettings() {
                     {u.phone ? formatPhoneDisplay(u.phone) : 'não cadastrado'}
                   </td>
                   <td className="px-3 py-2 text-zinc-500">
-                    {Number(u.preferences?.permissionLevel) === 1 ? 'Admin' : 'Membro'}
+                    {rotuloPerfil(u.perfil)}
                   </td>
                   <td className="px-3 py-2">
                     <div className="flex items-center gap-1 justify-end">
@@ -187,7 +189,7 @@ export default function UsersSettings() {
                           role: u.role || '',
                           phone: u.phone ? formatPhoneDisplay(u.phone).replace('+55 ', '') : '',
                           password: '',
-                          permissionLevel: Number(u.preferences?.permissionLevel) || 2,
+                          perfil: u.perfil || 'assistente',
                         })}
                         className="p-1.5 text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 rounded transition-colors"
                         title="Editar"
@@ -279,15 +281,21 @@ export default function UsersSettings() {
                   />
                 </div>
                 <div className="flex flex-col gap-1">
-                  <label className={labelClass}>Nível de Permissão</label>
-                  <select
-                    value={form.permissionLevel}
-                    onChange={(e) => setForm({ ...form, permissionLevel: Number(e.target.value) })}
-                    className={inputClass}
-                  >
-                    <option value={1}>Administrador</option>
-                    <option value={2}>Membro</option>
-                  </select>
+                  <label className={labelClass}>Perfil de acesso</label>
+                  {/* O administrador é único e não é trocado por aqui. */}
+                  {form.perfil === 'administrador' ? (
+                    <input value="Administrador" disabled className={`${inputClass} disabled:opacity-50`} />
+                  ) : (
+                    <select
+                      value={form.perfil}
+                      onChange={(e) => setForm({ ...form, perfil: e.target.value })}
+                      className={inputClass}
+                    >
+                      {PERFIS.filter(p => (PERFIS_CONFIGURAVEIS as string[]).includes(p.id)).map(p => (
+                        <option key={p.id} value={p.id}>{p.label}</option>
+                      ))}
+                    </select>
+                  )}
                 </div>
               </div>
 

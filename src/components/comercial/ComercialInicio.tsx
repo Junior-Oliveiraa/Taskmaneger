@@ -11,33 +11,9 @@ import {
 } from '../../lib/comercialApi';
 import { Campo, CrmButton, inputCls, selectCls } from '../crm/CrmShared';
 
-export type ComercialTab = 'inicio' | 'propostas' | 'vendas' | 'vendas_dashboard' | 'historico';
-
-const ABAS: { id: ComercialTab; label: string }[] = [
-  { id: 'inicio',           label: 'Início' },
-  { id: 'propostas',        label: 'Propostas' },
-  { id: 'vendas',           label: 'Tabela de Vendas' },
-  { id: 'vendas_dashboard', label: 'Dashboard' },
-  { id: 'historico',        label: 'Histórico' },
-];
-
-export function ComercialTabBar({ tab, onChange }: { tab: ComercialTab; onChange: (tab: ComercialTab) => void }) {
-  return (
-    <div className="flex items-center gap-4 xl:gap-6 view-pad-x pt-4 short:pt-2.5 border-b border-zinc-800/60 shrink-0 overflow-x-auto no-scrollbar bg-[#08080a]">
-      {ABAS.map(a => (
-        <button
-          key={a.id}
-          onClick={() => onChange(a.id)}
-          className={`pb-3 short:pb-2 text-sm short:text-[13px] font-semibold whitespace-nowrap shrink-0 transition-colors border-b-2 ${
-            tab === a.id ? 'text-zinc-100 border-blue-500' : 'text-zinc-500 border-transparent hover:text-zinc-300'
-          }`}
-        >
-          {a.label}
-        </button>
-      ))}
-    </div>
-  );
-}
+// A barra de abas mora em ComercialTabs.tsx (carregada junto com o app).
+export type { ComercialTab } from './ComercialTabs';
+export { ComercialTabBar } from './ComercialTabs';
 
 type FormTipo = ComercialMovimentoTipo | 'proposta';
 
