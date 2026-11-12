@@ -1,5 +1,4 @@
 import React from 'react';
-import type { PropostaParcela } from '../../lib/comercialApi';
 
 // Primitivos visuais da ficha de proposta, compartilhados pelo modal e pelo
 // editor de fluxo de pagamento.
@@ -64,31 +63,6 @@ export function ValorInput({ value, onChange, prefixo, sufixo, compacto, autoFoc
         }}
       />
       {sufixo && <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[12px] text-zinc-500">{sufixo}</span>}
-    </div>
-  );
-}
-
-export function AtualizacaoToggle({ value, onChange }: {
-  value: PropostaParcela['atualizacao'];
-  onChange: (v: PropostaParcela['atualizacao']) => void;
-}) {
-  const opcoes: PropostaParcela['atualizacao'][] = ['FIXA', 'INCC'];
-  return (
-    <div role="radiogroup" className="grid grid-cols-2 h-9 p-0.5 rounded-lg border border-zinc-800 bg-zinc-950/70">
-      {opcoes.map(o => (
-        <button
-          key={o}
-          type="button"
-          role="radio"
-          aria-checked={value === o}
-          onClick={() => onChange(o)}
-          className={`rounded-md text-[10px] font-semibold tracking-wide transition-colors ${
-            value === o ? 'bg-zinc-800 text-zinc-100 shadow-sm' : 'text-zinc-500 hover:text-zinc-300'
-          }`}
-        >
-          {o}
-        </button>
-      ))}
     </div>
   );
 }

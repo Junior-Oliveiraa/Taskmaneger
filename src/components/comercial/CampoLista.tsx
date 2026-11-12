@@ -13,6 +13,8 @@ export interface OpcaoLista {
   tomDetalhe?: 'verde' | 'ambar' | 'neutro';
   /** Uso interno: item "Adicionar …" do SelectLista. */
   criar?: boolean;
+  /** Mostrado no campo fechado no lugar do label (ex.: "M" para Mensal). */
+  curto?: string;
 }
 
 const normalizar = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
@@ -136,7 +138,7 @@ function Vazio({ children }: { children: React.ReactNode }) {
  * Escolha entre opções. Ganha busca quando a lista é longa. Com `criar`, o que
  * foi digitado na busca e não existe na lista pode ser adicionado como novo.
  */
-export function SelectLista({ value, onChange, opcoes, placeholder = 'Selecione…', disabled, textoVazio = 'Nenhuma opção.', criar }: {
+export function SelectLista({ value, onChange, opcoes, placeholder = 'Selecione…', disabled, textoVazio = 'Nenhuma opção.', criar, compacto, semSeta }: {
   value: string;
   onChange: (v: string) => void;
   opcoes: OpcaoLista[];
@@ -145,6 +147,10 @@ export function SelectLista({ value, onChange, opcoes, placeholder = 'Selecione�
   textoVazio?: string;
   /** Rótulo do item de criação, ex.: "Adicionar imobiliária". */
   criar?: string;
+  /** Campo estreito (células de tabela): menos respiro lateral. */
+  compacto?: boolean;
+  /** Sem a seta: para campos de uma letra, onde o próprio campo já indica o clique. */
+  semSeta?: boolean;
 }) {
   const id = useId();
   const gatilhoRef = useRef<HTMLButtonElement>(null);
@@ -212,13 +218,14 @@ export function SelectLista({ value, onChange, opcoes, placeholder = 'Selecione�
         aria-controls={`${id}-lista`}
         onClick={() => (aberto ? fechar() : abrir())}
         onKeyDown={teclado}
-        className={`${gatilhoCls} flex items-center gap-2 text-left ${aberto ? 'border-blue-500/70 ring-2 ring-blue-500/15' : ''}`}
+        title={atual?.curto ? atual.label : undefined}
+        className={`${gatilhoCls} flex items-center text-left ${compacto ? 'gap-1 px-2' : 'gap-2'} ${aberto ? 'border-blue-500/70 ring-2 ring-blue-500/15' : ''}`}
       >
-        <span className={`truncate flex-1 ${atual ? '' : 'text-zinc-500'}`}>{atual?.label ?? placeholder}</span>
+        <span className={`truncate flex-1 ${semSeta ? 'text-center' : ''} ${atual ? '' : 'text-zinc-500'}`}>{atual ? (atual.curto ?? atual.label) : placeholder}</span>
         {atual?.detalhe && (
           <span className={`shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-medium ${TONS[atual.tomDetalhe ?? 'neutro']}`}>{atual.detalhe}</span>
         )}
-        <ChevronDown size={14} className={`shrink-0 text-zinc-500 transition-transform ${aberto ? 'rotate-180' : ''}`} />
+        {!semSeta && <ChevronDown size={14} className={`shrink-0 text-zinc-500 transition-transform ${aberto ? 'rotate-180' : ''}`} />}
       </button>
       {aberto && (
         <Menu

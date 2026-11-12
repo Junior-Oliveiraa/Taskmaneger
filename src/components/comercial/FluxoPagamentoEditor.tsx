@@ -1,7 +1,7 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  ArrowDownToLine, Copy, CornerDownRight, MoreHorizontal, Plus, RotateCcw, Scissors, SlidersHorizontal, Trash2, X,
+  ArrowDownToLine, Check, Copy, CornerDownRight, MoreHorizontal, Plus, RotateCcw, Scissors, SlidersHorizontal, Trash2, X,
 } from 'lucide-react';
 import type { PropostaParcela } from '../../lib/comercialApi';
 import {
@@ -9,7 +9,7 @@ import {
   ultimoVencimento, vencimentoPadrao,
 } from '../../lib/propostaFluxo';
 import { SelectLista, useCliqueFora, usePosicao } from './CampoLista';
-import { AtualizacaoToggle, ValorInput, campoCls, mesCurto, moedaBr, numeroBr, percentualBr } from './PropostaCampos';
+import { ValorInput, campoCls, mesCurto, moedaBr, percentualBr } from './PropostaCampos';
 import SeletorData from './SeletorData';
 
 // ── Modelo de linha ─────────────────────────────────────────────────────────
@@ -62,8 +62,8 @@ const paraParcela = (l: LinhaFluxo): ParcelaFluxo => ({
 const pluralPeriodo = (meses: number) => PERIODICIDADES.find(p => p.meses === meses)?.plural ?? `a cada ${meses} meses`;
 const dataBr = (iso: string) => (iso ? iso.split('-').reverse().join('/') : '—');
 
-// Descrição, Qtd., Periodicidade, Parcela, Total, 1º venc., Atualização, %, ações.
-const GRADE = 'grid grid-cols-[minmax(130px,1fr)_56px_112px_116px_116px_128px_84px_48px_28px] gap-2 items-center';
+// Descrição, Qtd., Parcela, %, Periodicidade, 1º venc., Total, ações.
+const GRADE = 'grid grid-cols-[minmax(140px,1fr)_60px_116px_84px_52px_128px_112px_28px] gap-2 items-center';
 
 // ── Menu de ações da linha ──────────────────────────────────────────────────
 
@@ -188,6 +188,9 @@ function Chip({ children, onClick, ativo }: { children: React.ReactNode; onClick
     </button>
   );
 }
+
+// Na célula só a inicial (U, M, B, T, S, A); o nome inteiro fica na lista e no balão.
+const OPCOES_PERIODICIDADE = PERIODICIDADES.map(p => ({ value: String(p.meses), label: p.label, curto: p.label[0] }));
 
 const opcoesPeriodicidade = PERIODICIDADES.filter(p => p.meses > 0).map(p => ({ value: String(p.meses), label: p.label }));
 
@@ -316,8 +319,6 @@ function AssistenteQuantidade({ linha, onAplicar, onCancelar }: {
 interface Props {
   linhas: LinhaFluxo[];
   onChange: (ls: LinhaFluxo[]) => void;
-  /** % e % acumulado de cada linha, na mesma ordem (de calcularAutorizacao). */
-  percentuais: { percentual: number; acumulado: number }[];
   contratado: number;
   /** Valor que o fluxo deve somar. */
   alvo: number;
@@ -333,17 +334,70 @@ interface Props {
 }
 
 export default function FluxoPagamentoEditor({
-  linhas, onChange, percentuais, contratado, alvo, alvoManual, onAlvo, valorTabela, dataContrato, origem, modificado, onRestaurar,
+  linhas, onChange, contratado, alvo, alvoManual, onAlvo, valorTabela, dataContrato, origem, modificado, onRestaurar,
 }: Props) {
   const [assistente, setAssistente] = useState<{ id: string; tipo: TipoAssistente } | null>(null);
   // Total da linha no momento em que a quantidade começou a ser digitada: assim
   // "6" → "60" redistribui sempre o mesmo total, sem acumular arredondamento.
   const totalNoFoco = useRef<Record<string, number>>({});
 
-  const alterar = (id: string, campos: Partial<LinhaFluxo>) => onChange(linhas.map(l => (l.id === id ? { ...l, ...campos } : l)));
+  // Layout pela largura real do editor (não da janela): o resumo lateral e o
+  // tamanho do modal mudam o espaço disponível.
+  const caixaRef = useRef<HTMLDivElement>(null);
+  const [modo, setModo] = useState<'largo' | 'medio' | 'estreito'>('largo');
+  useLayoutEffect(() => {
+    const el = caixaRef.current;
+    if (!el) return;
+    const medir = () => {
+      const w = el.clientWidth;
+      setModo(w >= 800 ? 'largo' : w >= 500 ? 'medio' : 'estreito');
+    };
+    medir();
+    const ro = new ResizeObserver(medir);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // Série que absorve as diferenças: mexer em qualquer outra mantém o total
+  // fechado no valor da unidade. null = ajuste manual pelo saldo.
+  const [compensarId, setCompensarId] = useState<string | null>(null);
+  const compensacao = linhas.find(l => l.id === compensarId) ?? null;
+
+  const compensar = (ls: LinhaFluxo[], id: string | null, origem?: string): LinhaFluxo[] => {
+    const alvoL = id ? ls.find(l => l.id === id) : null;
+    if (!alvoL || alvo <= 0) return ls;
+    const outras = ls.filter(l => l.id !== id);
+    const restante = centavos(alvo - outras.reduce((t, l) => t + totalLinha(l), 0));
+    const q = alvoL.quantidade || 1;
+    // Parcela para baixo; os centavos que não dividem vão para um pagamento único.
+    const unit = Math.max(0, Math.floor((restante / q) * 100 + 1e-6) / 100);
+    const sobra = centavos(restante - unit * q);
+    const unica = sobra >= 0.01 && unit > 0 ? outras.find(l => linhaUsada(l) && l.quantidade === 1 && l.id !== origem) : undefined;
+    return ls.map(l => {
+      if (l.id === id) return { ...l, quantidade: q, valorUnitario: unit || null };
+      if (unica && l.id === unica.id) return { ...l, valorUnitario: centavos((l.valorUnitario ?? 0) + sobra) };
+      return l;
+    });
+  };
+
+  // origem: linha editada diretamente. Editar a própria série de compensação não a recalcula.
+  const emitir = (ls: LinhaFluxo[], origem?: string) => {
+    const id = compensarId && ls.some(l => l.id === compensarId) ? compensarId : null;
+    if (compensarId && !id) setCompensarId(null);
+    onChange(id && origem !== id ? compensar(ls, id, origem) : ls);
+  };
+
+  // Valor da unidade mudou: a compensação reequilibra sozinha.
+  useEffect(() => {
+    if (!compensacao) return;
+    const novas = compensar(linhas, compensacao.id);
+    if (novas.some((l, i) => l.valorUnitario !== linhas[i].valorUnitario)) onChange(novas);
+  }, [alvo]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const alterar = (id: string, campos: Partial<LinhaFluxo>) => emitir(linhas.map(l => (l.id === id ? { ...l, ...campos } : l)), id);
   const substituir = (id: string, novas: LinhaFluxo[]) => {
     const i = linhas.findIndex(l => l.id === id);
-    onChange([...linhas.slice(0, i), ...novas, ...linhas.slice(i + 1)]);
+    emitir([...linhas.slice(0, i), ...novas, ...linhas.slice(i + 1)]);
     setAssistente(null);
   };
 
@@ -362,14 +416,14 @@ export default function FluxoPagamentoEditor({
     const q = periodica.quantidade ?? 1;
     const porParcela = Math.trunc((saldo / q) * 100) / 100;
     const sobra = centavos(saldo - porParcela * q);
-    onChange(linhas.map(l => {
+    emitir(linhas.map(l => {
       if (l.id === periodica.id) return { ...l, valorUnitario: centavos((l.valorUnitario ?? 0) + porParcela) };
       // Os centavos que não dividem por igual vão para o pagamento único.
       if (unica && l.id === unica.id && Math.abs(sobra) >= 0.01) return { ...l, valorUnitario: centavos((l.valorUnitario ?? 0) + sobra) };
       return l;
     }));
   };
-  const parcelaFinalDoSaldo = () => onChange([...linhas, novaLinha({
+  const parcelaFinalDoSaldo = () => emitir([...linhas, novaLinha({
     descricao: 'Parcela final',
     valorUnitario: saldo,
     primeiroVencimento: ultimoDoFluxo ? somarMeses(ultimoDoFluxo, 1) : '',
@@ -390,9 +444,9 @@ export default function FluxoPagamentoEditor({
   const executar = (l: LinhaFluxo, acao: string) => {
     if (acao === 'duplicar') {
       const i = linhas.findIndex(x => x.id === l.id);
-      onChange([...linhas.slice(0, i + 1), novaLinha({ ...l }), ...linhas.slice(i + 1)]);
+      emitir([...linhas.slice(0, i + 1), novaLinha({ ...l }), ...linhas.slice(i + 1)]);
     } else if (acao === 'remover') {
-      onChange(linhas.filter(x => x.id !== l.id));
+      emitir(linhas.filter(x => x.id !== l.id));
       if (assistente?.id === l.id) setAssistente(null);
     } else {
       setAssistente({ id: l.id, tipo: acao as TipoAssistente });
@@ -405,7 +459,7 @@ export default function FluxoPagamentoEditor({
       <div className="rounded-xl border border-zinc-800/80 bg-zinc-900/30 p-3">
         <div className="flex flex-wrap items-end gap-x-6 gap-y-3">
           <label className="flex flex-col gap-1 w-48">
-            <span className="text-[11px] text-zinc-500">Valor da proposta</span>
+            <span className="text-[11px] text-zinc-500">Valor da unidade</span>
             <ValorInput value={alvo || null} onChange={v => onAlvo(v ?? 0)} prefixo="R$" />
           </label>
           <div className="pb-2 text-[12px] text-zinc-500">
@@ -416,6 +470,21 @@ export default function FluxoPagamentoEditor({
               <button type="button" onClick={() => onAlvo(null)} className="ml-2 text-blue-400 hover:text-blue-300">usar valor de tabela</button>
             ) : null}
           </div>
+          <label className="flex flex-col gap-1 w-56">
+            <span className="text-[11px] text-zinc-500">Compensar diferenças em</span>
+            <SelectLista
+              value={compensarId ?? ''}
+              onChange={v => {
+                const id = v || null;
+                setCompensarId(id);
+                if (id) onChange(compensar(linhas, id));
+              }}
+              opcoes={[
+                { value: '', label: 'Ajuste manual' },
+                ...usadas.map(l => ({ value: l.id, label: l.descricao || 'Sem descrição', detalhe: `${l.quantidade}×` })),
+              ]}
+            />
+          </label>
           <div className="ml-auto flex items-end gap-6 pb-1.5">
             <div className="text-right">
               <p className="text-[11px] text-zinc-500">Distribuído no fluxo</p>
@@ -433,7 +502,7 @@ export default function FluxoPagamentoEditor({
         {temSaldo && (
           <div className="mt-3 pt-3 border-t border-zinc-800/70 flex flex-wrap items-center gap-2">
             <span className="text-[12px] text-zinc-400 mr-1">
-              {saldo > 0 ? `Faltam ${moedaBr(saldo)} para fechar a proposta.` : `O fluxo passou ${moedaBr(-saldo)} do valor da proposta.`}
+              {saldo > 0 ? `Faltam ${moedaBr(saldo)} para fechar 100%.` : `O fluxo passou ${moedaBr(-saldo)} do valor da unidade.`}
             </span>
             {saldo > 0 && (
               <AcaoSaldo onClick={parcelaFinalDoSaldo}>Criar parcela final{ultimoDoFluxo && ` (${mesCurto(somarMeses(ultimoDoFluxo, 1))})`}</AcaoSaldo>
@@ -445,7 +514,7 @@ export default function FluxoPagamentoEditor({
               <AcaoSaldo onClick={ajustarNaUnica}>{saldo > 0 ? 'Somar' : 'Descontar'} em {unica.descricao || 'pagamento único'}</AcaoSaldo>
             )}
             {contratado > 0 && (
-              <AcaoSaldo onClick={() => onAlvo(contratado)} discreta>Aceitar {moedaBr(contratado)} como valor da proposta</AcaoSaldo>
+              <AcaoSaldo onClick={() => onAlvo(contratado)} discreta>Usar {moedaBr(contratado)} como valor da unidade</AcaoSaldo>
             )}
           </div>
         )}
@@ -466,7 +535,7 @@ export default function FluxoPagamentoEditor({
           )}
           <button
             type="button"
-            onClick={() => onChange([...linhas, novaLinha({ periodicidade: 1, quantidade: null, primeiroVencimento: vencimentoPadrao(dataContrato, 1) })])}
+            onClick={() => emitir([...linhas, novaLinha({ periodicidade: 1, quantidade: null, primeiroVencimento: vencimentoPadrao(dataContrato, 1) })])}
             className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-zinc-300 border border-zinc-800 bg-zinc-900 hover:bg-zinc-800"
           >
             <Plus size={12} /> Adicionar parcela
@@ -474,109 +543,215 @@ export default function FluxoPagamentoEditor({
         </div>
       </div>
 
-      {/* Tabela */}
-      <div className="overflow-x-auto scrollbar-minimal -mx-1 px-1">
-        <div className="min-w-[880px] rounded-xl border border-zinc-800/80 overflow-hidden">
+      {/* Parcelas: o layout segue a largura disponível, nunca rola na horizontal. */}
+      <div ref={caixaRef} className="rounded-xl border border-zinc-800/80 overflow-hidden">
+        {modo === 'largo' && (
           <div className={`${GRADE} px-3 h-9 bg-zinc-900/50 border-b border-zinc-800/80 text-[10px] font-semibold uppercase tracking-wider text-zinc-500`}>
-            <span>Descrição</span>
+            <span className="pl-3">Descrição</span>
             <span className="text-right">Qtd.</span>
-            <span>Periodicidade</span>
             <span className="text-right">Parcela</span>
-            <span className="text-right">Total</span>
+            <span className="text-right">% unidade</span>
+            <span title="Periodicidade: Única, Mensal, Bimestral, Trimestral, Semestral, Anual">Per.</span>
             <span>1º vencimento</span>
-            <span>Correção</span>
-            <span className="text-right">%</span>
+            <span className="text-right">Total</span>
             <span />
           </div>
+        )}
 
-          <div className="divide-y divide-zinc-800/50">
-            {linhas.map((l, i) => {
-              const usada = linhaUsada(l);
-              const q = l.quantidade ?? 0;
-              const fim = q > 1 ? ultimoVencimento(paraParcela(l)) : '';
-              const ativo = assistente?.id === l.id;
-              return (
-                <div key={l.id} className={ativo ? 'bg-blue-500/[0.03]' : ''}>
-                  <div className={`${GRADE} px-3 py-2 transition-opacity ${usada || ativo ? '' : 'opacity-60 focus-within:opacity-100 hover:opacity-100'}`}>
+        <div className="divide-y divide-zinc-800/50">
+          {linhas.map((l, i) => {
+            const usada = linhaUsada(l);
+            const q = l.quantidade ?? 0;
+            const fim = q > 1 ? ultimoVencimento(paraParcela(l)) : '';
+            const ativo = assistente?.id === l.id;
+            const resumo = [fim && `${q}× ${pluralPeriodo(l.periodicidade)} · até ${mesCurto(fim)}`].filter(Boolean).join(' · ');
+
+            const barra = <span className={`w-1 self-stretch min-h-[24px] shrink-0 rounded-full ${usada ? CORES_FLUXO[i % CORES_FLUXO.length] : 'bg-zinc-800'}`} />;
+            const descricao = <input className={campoCls} value={l.descricao} onChange={e => alterar(l.id, { descricao: e.target.value })} placeholder="Descrição" />;
+            const quantidade = (
+              <input
+                type="number" min={1} step={1} className={`${campoCls} text-right tabular-nums px-2`} value={l.quantidade ?? ''} placeholder="—"
+                title="Alterar a quantidade mantém o total da linha"
+                onFocus={() => { totalNoFoco.current[l.id] = totalLinha(l); }}
+                onChange={e => {
+                  const nq = e.target.value ? Math.max(0, Math.floor(Number(e.target.value))) : null;
+                  const base = totalNoFoco.current[l.id] ?? totalLinha(l);
+                  alterar(l.id, {
+                    quantidade: nq,
+                    // Mesma soma em outra quantidade de parcelas.
+                    ...(nq && base > 0 ? { valorUnitario: redistribuir(base, nq) } : {}),
+                    ...(nq && nq > 1 && l.periodicidade === 0 ? { periodicidade: 1 } : {}),
+                  });
+                }}
+              />
+            );
+            const parcela = <ValorInput compacto value={l.valorUnitario} onChange={v => alterar(l.id, { valorUnitario: v })} />;
+            const percentual = (
+              <PercentualInput
+                value={usada && alvo > 0 ? (totalLinha(l) / alvo) * 100 : null}
+                desabilitado={alvo <= 0}
+                onChange={pct => alterar(l.id, {
+                  // % da unidade → total da série → parcela, mantendo a quantidade.
+                  valorUnitario: pct ? redistribuir(centavos((alvo * pct) / 100), l.quantidade || 1) : null,
+                  quantidade: l.quantidade || 1,
+                })}
+              />
+            );
+            const ehCompensacao = l.id === compensarId;
+            const periodo = (
+              <SelectLista
+                compacto
+                semSeta
+                value={String(l.periodicidade)}
+                onChange={v => alterar(l.id, { periodicidade: Number(v) })}
+                opcoes={OPCOES_PERIODICIDADE}
+              />
+            );
+            const vencimento = <SeletorData compacto value={l.primeiroVencimento} onChange={v => alterar(l.id, { primeiroVencimento: v })} />;
+            const total = (
+              <span className={`text-[13px] tabular-nums ${usada ? 'text-zinc-100 font-semibold' : 'text-zinc-600'}`}>
+                {usada ? moedaBr(totalLinha(l)) : '—'}
+              </span>
+            );
+            const menu = <MenuLinha acoes={acoesDaLinha(l)} onEscolher={a => executar(l, a)} />;
+            const apagada = usada || ativo ? '' : 'opacity-60 focus-within:opacity-100 hover:opacity-100';
+            const selo = ehCompensacao && <span className="ml-1 rounded bg-blue-500/15 px-1 py-px text-[9px] font-semibold uppercase tracking-wide text-blue-300">compensa</span>;
+
+            return (
+              <div key={l.id} className={ativo ? 'bg-blue-500/[0.03]' : ''}>
+                {modo === 'largo' ? (
+                  <div className={`${GRADE} px-3 py-2 transition-opacity ${apagada}`}>
                     <div className="flex items-center gap-2 min-w-0">
-                      <span className={`w-1 self-stretch min-h-[24px] shrink-0 rounded-full ${usada ? CORES_FLUXO[i % CORES_FLUXO.length] : 'bg-zinc-800'}`} />
+                      {barra}
                       <div className="min-w-0 flex-1">
-                        <input className={campoCls} value={l.descricao} onChange={e => alterar(l.id, { descricao: e.target.value })} placeholder="Descrição" />
-                        {fim && (
-                          <p className="mt-1 text-[10px] text-zinc-500 truncate">
-                            {q}× {pluralPeriodo(l.periodicidade)} · até {mesCurto(fim)}
-                          </p>
-                        )}
+                        {descricao}
+                        {(resumo || selo) && <p className="mt-1 text-[10px] text-zinc-500 truncate">{resumo}{selo}</p>}
                       </div>
                     </div>
-                    <input
-                      type="number" min={1} step={1} className={`${campoCls} text-right tabular-nums px-2`} value={l.quantidade ?? ''} placeholder="—"
-                      title="Alterar a quantidade mantém o total da linha"
-                      onFocus={() => { totalNoFoco.current[l.id] = totalLinha(l); }}
-                      onChange={e => {
-                        const nq = e.target.value ? Math.max(0, Math.floor(Number(e.target.value))) : null;
-                        const base = totalNoFoco.current[l.id] ?? totalLinha(l);
-                        alterar(l.id, {
-                          quantidade: nq,
-                          // Mesma soma em outra quantidade de parcelas.
-                          ...(nq && base > 0 ? { valorUnitario: redistribuir(base, nq) } : {}),
-                          ...(nq && nq > 1 && l.periodicidade === 0 ? { periodicidade: 1 } : {}),
-                        });
-                      }}
-                    />
-                    <SelectLista
-                      value={String(l.periodicidade)}
-                      onChange={v => alterar(l.id, { periodicidade: Number(v) })}
-                      opcoes={PERIODICIDADES.map(p => ({ value: String(p.meses), label: p.label }))}
-                    />
-                    <ValorInput compacto value={l.valorUnitario} onChange={v => alterar(l.id, { valorUnitario: v })} />
-                    <ValorInput
-                      compacto
-                      value={usada ? totalLinha(l) : null}
-                      onChange={v => alterar(l.id, { valorUnitario: v ? redistribuir(v, l.quantidade || 1) : null, quantidade: l.quantidade || 1 })}
-                    />
-                    <SeletorData compacto value={l.primeiroVencimento} onChange={v => alterar(l.id, { primeiroVencimento: v })} />
-                    <AtualizacaoToggle value={l.atualizacao} onChange={v => alterar(l.id, { atualizacao: v })} />
-                    <div className="text-right tabular-nums leading-tight" title={`Acumulado: ${percentualBr(percentuais[i]?.acumulado ?? 0)}`}>
-                      <div className={`text-[12px] ${usada ? 'text-zinc-300' : 'text-zinc-600'}`}>{numeroBr(percentuais[i]?.percentual ?? 0)}</div>
-                      <div className="text-[10px] text-zinc-600">Σ {numeroBr(percentuais[i]?.acumulado ?? 0)}</div>
-                    </div>
-                    <MenuLinha acoes={acoesDaLinha(l)} onEscolher={a => executar(l, a)} />
+                    {quantidade}{parcela}{percentual}{periodo}{vencimento}
+                    <div className="text-right">{total}</div>
+                    {menu}
                   </div>
+                ) : (
+                  <div className={`px-3 py-3 space-y-2.5 transition-opacity ${apagada}`}>
+                    <div className="flex items-center gap-2">
+                      {barra}
+                      <div className="min-w-0 flex-1">{descricao}</div>
+                      <div className="shrink-0 text-right leading-tight pl-1">
+                        {total}
+                        {(resumo || selo) && <p className="text-[10px] text-zinc-500">{resumo}{selo}</p>}
+                      </div>
+                      {menu}
+                    </div>
+                    <div className={`grid gap-2 pl-3 ${modo === 'medio' ? 'grid-cols-[64px_minmax(0,1fr)_88px_52px_minmax(0,1fr)]' : 'grid-cols-2'}`}>
+                      <Rotulo texto="Qtd.">{quantidade}</Rotulo>
+                      <Rotulo texto="Parcela">{parcela}</Rotulo>
+                      <Rotulo texto="% unidade">{percentual}</Rotulo>
+                      <Rotulo texto="Per.">{periodo}</Rotulo>
+                      <Rotulo texto="1º vencimento">{vencimento}</Rotulo>
+                    </div>
+                  </div>
+                )}
 
-                  {ativo && assistente.tipo === 'ato' && (
-                    <AssistenteAto linha={l} dataContrato={dataContrato} onAplicar={ls => substituir(l.id, ls)} onCancelar={() => setAssistente(null)} />
-                  )}
-                  {ativo && assistente.tipo === 'final' && (
-                    <AssistenteFinal linha={l} onAplicar={ls => substituir(l.id, ls)} onCancelar={() => setAssistente(null)} />
-                  )}
-                  {ativo && assistente.tipo === 'quantidade' && (
-                    <AssistenteQuantidade linha={l} onAplicar={ls => substituir(l.id, ls)} onCancelar={() => setAssistente(null)} />
-                  )}
-                </div>
-              );
-            })}
-            {linhas.length === 0 && (
-              <p className="px-3 py-6 text-center text-[12px] text-zinc-500">Nenhuma parcela. Use “Adicionar parcela”.</p>
-            )}
-          </div>
-
-          <div className={`${GRADE} px-3 h-11 bg-zinc-900/40 border-t border-zinc-800/80`}>
-            <span className="text-[12px] font-semibold text-zinc-300">
-              Total
-              <span className="ml-2 font-normal text-zinc-500">
-                {usadas.length} {usadas.length === 1 ? 'linha' : 'linhas'}
-                {ultimoDoFluxo && ` · último vencimento ${mesCurto(ultimoDoFluxo)}`}
-              </span>
-            </span>
-            <span /><span /><span />
-            <span className="text-right text-[13px] font-semibold tabular-nums text-amber-200">{numeroBr(contratado)}</span>
-            <span /><span />
-            <span className="text-right text-[12px] tabular-nums text-zinc-400">{contratado > 0 ? '100,00' : '—'}</span>
-            <span />
-          </div>
+                {ativo && assistente.tipo === 'ato' && (
+                  <AssistenteAto linha={l} dataContrato={dataContrato} onAplicar={ls => substituir(l.id, ls)} onCancelar={() => setAssistente(null)} />
+                )}
+                {ativo && assistente.tipo === 'final' && (
+                  <AssistenteFinal linha={l} onAplicar={ls => substituir(l.id, ls)} onCancelar={() => setAssistente(null)} />
+                )}
+                {ativo && assistente.tipo === 'quantidade' && (
+                  <AssistenteQuantidade linha={l} onAplicar={ls => substituir(l.id, ls)} onCancelar={() => setAssistente(null)} />
+                )}
+              </div>
+            );
+          })}
+          {linhas.length === 0 && (
+            <p className="px-3 py-6 text-center text-[12px] text-zinc-500">Nenhuma parcela. Use “Adicionar parcela”.</p>
+          )}
         </div>
+
+        <Provas
+          somaSeries={contratado}
+          alvo={alvo}
+          completas={usadas.length > 0 && usadas.every(l => l.descricao.trim() && l.quantidade && l.primeiroVencimento)}
+          semNegativas={linhas.every(l => (l.valorUnitario ?? 0) >= 0)}
+          series={usadas.length}
+          ultimo={ultimoDoFluxo}
+        />
       </div>
+    </div>
+  );
+}
+
+// % com duas casas, digitado como os valores (da direita para a esquerda). Enquanto
+// o campo tem foco vale o que foi digitado; fora dele, o % real que a parcela
+// arredondada produz — assim o número nunca "pula" no meio da digitação.
+function PercentualInput({ value, onChange, desabilitado }: {
+  value: number | null;
+  onChange: (pct: number | null) => void;
+  desabilitado?: boolean;
+}) {
+  const [rascunho, setRascunho] = useState<number | null | undefined>(undefined);
+  const mostrado = rascunho !== undefined ? rascunho : value === null ? null : Math.round(value * 100) / 100;
+  return (
+    <div className="relative">
+      <input
+        inputMode="numeric"
+        disabled={desabilitado}
+        title={desabilitado ? 'Informe o valor da unidade' : 'Fatia do valor da unidade'}
+        className={`${campoCls} text-right tabular-nums pl-2 pr-6`}
+        placeholder="0,00"
+        value={mostrado === null ? '' : mostrado.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+        onBlur={() => setRascunho(undefined)}
+        onChange={e => {
+          const digitos = e.target.value.replace(/\D/g, '');
+          const pct = digitos ? Math.min(100, Number(digitos) / 100) : null;
+          setRascunho(pct);
+          onChange(pct);
+        }}
+      />
+      <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[12px] text-zinc-500">%</span>
+    </div>
+  );
+}
+
+// Provas do fluxo: o que precisa ser verdade para a proposta poder ser salva.
+function Provas({ somaSeries, alvo, completas, semNegativas, series, ultimo }: {
+  somaSeries: number;
+  alvo: number;
+  completas: boolean;
+  semNegativas: boolean;
+  series: number;
+  ultimo: string;
+}) {
+  const somaPct = alvo > 0 ? (somaSeries / alvo) * 100 : 0;
+  const fechaValor = alvo > 0 && Math.abs(centavos(alvo - somaSeries)) < 0.01;
+  const provas: { ok: boolean; rotulo: string; detalhe: string }[] = [
+    { ok: fechaValor, rotulo: 'Soma das séries = valor da unidade', detalhe: `${moedaBr(somaSeries)} de ${moedaBr(alvo)}` },
+    { ok: fechaValor, rotulo: 'Soma dos % = 100%', detalhe: percentualBr(somaPct) },
+    { ok: completas, rotulo: 'Séries com quantidade, valor e 1º vencimento', detalhe: `${series} ${series === 1 ? 'série' : 'séries'}${ultimo ? ` · até ${mesCurto(ultimo)}` : ''}` },
+    { ok: semNegativas, rotulo: 'Nenhuma série negativa', detalhe: semNegativas ? 'ok' : 'revise' },
+  ];
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 px-3 py-3 bg-zinc-900/40 border-t border-zinc-800/80">
+      {provas.map(p => (
+        <div key={p.rotulo} className="flex items-center gap-2 min-w-0 text-[12px]">
+          <span className={`w-4 h-4 shrink-0 rounded-full grid place-items-center ${p.ok ? 'bg-emerald-500/15 text-emerald-300' : 'bg-rose-500/15 text-rose-300'}`}>
+            {p.ok ? <Check size={10} strokeWidth={3} /> : <X size={10} strokeWidth={3} />}
+          </span>
+          <span className={`truncate ${p.ok ? 'text-zinc-400' : 'text-zinc-200'}`}>{p.rotulo}</span>
+          <span className={`ml-auto shrink-0 tabular-nums ${p.ok ? 'text-zinc-500' : 'text-rose-300 font-medium'}`}>{p.detalhe}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function Rotulo({ texto, children }: { texto: string; children: React.ReactNode }) {
+  return (
+    <div className="flex flex-col gap-1 min-w-0">
+      <span className="text-[10px] font-medium uppercase tracking-wider text-zinc-500">{texto}</span>
+      {children}
     </div>
   );
 }

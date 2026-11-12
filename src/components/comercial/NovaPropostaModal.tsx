@@ -18,7 +18,7 @@ import SeletorData from './SeletorData';
 import { Campo, ValorInput, campoCls, mesCurto, moedaBr, numeroBr, percentualBr } from './PropostaCampos';
 import FluxoPagamentoEditor, { CORES_FLUXO, LinhaFluxo, linhaUsada, linhasGenericas, novaLinha } from './FluxoPagamentoEditor';
 import { PERIODICIDADES, fluxoDaTabela } from '../../lib/propostaFluxo';
-import { fetchSiengeCalculoRegras, fetchSiengeValidacoes } from '../../lib/api';
+import { fetchSiengeCalculoRegras } from '../../lib/api';
 
 const SITUACOES_PROPOSTA: SiengeVendaSituacao[] = ['disponivel', 'reservado'];
 
@@ -97,9 +97,8 @@ export default function NovaPropostaModal({ projects, projectDisplays, unidades,
   const leads = useQuery({ queryKey: ['crmLeads'], queryFn: fetchCrmLeads, staleTime: 30_000 }).data ?? [];
   // Mesma consulta do painel Desempenho: compartilha o cache.
   const cv = useQuery({ queryKey: ['cvComercial'], queryFn: fetchCvComercial, staleTime: 5 * 60 * 1000, retry: 1 }).data;
-  // Regras e validações da Tabela de Vendas: definem o fluxo padrão de cada unidade.
+  // Regras de cálculo: colunas calculadas da Tabela de Vendas, que também podem ser séries do fluxo.
   const regras = useQuery({ queryKey: ['siengeCalculoRegras'], queryFn: fetchSiengeCalculoRegras }).data ?? [];
-  const validacoes = useQuery({ queryKey: ['siengeValidacoes'], queryFn: fetchSiengeValidacoes }).data ?? [];
 
   const [projectId, setProjectId] = useState('');
   const [torre, setTorre] = useState('Única');
@@ -148,8 +147,8 @@ export default function NovaPropostaModal({ projects, projectDisplays, unidades,
 
   // Fluxo padrão da unidade na Tabela de Vendas; vencimentos a partir da data do contrato.
   const modelo = useMemo(
-    () => (unidadeSel ? fluxoDaTabela(unidadeSel, regras, validacoes, colunas, dataContrato) : null),
-    [unidadeSel, regras, validacoes, colunas, dataContrato]
+    () => (unidadeSel ? fluxoDaTabela(unidadeSel, regras, colunas, dataContrato) : null),
+    [unidadeSel, regras, colunas, dataContrato]
   );
   const chaveModelo = JSON.stringify(modelo);
   const aplicarModelo = () => {
@@ -268,7 +267,8 @@ export default function NovaPropostaModal({ projects, projectDisplays, unidades,
     : !valorTabela ? 'Informe o valor de tabela.'
     : usadas.length === 0 ? 'Preencha ao menos uma parcela.'
     : !parcelasCompletas ? 'Complete descrição, quantidade e 1º vencimento das parcelas com valor.'
-    : temSaldo ? (saldo > 0 ? `Distribua o saldo de ${moedaBr(saldo)} no fluxo de pagamento.` : `O fluxo passou ${moedaBr(-saldo)} do valor da proposta.`)
+    : linhas.some(l => (l.valorUnitario ?? 0) < 0) ? 'Há série com valor negativo no fluxo.'
+    : temSaldo ? (saldo > 0 ? `Faltam ${moedaBr(saldo)} para o fluxo somar 100% do valor da unidade.` : `O fluxo passou ${moedaBr(-saldo)} do valor da unidade.`)
     : null;
 
   const checklist: [string, boolean][] = [
@@ -276,7 +276,7 @@ export default function NovaPropostaModal({ projects, projectDisplays, unidades,
     ['Cliente e telefone', !!cliente.trim() && telefoneValido],
     ['Corretor', !!corretor.trim()],
     ['Valor de tabela', !!valorTabela],
-    ['Fluxo de pagamento fechado', parcelasCompletas && !temSaldo],
+    ['Fluxo soma 100% da unidade', parcelasCompletas && !temSaldo],
   ];
   const concluidos = checklist.filter(([, ok]) => ok).length;
 
@@ -337,7 +337,7 @@ export default function NovaPropostaModal({ projects, projectDisplays, unidades,
     <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4">
       <form
         onSubmit={salvar}
-        className="w-full max-w-7xl h-[94vh] sm:h-[90vh] flex flex-col overflow-hidden rounded-2xl border border-zinc-800/80 bg-[#0e0e11] shadow-2xl shadow-black/60"
+        className="w-full max-w-[1440px] h-[96vh] sm:h-[92vh] flex flex-col overflow-hidden rounded-2xl border border-zinc-800/80 bg-[#0e0e11] shadow-2xl shadow-black/60"
       >
         <header className="flex items-center justify-between gap-3 px-5 sm:px-6 py-4 border-b border-zinc-800/70 shrink-0">
           <div className="flex items-center gap-3 min-w-0">
@@ -357,10 +357,10 @@ export default function NovaPropostaModal({ projects, projectDisplays, unidades,
           </button>
         </header>
 
-        <div className="flex-1 min-h-0 overflow-y-auto lg:overflow-hidden flex flex-col lg:flex-row scrollbar-minimal">
+        <div className="flex-1 min-h-0 overflow-y-auto xl:overflow-hidden flex flex-col xl:flex-row scrollbar-minimal">
           {/* ── Formulário ── */}
-          <div className="flex-1 min-w-0 lg:overflow-y-auto scrollbar-minimal px-5 sm:px-6 py-6 space-y-8">
-            <Secao numero={1} titulo="Imóvel" descricao="Unidades disponíveis ou reservadas na versão principal da Tabela de Vendas.">
+          <div className="flex-1 min-w-0 xl:overflow-y-auto scrollbar-minimal px-5 sm:px-6 py-6 space-y-8">
+            <Secao numero={1} titulo="Imóvel">
               <div className="grid grid-cols-1 sm:grid-cols-6 gap-x-4 gap-y-4">
                 <Campo label="Empreendimento" obrigatorio className="sm:col-span-3">
                   <SelectLista
@@ -449,7 +449,7 @@ export default function NovaPropostaModal({ projects, projectDisplays, unidades,
 
             <div className="h-px bg-zinc-800/60" />
 
-            <Secao numero={3} titulo="Valores de referência" descricao="O valor contratado é a soma do fluxo de pagamento abaixo.">
+            <Secao numero={3} titulo="Valores de referência">
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-4 gap-y-4">
                 <Campo label="Área privativa">
                   <ValorInput value={areaPrivativa} onChange={setAreaPrivativa} sufixo="m²" />
@@ -474,12 +474,10 @@ export default function NovaPropostaModal({ projects, projectDisplays, unidades,
             <Secao
               numero={4}
               titulo="Fluxo de pagamento"
-              descricao="Parte do fluxo padrão da Tabela de Vendas e pode ser remodelado para o cliente pelo menu ⋯ de cada linha."
             >
               <FluxoPagamentoEditor
                 linhas={linhas}
                 onChange={editarFluxo}
-                percentuais={calculo.linhas}
                 contratado={calculo.contratado}
                 alvo={alvo}
                 alvoManual={alvoManual !== null}
@@ -553,7 +551,7 @@ export default function NovaPropostaModal({ projects, projectDisplays, unidades,
           </div>
 
           {/* ── Resumo ── */}
-          <aside className="lg:w-[300px] shrink-0 border-t lg:border-t-0 lg:border-l border-zinc-800/70 bg-[#0b0b0d] lg:overflow-y-auto scrollbar-minimal px-5 sm:px-6 py-6 space-y-6">
+          <aside className="xl:w-[300px] shrink-0 border-t xl:border-t-0 xl:border-l border-zinc-800/70 bg-[#0b0b0d] xl:overflow-y-auto scrollbar-minimal px-5 sm:px-6 py-6 space-y-6">
             <div>
               <p className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Resumo</p>
               <p className="mt-2 text-[13px] font-medium text-zinc-100 truncate">
@@ -654,6 +652,11 @@ export default function NovaPropostaModal({ projects, projectDisplays, unidades,
             <span className="truncate">{pendencia ?? 'Pronta. A proposta entra em "Propostas realizadas".'}</span>
           </span>
           <div className="flex items-center gap-2 shrink-0">
+            {/* Sem o resumo lateral (telas menores), o valor fica sempre à vista aqui. */}
+            <span className="xl:hidden hidden sm:block mr-2 text-right leading-tight">
+              <span className="block text-[10px] text-zinc-500">Contratado</span>
+              <span className="text-[13px] font-semibold tabular-nums text-zinc-100">{moedaBr(calculo.contratado)}</span>
+            </span>
             <CrmButton onClick={onClose}>Cancelar</CrmButton>
             <CrmButton type="submit" variant="primary" disabled={!!pendencia || salvando}>
               <Check size={12} /> {salvando ? 'Salvando…' : 'Salvar proposta'}

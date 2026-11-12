@@ -1,5 +1,5 @@
-import { SiengeCalculoRegra, SiengeTabelaVendaColuna, SiengeTabelaVendaUnidade, SiengeValidacao } from '../types';
-import { REGRA_KEY_PREFIX, calcRegraValor, getColunaBaseValue, getRegraQuantidade } from './siengeVendasTabela';
+import { SiengeCalculoRegra, SiengeTabelaVendaColuna, SiengeTabelaVendaUnidade } from '../types';
+import { calcRegraValor, getRegraQuantidade } from './siengeVendasTabela';
 import type { PropostaParcela } from './comercialApi';
 
 // Fluxo de pagamento da proposta: parte do fluxo padrão da Tabela de Vendas da
@@ -66,89 +66,68 @@ export function ultimoVencimento(p: Pick<ParcelaFluxo, 'primeiroVencimento' | 'q
 export const vencimentoPadrao = (dataContrato: string, periodicidade: number) =>
   dataContrato ? somarMeses(dataContrato, periodicidade) : '';
 
+// Título sem o % e sem parênteses/traços que sobram: "48 MENSAIS (60%)" → "48 MENSAIS".
+const limparTitulo = (titulo: string) =>
+  titulo.replace(/(\d+(?:[.,]\d+)?)\s*%/, '').replace(/[()[\]]/g, ' ').replace(/\s*[-–—:·]\s*$/, '').replace(/\s+/g, ' ').trim();
+
 /**
- * Fluxo padrão da unidade segundo a Tabela de Vendas da versão dela:
- * - os termos (positivos) da validação "valor da unidade" dizem o que compõe o
- *   preço; um termo que é base de regras de cálculo vira as próprias regras
- *   (ex.: custo de construção → 48 mensais + 7 semestrais);
- * - sem essa validação, valem só as regras de divisão;
- * - o que faltar para o valor de tabela entra como "Saldo" (centavos de
- *   arredondamento vão para o pagamento único, se houver).
+ * Regra que calcula o valor do m²: informação para o cliente, não pagamento.
+ * Reconhecida pelo título ou por dividir pela coluna de área.
+ */
+export function ehRegraDeM2(regra: SiengeCalculoRegra, colunas: SiengeTabelaVendaColuna[]): boolean {
+  if (/m²|m2\b|metro/i.test(regra.titulo)) return true;
+  const area = new Set(colunas.filter(c => c.versaoId === regra.versaoId && c.tipo === 'area').map(c => c.key));
+  return !!regra.quantidadeColunaKey && area.has(regra.quantidadeColunaKey);
+}
+
+/**
+ * Fluxo padrão da unidade: cada regra de cálculo da versão dela é uma série
+ * (sinal, mensais, semestrais…), na ordem da Tabela de Vendas, com a
+ * quantidade e o valor de parcela que a própria regra calcula. A única regra
+ * que não entra é a do valor do m².
+ *
+ * Os centavos de arredondamento vão para o primeiro pagamento único, para o
+ * fluxo fechar exatamente no valor de tabela; uma diferença maior (regras que
+ * não somam 100%) fica no saldo, à vista de quem monta a proposta.
  */
 export function fluxoDaTabela(
   unidade: SiengeTabelaVendaUnidade,
   regras: SiengeCalculoRegra[],
-  validacoes: SiengeValidacao[],
   colunas: SiengeTabelaVendaColuna[],
   dataContrato: string,
 ): ParcelaFluxo[] {
-  const regrasVersao = regras
-    .filter(r => r.versaoId === unidade.versaoId && (r.operacao ?? 'dividir') === 'dividir')
+  const series = regras
+    .filter(r => r.versaoId === unidade.versaoId && !ehRegraDeM2(r, colunas))
     .sort((a, b) => a.sortOrder - b.sortOrder);
-  const validacao = validacoes
-    .filter(v => v.versaoId === unidade.versaoId && v.tipo === 'valor_unidade')
-    .sort((a, b) => a.sortOrder - b.sortOrder)[0];
 
-  const deRegra = (r: SiengeCalculoRegra) => {
-    const quantidade = Math.max(1, Math.round(getRegraQuantidade(unidade, r)));
-    return { descricao: r.titulo, quantidade, valorUnitario: centavos(calcRegraValor(unidade, r)) };
-  };
+  const linhas: ParcelaFluxo[] = [];
+  for (const r of series) {
+    // "Dividir" reparte o % em N parcelas; "multiplicar" já dá o valor da série inteira.
+    const dividir = (r.operacao ?? 'dividir') === 'dividir';
+    const quantidade = dividir ? Math.max(1, Math.round(getRegraQuantidade(unidade, r))) : 1;
+    const valorUnitario = centavos(calcRegraValor(unidade, r));
+    if (valorUnitario <= 0) continue;
 
-  const brutas: { descricao: string; quantidade: number; valorUnitario: number }[] = [];
-  const usadas = new Set<string>();
-  if (validacao) {
-    for (const t of validacao.termos) {
-      if (t.sinal === '-') continue;
-      if (t.colunaKey.startsWith(REGRA_KEY_PREFIX)) {
-        const r = regrasVersao.find(x => x.id === t.colunaKey.slice(REGRA_KEY_PREFIX.length));
-        if (r && !usadas.has(r.id)) { usadas.add(r.id); brutas.push(deRegra(r)); }
-        continue;
-      }
-      const filhas = regrasVersao.filter(r => r.colunaBaseKey === t.colunaKey && !usadas.has(r.id));
-      if (filhas.length) {
-        filhas.forEach(r => { usadas.add(r.id); brutas.push(deRegra(r)); });
-        continue;
-      }
-      const valor = centavos(getColunaBaseValue(unidade, t.colunaKey));
-      if (valor <= 0) continue;
-      const label = t.colunaKey === 'valor_tabela' ? 'Valor de tabela' : colunas.find(c => c.versaoId === unidade.versaoId && c.key === t.colunaKey)?.label ?? t.colunaKey;
-      brutas.push({ descricao: label, quantidade: 1, valorUnitario: valor });
-    }
-  } else {
-    regrasVersao.forEach(r => brutas.push(deRegra(r)));
+    // Sem o % e sem a quantidade ("48 Mensais (60%)" → "Mensais"): ela tem campo próprio e pode mudar.
+    const limpo = limparTitulo(r.titulo);
+    const semQtd = limpo.replace(/^\d{1,3}\s*[x×]?\s*/i, '');
+    const descricao = (semQtd || limpo || r.titulo).replace(/^\p{Ll}/u, c => c.toUpperCase());
+    const periodicidade = inferirPeriodicidade(descricao, quantidade);
+    linhas.push({
+      descricao,
+      quantidade,
+      valorUnitario,
+      periodicidade,
+      atualizacao: ehEntrada(descricao) ? 'FIXA' : 'INCC',
+      primeiroVencimento: vencimentoPadrao(dataContrato, periodicidade),
+    });
   }
+  if (!linhas.length) return linhas;
 
-  const linhas: ParcelaFluxo[] = brutas
-    .filter(b => b.valorUnitario > 0)
-    .map((b): ParcelaFluxo => {
-      const periodicidade = inferirPeriodicidade(b.descricao, b.quantidade);
-      return {
-        ...b,
-        periodicidade,
-        atualizacao: ehEntrada(b.descricao) ? 'FIXA' : 'INCC',
-        primeiroVencimento: vencimentoPadrao(dataContrato, periodicidade),
-      };
-    })
-    // Pagamentos únicos primeiro, depois do período mais curto ao mais longo.
-    .sort((a, b) => (a.periodicidade === 0 ? -1 : a.periodicidade) - (b.periodicidade === 0 ? -1 : b.periodicidade));
-
-  const soma = linhas.reduce((s, l) => s + l.quantidade * l.valorUnitario, 0);
+  const soma = linhas.reduce((t, l) => t + l.quantidade * l.valorUnitario, 0);
   const resto = centavos(unidade.valorTabela - soma);
-  if (Math.abs(resto) >= 0.01) {
-    const unica = linhas.find(l => l.quantidade === 1);
-    if (Math.abs(resto) < 5 && unica) {
-      unica.valorUnitario = centavos(unica.valorUnitario + resto);
-    } else if (resto > 0) {
-      linhas.push({
-        descricao: linhas.length ? 'Saldo' : 'Sinal',
-        quantidade: 1,
-        valorUnitario: resto,
-        periodicidade: 0,
-        atualizacao: linhas.length ? 'INCC' : 'FIXA',
-        primeiroVencimento: vencimentoPadrao(dataContrato, 0),
-      });
-    }
-  }
+  const unica = linhas.find(l => l.quantidade === 1);
+  if (unica && Math.abs(resto) >= 0.01 && Math.abs(resto) < 1) unica.valorUnitario = centavos(unica.valorUnitario + resto);
   return linhas;
 }
 
