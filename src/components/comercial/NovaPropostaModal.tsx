@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  AlertCircle, Check, FileText, Paperclip, UploadCloud, X,
+  AlertCircle, Check, FileText, Mail, Paperclip, Phone, UploadCloud, X,
 } from 'lucide-react';
 import {
   Project, SiengeProjectDisplay, SiengeTabelaVendaColuna, SiengeTabelaVendaUnidade, SiengeTabelaVendaVersao, SiengeVendaSituacao,
@@ -695,78 +695,173 @@ export default function NovaPropostaModal({ projects, projectDisplays, unidades,
   );
 }
 
+// ── Detalhe da proposta salva ───────────────────────────────────────────────
+
+function Rotulo({ children }: { children: React.ReactNode }) {
+  return <span className="block text-[11px] text-zinc-500 leading-4">{children}</span>;
+}
+
+function TituloBloco({ children, extra }: { children: React.ReactNode; extra?: React.ReactNode }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3 mb-2.5">
+      <h4 className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">{children}</h4>
+      {extra}
+    </div>
+  );
+}
+
+// Selo da diferença contra a tabela: desconto, preço cheio ou acima da tabela.
+function SeloDiferenca({ difValor, difPercentual }: { difValor: number; difPercentual: number | null }) {
+  const pct = difPercentual === null ? '' : percentualBr(Math.abs(difPercentual));
+  if (Math.abs(difValor) < 0.01) {
+    return <span className="rounded-full bg-zinc-800/80 px-2 py-0.5 text-[11px] font-medium text-zinc-300">Preço de tabela</span>;
+  }
+  const desconto = difValor < 0;
+  return (
+    <span
+      className={`rounded-full px-2 py-0.5 text-[11px] font-medium tabular-nums ${desconto ? 'bg-amber-500/10 text-amber-300' : 'bg-emerald-500/10 text-emerald-300'}`}
+      title={`${desconto ? '−' : '+'}${moedaBr(Math.abs(difValor))} em relação à tabela`}
+    >
+      {desconto ? `Desconto de ${pct}` : `${pct} acima da tabela`}
+    </span>
+  );
+}
+
+function Contato({ icone, children, href }: { icone: React.ReactNode; children: React.ReactNode; href: string }) {
+  return (
+    <a href={href} className="flex items-center gap-1.5 text-[12px] text-zinc-400 hover:text-zinc-100 transition-colors min-w-0">
+      <span className="text-zinc-500 shrink-0">{icone}</span>
+      <span className="truncate">{children}</span>
+    </a>
+  );
+}
+
+const descreverParcela = (p: PropostaAutorizacao['parcelas'][number]) => {
+  if (p.quantidade > 1) {
+    const per = PERIODICIDADES.find(x => x.meses === p.periodicidade)?.plural;
+    return `${p.quantidade}× ${per ? `${per} ` : ''}de ${moedaBr(p.valorUnitario)} · a partir de ${dataBr(p.primeiroVencimento)}`;
+  }
+  return `Parcela única · ${dataBr(p.primeiroVencimento)}`;
+};
+
 // A ficha já salva, no detalhe do card.
-export function AutorizacaoResumo({ autorizacao: a }: { autorizacao: PropostaAutorizacao }) {
+export function AutorizacaoResumo({ autorizacao: a, cliente, corretor }: {
+  autorizacao: PropostaAutorizacao;
+  cliente: string;
+  corretor: string;
+}) {
   const c = calcularAutorizacao(a);
-  const dados: [string, string][] = [
+  const emails = a.emails.split(/[;,\s]+/).filter(Boolean);
+  const detalhes: [string, string][] = [
     ['Torre', a.torre || '—'],
+    ['Área privativa', a.areaPrivativa ? `${numeroBr(a.areaPrivativa)} m²` : '—'],
+    ['Pagamento do sinal', a.formaPagamentoSinal || '—'],
     ['Data do contrato', dataOuMesBr(a.dataContrato)],
     ['Vigência da tabela', dataOuMesBr(a.vigenciaTabela)],
-    ['Telefone', a.telefone || '—'],
-    ['E-mail', a.emails || '—'],
-    ['Área privativa', a.areaPrivativa ? `${numeroBr(a.areaPrivativa)} m²` : '—'],
-    ['Valor de tabela', moedaBr(a.valorTabela)],
-    ['Valor contratado', moedaBr(c.contratado)],
-    ['Valor m² tabela', c.m2Tabela === null ? '—' : moedaBr(c.m2Tabela)],
-    ['Valor m² contratado', c.m2Contratado === null ? '—' : moedaBr(c.m2Contratado)],
-    ['Diferença', `${moedaBr(c.difValor)}${c.difPercentual === null ? '' : ` (${percentualBr(c.difPercentual)})`}`],
-    ['Forma de pagamento do sinal', a.formaPagamentoSinal || '—'],
   ];
 
   return (
-    <div className="space-y-3">
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-        {dados.map(([rotulo, valor]) => (
-          <div key={rotulo} className="min-w-0">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">{rotulo}</span>
-            <p className="text-zinc-200 mt-0.5 break-words tabular-nums">{valor}</p>
+    <div className="space-y-6">
+      {/* Valores: o contratado em destaque, o resto como referência. */}
+      <section className="rounded-xl border border-zinc-800/80 bg-gradient-to-b from-zinc-900/70 to-zinc-900/20 p-4">
+        <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+          <div className="min-w-0">
+            <Rotulo>Valor contratado</Rotulo>
+            <p className="mt-1 text-2xl font-semibold tracking-tight text-zinc-50 tabular-nums">{moedaBr(c.contratado)}</p>
+            <div className="mt-2"><SeloDiferenca difValor={c.difValor} difPercentual={c.difPercentual} /></div>
           </div>
-        ))}
-      </div>
-
-      <div className="overflow-x-auto scrollbar-minimal">
-        <table className="w-full min-w-[640px] text-[11px]">
-          <thead>
-            <tr className="text-[10px] uppercase tracking-wider text-zinc-500 border-b border-zinc-800">
-              <th className="py-1.5 pr-2 text-left font-semibold">Descrição</th>
-              <th className="py-1.5 pr-2 text-right font-semibold">Quant.</th>
-              <th className="py-1.5 pr-2 text-right font-semibold">Vl. unit.</th>
-              <th className="py-1.5 pr-2 text-right font-semibold">Vl. total</th>
-              <th className="py-1.5 pr-2 text-right font-semibold">1º venc.</th>
-              <th className="py-1.5 pr-2 text-left font-semibold">Atualiz.</th>
-              <th className="py-1.5 pr-2 text-right font-semibold">% item</th>
-              <th className="py-1.5 text-right font-semibold">% acum.</th>
-            </tr>
-          </thead>
-          <tbody className="tabular-nums text-zinc-300">
-            {a.parcelas.map((p, i) => (
-              <tr key={i} className="border-b border-zinc-900">
-                <td className="py-1.5 pr-2">{p.descricao}</td>
-                <td className="py-1.5 pr-2 text-right">{p.quantidade}{p.periodicidade !== undefined && p.quantidade > 1 && <span className="text-zinc-500"> · {PERIODICIDADES.find(x => x.meses === p.periodicidade)?.plural}</span>}</td>
-                <td className="py-1.5 pr-2 text-right">{numeroBr(p.valorUnitario)}</td>
-                <td className="py-1.5 pr-2 text-right">{numeroBr(c.linhas[i].total)}</td>
-                <td className="py-1.5 pr-2 text-right">{dataBr(p.primeiroVencimento)}</td>
-                <td className="py-1.5 pr-2">{p.atualizacao}</td>
-                <td className="py-1.5 pr-2 text-right">{percentualBr(c.linhas[i].percentual)}</td>
-                <td className="py-1.5 text-right">{percentualBr(c.linhas[i].acumulado)}</td>
-              </tr>
+          <dl className="grid grid-cols-3 sm:grid-cols-1 gap-x-4 gap-y-1.5 sm:text-right text-[12px] tabular-nums shrink-0">
+            {([
+              ['Tabela', moedaBr(a.valorTabela)],
+              ['m² contratado', c.m2Contratado === null ? '—' : moedaBr(c.m2Contratado)],
+              ['m² tabela', c.m2Tabela === null ? '—' : moedaBr(c.m2Tabela)],
+            ] as [string, string][]).map(([r, v]) => (
+              <div key={r} className="sm:flex sm:items-baseline sm:justify-end sm:gap-3">
+                <dt className="text-zinc-500">{r}</dt>
+                <dd className="text-zinc-300">{v}</dd>
+              </div>
             ))}
-          </tbody>
-          <tfoot>
-            <tr className="font-semibold text-zinc-100">
-              <td colSpan={3} className="py-1.5 pr-2">Total</td>
-              <td className="py-1.5 pr-2 text-right tabular-nums">{numeroBr(c.contratado)}</td>
-              <td colSpan={4} />
-            </tr>
-          </tfoot>
-        </table>
-      </div>
+          </dl>
+        </div>
+      </section>
+
+      {/* Pessoas */}
+      <section className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="rounded-lg border border-zinc-800/70 p-3 min-w-0">
+          <Rotulo>Cliente</Rotulo>
+          <p className="mt-0.5 text-[13px] font-medium text-zinc-100 truncate">{cliente}</p>
+          <div className="mt-2 space-y-1">
+            {a.telefone && (
+              <Contato icone={<Phone size={12} />} href={`tel:${a.telefone.replace(/\D/g, '')}`}>{a.telefone}</Contato>
+            )}
+            {emails.map(e => <Contato key={e} icone={<Mail size={12} />} href={`mailto:${e}`}>{e}</Contato>)}
+            {!a.telefone && emails.length === 0 && <span className="text-[12px] text-zinc-600">Sem contato</span>}
+          </div>
+        </div>
+        <div className="rounded-lg border border-zinc-800/70 p-3 min-w-0">
+          <Rotulo>Corretor / imobiliária</Rotulo>
+          <p className="mt-0.5 text-[13px] font-medium text-zinc-100 truncate">{corretor}</p>
+        </div>
+      </section>
+
+      {/* Dados da unidade e do contrato */}
+      <section>
+        <TituloBloco>Contrato</TituloBloco>
+        <dl className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-3">
+          {detalhes.map(([rotulo, valor]) => (
+            <div key={rotulo} className="min-w-0">
+              <dt><Rotulo>{rotulo}</Rotulo></dt>
+              <dd className="mt-0.5 text-[13px] text-zinc-200 tabular-nums break-words">{valor}</dd>
+            </div>
+          ))}
+        </dl>
+      </section>
+
+      {/* Fluxo: barra de composição + uma linha legível por parcela, sem tabela larga. */}
+      <section>
+        <TituloBloco>Fluxo de pagamento</TituloBloco>
+        {c.contratado > 0 && (
+          <div className="flex h-1.5 rounded-full overflow-hidden bg-zinc-800 gap-px mb-3">
+            {a.parcelas.map((p, i) => (
+              <div
+                key={i} className={CORES_FLUXO[i % CORES_FLUXO.length]}
+                style={{ width: `${c.linhas[i].percentual}%` }}
+                title={`${p.descricao} · ${percentualBr(c.linhas[i].percentual)}`}
+              />
+            ))}
+          </div>
+        )}
+        <ul className="rounded-lg border border-zinc-800/70 divide-y divide-zinc-800/70 overflow-hidden">
+          {a.parcelas.map((p, i) => (
+            <li key={i} className="flex items-center gap-3 px-3 py-2.5">
+              <span className={`w-1 self-stretch rounded-full shrink-0 ${CORES_FLUXO[i % CORES_FLUXO.length]}`} />
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-[13px] font-medium text-zinc-100 truncate">{p.descricao || 'Sem descrição'}</span>
+                  {p.atualizacao === 'INCC' && (
+                    <span className="rounded px-1 py-px text-[9px] font-semibold tracking-wider text-zinc-400 bg-zinc-800/80" title="Corrigida pelo INCC">INCC</span>
+                  )}
+                </div>
+                <p className="text-[11px] text-zinc-500 tabular-nums truncate">{descreverParcela(p)}</p>
+              </div>
+              <div className="text-right shrink-0 tabular-nums">
+                <p className="text-[13px] text-zinc-100">{moedaBr(c.linhas[i].total)}</p>
+                <p className="text-[11px] text-zinc-500" title={`Acumulado: ${percentualBr(c.linhas[i].acumulado)}`}>{percentualBr(c.linhas[i].percentual)}</p>
+              </div>
+            </li>
+          ))}
+          <li className="flex items-center justify-between gap-3 px-3 py-2.5 bg-zinc-900/50">
+            <span className="text-[12px] font-medium text-zinc-400">Total</span>
+            <span className="text-[13px] font-semibold text-zinc-50 tabular-nums">{moedaBr(c.contratado)}</span>
+          </li>
+        </ul>
+      </section>
 
       {a.observacoes && (
-        <div>
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Observações</span>
-          <p className="text-zinc-300 mt-0.5 whitespace-pre-wrap break-words">{a.observacoes}</p>
-        </div>
+        <section>
+          <TituloBloco>Observações</TituloBloco>
+          <p className="text-[13px] leading-relaxed text-zinc-300 whitespace-pre-wrap break-words rounded-lg bg-zinc-900/40 border border-zinc-800/70 p-3">{a.observacoes}</p>
+        </section>
       )}
     </div>
   );

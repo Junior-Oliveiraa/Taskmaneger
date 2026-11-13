@@ -165,6 +165,8 @@ export type PropostaAprovacao = 'dispensada' | 'pendente' | 'aprovada' | 'recusa
 
 export interface ComercialProposta {
   id: string;
+  /** Número de registro sequencial, atribuído pelo banco. Nulo antes da migration. */
+  numero: number | null;
   autorizacao: PropostaAutorizacao | null;
   projectId: string;
   unidadeId: string | null;
@@ -178,6 +180,10 @@ export interface ComercialProposta {
   /** yyyy-mm-dd */
   enviadaEm: string;
   createdAt: string;
+  /** yyyy-mm-dd: quando entrou em "Visitas" (gravado por trigger). */
+  visitaEm: string | null;
+  /** yyyy-mm-dd: quando virou proposta (realizada em diante), gravado por trigger. */
+  propostaEm: string | null;
   /** Calculados pelo banco na gravação. Nulos nas propostas sem ficha. */
   descontoPct: number | null;
   descontoLimitePct: number | null;
@@ -187,9 +193,13 @@ export interface ComercialProposta {
   aprovacaoObs: string | null;
 }
 
+/** "P0001": o número de registro como aparece na tela. */
+export const codigoProposta = (numero: number | null) => (numero == null ? null : `P${String(numero).padStart(4, '0')}`);
+
 function toProposta(r: any): ComercialProposta {
   return {
     id: r.id,
+    numero: r.numero == null ? null : Number(r.numero),
     autorizacao: r.autorizacao ?? null,
     projectId: r.project_id,
     unidadeId: r.unidade_id ?? null,
@@ -202,6 +212,9 @@ function toProposta(r: any): ComercialProposta {
     etapa: r.etapa,
     enviadaEm: r.enviada_em,
     createdAt: r.created_at,
+    // Sem as colunas (migration ainda não aplicada), a etapa atual e a data de envio.
+    visitaEm: r.visita_em ?? (r.etapa === 'visita' ? r.enviada_em : null),
+    propostaEm: r.proposta_em ?? (r.etapa !== 'visita' ? r.enviada_em : null),
     descontoPct: r.desconto_pct == null ? null : Number(r.desconto_pct),
     descontoLimitePct: r.desconto_limite_pct == null ? null : Number(r.desconto_limite_pct),
     aprovacao: r.aprovacao ?? 'dispensada',
