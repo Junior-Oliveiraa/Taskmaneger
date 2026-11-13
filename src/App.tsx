@@ -617,6 +617,7 @@ export default function App() {
         else if (table === 'sienge_vendas') invalidate('siengeVendas');
         else if (table === 'comercial_movimentos') invalidate('comercialMovimentos');
         else if (table === 'comercial_propostas') invalidate('comercialPropostas');
+        else if (table === 'comercial_propostas_mensagens') invalidate('comercialPropostaMensagens');
         else if (table === 'comercial_metas' || table === 'comercial_metas_empreendimentos') invalidate('comercialMetas');
         // O config guarda também o limite padrão de desconto das propostas.
         else if (table === 'comercial_metas_config') { invalidate('comercialMetas'); invalidate('comercialDescontos'); }

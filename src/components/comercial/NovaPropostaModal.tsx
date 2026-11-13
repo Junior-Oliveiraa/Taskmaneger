@@ -17,7 +17,7 @@ import { AutoCompletar, SelectLista } from './CampoLista';
 import SeletorData from './SeletorData';
 import { Campo, ValorInput, campoCls, mesCurto, moedaBr, numeroBr, percentualBr } from './PropostaCampos';
 import FluxoPagamentoEditor, { CORES_FLUXO, LinhaFluxo, linhaUsada, linhasGenericas, novaLinha } from './FluxoPagamentoEditor';
-import { PERIODICIDADES, escalarFluxo, fluxoDaTabela } from '../../lib/propostaFluxo';
+import { PERIODICIDADES, escalarFluxo, fluxoDaTabela, ultimoVencimento } from '../../lib/propostaFluxo';
 import { fetchSiengeCalculoRegras } from '../../lib/api';
 import { acimaDoLimite, descontoPct, fetchLimitesDesconto, limiteDoProjeto } from '../../lib/comercialDescontos';
 import { usePermissoes } from '../../lib/permissoes';
@@ -736,6 +736,10 @@ function Contato({ icone, children, href }: { icone: React.ReactNode; children: 
   );
 }
 
+// Mesma grade do FluxoPagamentoEditor (sem a coluna de ações), para a ficha salva ler igual à de criação.
+const GRADE_LEITURA = 'grid grid-cols-[minmax(140px,1fr)_44px_104px_80px_40px_104px_120px] gap-2 items-center';
+const CELULA = 'text-right text-zinc-200';
+
 const descreverParcela = (p: PropostaAutorizacao['parcelas'][number]) => {
   if (p.quantidade > 1) {
     const per = PERIODICIDADES.find(x => x.meses === p.periodicidade)?.plural;
@@ -769,7 +773,7 @@ export function AutorizacaoResumo({ autorizacao: a, cliente, corretor, lateral }
   ];
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
+    <div className="grid gap-6 2xl:grid-cols-[minmax(0,1fr)_300px]">
       <div className="min-w-0 space-y-6">
         {/* Valores: o contratado em destaque, as referências ao lado. */}
         <section className="rounded-xl border border-zinc-800/80 bg-gradient-to-br from-zinc-900/80 to-zinc-900/20 p-5">
@@ -790,9 +794,9 @@ export function AutorizacaoResumo({ autorizacao: a, cliente, corretor, lateral }
           </div>
         </section>
 
-        {/* Fluxo: barra de composição + uma linha legível por parcela. */}
-        <section>
-          <TituloBloco extra={<span className="text-[12px] text-zinc-500 tabular-nums">{a.parcelas.length} {a.parcelas.length === 1 ? 'item' : 'itens'}</span>}>
+        {/* Fluxo: a mesma grade do editor (Nova proposta), só leitura. Em coluna estreita vira lista. */}
+        <section className="@container">
+          <TituloBloco extra={<span className="text-[12px] text-zinc-500 tabular-nums">{a.parcelas.length} {a.parcelas.length === 1 ? 'série' : 'séries'}</span>}>
             Fluxo de pagamento
           </TituloBloco>
           {c.contratado > 0 && (
@@ -806,30 +810,76 @@ export function AutorizacaoResumo({ autorizacao: a, cliente, corretor, lateral }
               ))}
             </div>
           )}
-          <ul className="rounded-xl border border-zinc-800/70 divide-y divide-zinc-800/70 overflow-hidden">
-            {a.parcelas.map((p, i) => (
-              <li key={i} className="flex items-center gap-3 px-4 py-3">
-                <span className={`w-1 self-stretch rounded-full shrink-0 ${CORES_FLUXO[i % CORES_FLUXO.length]}`} />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[13px] font-medium text-zinc-100 truncate">{p.descricao || 'Sem descrição'}</span>
-                    {p.atualizacao === 'INCC' && (
-                      <span className="rounded px-1 py-px text-[9px] font-semibold tracking-wider text-zinc-400 bg-zinc-800/80" title="Corrigida pelo INCC">INCC</span>
-                    )}
+
+          <div className="rounded-xl border border-zinc-800/80 overflow-hidden">
+            {/* Grade larga */}
+            <div className="hidden @2xl:block">
+              <div className={`${GRADE_LEITURA} px-3 h-9 bg-zinc-900/50 border-b border-zinc-800/80 text-[10px] font-semibold uppercase tracking-wider text-zinc-500`}>
+                <span className="pl-3">Descrição</span>
+                <span className="text-right">Qtd.</span>
+                <span className="text-right">Parcela</span>
+                <span className="text-right">% unidade</span>
+                <span className="text-center" title="Periodicidade: Única, Mensal, Bimestral, Trimestral, Semestral, Anual">Per.</span>
+                <span>1º vencimento</span>
+                <span className="text-right">Total</span>
+              </div>
+              <div className="divide-y divide-zinc-800/50">
+                {a.parcelas.map((p, i) => {
+                  const per = PERIODICIDADES.find(x => x.meses === p.periodicidade);
+                  const fim = p.quantidade > 1 && p.periodicidade !== undefined ? ultimoVencimento({ ...p, periodicidade: p.periodicidade }) : '';
+                  return (
+                    <div key={i} className={`${GRADE_LEITURA} px-3 py-2.5 text-[13px] tabular-nums`}>
+                      <div className="flex items-stretch gap-2 min-w-0">
+                        <span className={`w-1 self-stretch min-h-[24px] shrink-0 rounded-full ${CORES_FLUXO[i % CORES_FLUXO.length]}`} />
+                        <div className="min-w-0 flex flex-col justify-center">
+                          <span className="flex items-center gap-1.5 min-w-0">
+                            <span className="font-medium text-zinc-100 truncate">{p.descricao || 'Sem descrição'}</span>
+                            {p.atualizacao === 'INCC' && (
+                              <span className="rounded px-1 py-px text-[9px] font-semibold tracking-wider text-zinc-400 bg-zinc-800/80 shrink-0" title="Corrigida pelo INCC">INCC</span>
+                            )}
+                          </span>
+                          {fim && <span className="text-[11px] text-zinc-500 truncate">{p.quantidade}× {per?.plural ?? 'parcelas'} · até {mesCurto(fim)}</span>}
+                        </div>
+                      </div>
+                      <span className={CELULA}>{p.quantidade}</span>
+                      <span className={CELULA}>{numeroBr(p.valorUnitario)}</span>
+                      <span className={CELULA} title={`Acumulado: ${percentualBr(c.linhas[i].acumulado)}`}>{numeroBr(c.linhas[i].percentual)}<span className="text-zinc-500">%</span></span>
+                      <span className={`${CELULA} text-center`} title={per?.label}>{per?.label[0] ?? '—'}</span>
+                      <span className={`${CELULA} text-left`}>{dataBr(p.primeiroVencimento)}</span>
+                      <span className="text-right font-semibold text-zinc-50">{moedaBr(c.linhas[i].total)}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Lista estreita */}
+            <ul className="@2xl:hidden divide-y divide-zinc-800/70">
+              {a.parcelas.map((p, i) => (
+                <li key={i} className="flex items-center gap-3 px-4 py-3">
+                  <span className={`w-1 self-stretch rounded-full shrink-0 ${CORES_FLUXO[i % CORES_FLUXO.length]}`} />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[13px] font-medium text-zinc-100 truncate">{p.descricao || 'Sem descrição'}</span>
+                      {p.atualizacao === 'INCC' && (
+                        <span className="rounded px-1 py-px text-[9px] font-semibold tracking-wider text-zinc-400 bg-zinc-800/80" title="Corrigida pelo INCC">INCC</span>
+                      )}
+                    </div>
+                    <p className="text-[12px] text-zinc-500 tabular-nums truncate">{descreverParcela(p)}</p>
                   </div>
-                  <p className="text-[12px] text-zinc-500 tabular-nums truncate">{descreverParcela(p)}</p>
-                </div>
-                <div className="text-right shrink-0 tabular-nums">
-                  <p className="text-[14px] font-medium text-zinc-100">{moedaBr(c.linhas[i].total)}</p>
-                  <p className="text-[11px] text-zinc-500" title={`Acumulado: ${percentualBr(c.linhas[i].acumulado)}`}>{percentualBr(c.linhas[i].percentual)}</p>
-                </div>
-              </li>
-            ))}
-            <li className="flex items-center justify-between gap-3 px-4 py-3 bg-zinc-900/50">
+                  <div className="text-right shrink-0 tabular-nums">
+                    <p className="text-[14px] font-medium text-zinc-100">{moedaBr(c.linhas[i].total)}</p>
+                    <p className="text-[11px] text-zinc-500" title={`Acumulado: ${percentualBr(c.linhas[i].acumulado)}`}>{percentualBr(c.linhas[i].percentual)}</p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+
+            <div className="flex items-center justify-between gap-3 px-4 py-3 bg-zinc-900/50 border-t border-zinc-800/80">
               <span className="text-[12px] font-medium text-zinc-400">Total</span>
               <span className="text-[14px] font-semibold text-zinc-50 tabular-nums">{moedaBr(c.contratado)}</span>
-            </li>
-          </ul>
+            </div>
+          </div>
         </section>
 
         {a.observacoes && (
@@ -841,7 +891,7 @@ export function AutorizacaoResumo({ autorizacao: a, cliente, corretor, lateral }
       </div>
 
       {/* Coluna de apoio */}
-      <aside className="min-w-0 space-y-6 lg:border-l lg:border-zinc-800/60 lg:pl-6">
+      <aside className="min-w-0 space-y-6 2xl:border-l 2xl:border-zinc-800/60 2xl:pl-6">
         <section className="space-y-3">
           <TituloBloco>Pessoas</TituloBloco>
           <div className="rounded-xl border border-zinc-800/70 p-3.5 min-w-0">

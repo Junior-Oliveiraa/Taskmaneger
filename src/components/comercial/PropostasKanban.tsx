@@ -1,10 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, Clock3, Layers, Paperclip, Plus, ShieldAlert, ShieldCheck, ShieldX, Trash2, X } from 'lucide-react';
+import { Check, Clock3, Hourglass, Layers, MessageSquare, Paperclip, Plus, Repeat2, Send, ShieldAlert, ShieldCheck, ShieldX, ThumbsDown, ThumbsUp, Trash2, X } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
+import PropostaChat, { AvatarUsuario, SeletorResponsavel } from './PropostaChat';
 import { Project, SiengeProjectDisplay, SiengeTabelaVendaColuna, SiengeTabelaVendaUnidade, SiengeTabelaVendaVersao } from '../../types';
 import NovaPropostaModal, { AutorizacaoResumo } from './NovaPropostaModal';
 import {
-  ComercialProposta, PROPOSTA_ETAPAS, PropostaEtapa, codigoProposta, decidirAprovacaoProposta, excluirProposta, fetchComercialPropostas, moverProposta,
+  ComercialProposta, PROPOSTA_ETAPAS, PropostaEtapa, codigoProposta, decidirAprovacaoProposta, definirResponsavelProposta, excluirProposta,
+  fetchComercialPropostas, fetchPropostaMensagens, moverProposta,
 } from '../../lib/comercialApi';
 import { usePermissoes } from '../../lib/permissoes';
 import { moedaBr, percentualBr } from './PropostaCampos';
@@ -27,9 +30,103 @@ function tempoDecorrido(iso: string, agora: number) {
   return `${Math.floor(h / 24)}d ${h % 24}h`;
 }
 
-// Sem aprovação, a proposta não sai destas etapas (o banco também recusa).
-const ETAPAS_SEM_APROVACAO: PropostaEtapa[] = ['visita', 'realizada'];
+// Sem aprovação do desconto, a proposta não sai destas etapas (o banco também recusa).
+const ETAPAS_SEM_APROVACAO: PropostaEtapa[] = ['visita', 'realizada', 'perdido'];
 const travada = (p: ComercialProposta) => p.aprovacao === 'pendente' || p.aprovacao === 'recusada';
+
+// Decisões que só o gestor toma (o banco também recusa, inclusive no arrastar).
+const exigeGestor = (de: PropostaEtapa, para: PropostaEtapa) =>
+  para === 'venda' || (de === 'em_analise' && (para === 'contra_proposta' || para === 'perdido'));
+
+type Acao = { para: PropostaEtapa; rotulo: string; icone: React.ReactNode; estilo: string; confirmar?: string };
+const BTN = 'inline-flex items-center justify-center gap-1.5 h-9 px-4 rounded-lg text-[13px] font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed';
+const ESTILO = {
+  primario: `${BTN} bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-600/20`,
+  aprovar: `${BTN} bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-600/20`,
+  contra: `${BTN} border border-amber-500/40 text-amber-300 hover:bg-amber-500/10`,
+  recusar: `${BTN} border border-rose-500/40 text-rose-300 hover:bg-rose-500/10`,
+};
+
+/** Fluxo de decisão da proposta: o que fazer a seguir, conforme a etapa. */
+function BarraDecisao({ p, gestor, onMover }: { p: ComercialProposta; gestor: boolean; onMover: (para: PropostaEtapa) => Promise<void> }) {
+  const [enviando, setEnviando] = useState<PropostaEtapa | null>(null);
+  const executar = async (a: Acao) => {
+    if (a.confirmar && !window.confirm(a.confirmar)) return;
+    setEnviando(a.para);
+    try { await onMover(a.para); } finally { setEnviando(null); }
+  };
+  const recusar: Acao = { para: 'perdido', rotulo: 'Recusar', icone: <ThumbsDown size={14} />, estilo: ESTILO.recusar, confirmar: 'Recusar a proposta? Ela vai para Perdido/cancelado.' };
+
+  let tom = 'border-zinc-800/80 bg-zinc-900/40';
+  let icone: React.ReactNode = <Send size={15} className="text-blue-400" />;
+  let titulo = '';
+  let texto = '';
+  let acoes: Acao[] = [];
+  let bloqueio: string | null = null;
+
+  switch (p.etapa) {
+    case 'realizada':
+      tom = 'border-blue-500/25 bg-blue-500/[0.05]';
+      titulo = 'Pronta para análise?';
+      texto = 'Envie a proposta para o gestor aprovar, fazer contra proposta ou recusar.';
+      acoes = [{ para: 'em_analise', rotulo: 'Enviar para aprovação', icone: <Send size={14} />, estilo: ESTILO.primario }];
+      if (travada(p)) bloqueio = p.aprovacao === 'pendente' ? 'O desconto acima do limite precisa ser aprovado antes.' : 'O desconto foi recusado: ajuste a proposta antes de enviar.';
+      break;
+    case 'em_analise':
+      tom = 'border-blue-500/25 bg-blue-500/[0.05]';
+      icone = <Hourglass size={15} className="text-blue-400" />;
+      titulo = gestor ? 'Aguardando sua decisão' : 'Aguardando decisão do gestor';
+      texto = gestor ? 'Aprovar leva a proposta para Venda.' : 'O gestor vai aprovar, fazer contra proposta ou recusar.';
+      acoes = gestor ? [
+        recusar,
+        { para: 'contra_proposta', rotulo: 'Contra proposta', icone: <Repeat2 size={14} />, estilo: ESTILO.contra },
+        { para: 'venda', rotulo: 'Aprovar', icone: <ThumbsUp size={14} />, estilo: ESTILO.aprovar },
+      ] : [];
+      break;
+    case 'contra_proposta':
+      tom = 'border-amber-500/25 bg-amber-500/[0.05]';
+      icone = <Repeat2 size={15} className="text-amber-300" />;
+      titulo = 'Contra proposta enviada';
+      texto = 'Registre a resposta do cliente: tréplica volta para aprovação do gestor.';
+      acoes = [recusar, { para: 'em_analise', rotulo: 'Tréplica', icone: <Send size={14} />, estilo: ESTILO.primario }];
+      break;
+    case 'venda':
+      tom = 'border-emerald-500/25 bg-emerald-500/[0.06]';
+      icone = <ThumbsUp size={15} className="text-emerald-300" />;
+      titulo = 'Proposta aprovada';
+      texto = 'Lance a venda no formulário de Vendas para mudar a situação da unidade.';
+      break;
+    case 'perdido':
+      tom = 'border-rose-500/25 bg-rose-500/[0.05]';
+      icone = <ThumbsDown size={15} className="text-rose-300" />;
+      titulo = 'Proposta perdida/cancelada';
+      texto = 'Para reabrir, mova a proposta de volta para outra etapa.';
+      break;
+    default:
+      return null;
+  }
+
+  return (
+    <div className={`rounded-xl border px-4 py-3.5 flex flex-col md:flex-row md:items-center gap-3 ${tom}`}>
+      <div className="flex items-start gap-3 min-w-0 flex-1">
+        <span className="mt-0.5 shrink-0">{icone}</span>
+        <div className="min-w-0">
+          <p className="text-[14px] font-semibold text-zinc-100">{titulo}</p>
+          <p className="text-[12px] text-zinc-400">{bloqueio ?? texto}</p>
+        </div>
+      </div>
+      {acoes.length > 0 && (
+        <div className="flex items-center gap-2 flex-wrap md:justify-end shrink-0">
+          {acoes.map(a => (
+            <button key={a.para} type="button" className={a.estilo} disabled={!!enviando || !!bloqueio} onClick={() => executar(a)}>
+              {a.icone} {enviando === a.para ? 'Salvando…' : a.rotulo}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function SeloAprovacao({ p }: { p: ComercialProposta }) {
   if (p.aprovacao === 'dispensada') return null;
@@ -151,7 +248,17 @@ export default function PropostasKanban({ projects, projectDisplays, unidades, v
   const doRecorte = useMemo(() => propostas.filter(p => passaFiltroFixo(p, filtro)), [propostas, filtro]);
   const visiveis = useMemo(() => doRecorte.filter(p => noPeriodo(p, filtro)), [doRecorte, filtro]);
 
-  const { isMaster } = usePermissoes();
+  const { isMaster, pode } = usePermissoes();
+  const podeEditar = pode('comercial_propostas', 'editar');
+  const { currentUser, allUsers } = useAuth();
+  const usuarioPorId = useMemo(() => new Map(allUsers.map(u => [u.id, u])), [allUsers]);
+  const mensagens = useQuery({ queryKey: ['comercialPropostaMensagens'], queryFn: fetchPropostaMensagens, staleTime: 30_000 }).data ?? [];
+  // Contagem por proposta (só mensagens, sem os eventos automáticos) para o card.
+  const mensagensPorProposta = useMemo(() => {
+    const m = new Map<string, number>();
+    mensagens.forEach(x => { if (x.tipo === 'mensagem') m.set(x.propostaId, (m.get(x.propostaId) ?? 0) + 1); });
+    return m;
+  }, [mensagens]);
   const nomeProjeto = (id: string) => projects.find(p => p.id === id)?.name || '—';
   const proposta = propostas.find(p => p.id === aberta) ?? null;
   const etapaAtual = proposta ? PROPOSTA_ETAPAS.find(e => e.id === proposta.etapa) : undefined;
@@ -167,6 +274,12 @@ export default function PropostasKanban({ projects, projectDisplays, unidades, v
         : `O desconto da proposta de ${atual.cliente} foi recusado: ela não avança de etapa.`);
       return;
     }
+    if (!isMaster && exigeGestor(atual.etapa, etapa)) {
+      setErro(etapa === 'venda'
+        ? 'Só o gestor aprova a proposta e a leva para Venda.'
+        : 'Proposta em análise: só o gestor aprova, faz contra proposta ou recusa.');
+      return;
+    }
     // Otimista: o card muda de coluna na hora; se falhar, a consulta devolve o estado real.
     queryClient.setQueryData<ComercialProposta[]>(['comercialPropostas'], old =>
       (old ?? []).map(p => (p.id !== id ? p
@@ -179,6 +292,20 @@ export default function PropostasKanban({ projects, projectDisplays, unidades, v
       setErro(e?.message || 'Não foi possível mover a proposta.');
     } finally {
       queryClient.invalidateQueries({ queryKey: ['comercialPropostas'] });
+    }
+  };
+
+  const trocarResponsavel = async (p: ComercialProposta, id: string | null) => {
+    setErro(null);
+    queryClient.setQueryData<ComercialProposta[]>(['comercialPropostas'], old =>
+      (old ?? []).map(x => (x.id === p.id ? { ...x, responsavelId: id } : x)));
+    try {
+      await definirResponsavelProposta(p.id, id);
+    } catch (e: any) {
+      setErro(e?.message || 'Não foi possível trocar o responsável.');
+    } finally {
+      queryClient.invalidateQueries({ queryKey: ['comercialPropostas'] });
+      queryClient.invalidateQueries({ queryKey: ['comercialPropostaMensagens'] });
     }
   };
 
@@ -316,11 +443,24 @@ export default function PropostasKanban({ projects, projectDisplays, unidades, v
                         >
                           <Clock3 size={10} className={coluna.texto} /> {tempoDecorrido(p.createdAt, agora)}
                         </span>
-                        {p.anexos.length > 0 && (
-                          <span className="inline-flex items-center gap-0.5" title={`${p.anexos.length} anexo(s)`}>
-                            <Paperclip size={10} /> {p.anexos.length}
-                          </span>
-                        )}
+                        <span className="inline-flex items-center gap-2">
+                          {p.anexos.length > 0 && (
+                            <span className="inline-flex items-center gap-0.5" title={`${p.anexos.length} anexo(s)`}>
+                              <Paperclip size={10} /> {p.anexos.length}
+                            </span>
+                          )}
+                          {(mensagensPorProposta.get(p.id) ?? 0) > 0 && (
+                            <span className="inline-flex items-center gap-0.5" title={`${mensagensPorProposta.get(p.id)} mensagem(ns)`}>
+                              <MessageSquare size={10} /> {mensagensPorProposta.get(p.id)}
+                            </span>
+                          )}
+                          {(() => {
+                            const r = p.responsavelId ? usuarioPorId.get(p.responsavelId) : undefined;
+                            return r
+                              ? <span title={`Responsável: ${r.name}`}><AvatarUsuario id={r.id} nome={r.name} url={r.avatarUrl} tamanho={18} /></span>
+                              : <span className="w-[18px] h-[18px] rounded-full border border-dashed border-zinc-700" title="Sem responsável" />;
+                          })()}
+                        </span>
                       </div>
                     </div>
                   ))
@@ -361,7 +501,7 @@ export default function PropostasKanban({ projects, projectDisplays, unidades, v
             <div className="fixed inset-0 z-40 bg-black/55 backdrop-blur-xs animate-fade-in" onMouseDown={() => setAberta(null)} />
             <aside
               role="dialog" aria-modal="true" aria-label={`Proposta ${codigoProposta(proposta.numero) ?? ''}`}
-              className={`fixed top-0 right-0 bottom-0 z-50 flex flex-col bg-[#0c0c0e] border-l border-zinc-800/80 shadow-2xl animate-slide-in text-zinc-200 w-full ${proposta.autorizacao ? 'md:w-[78vw] xl:w-[68vw] max-w-[1280px]' : 'md:w-[560px]'}`}
+              className={`fixed top-0 right-0 bottom-0 z-50 flex flex-col bg-[#0c0c0e] border-l border-zinc-800/80 shadow-2xl animate-slide-in text-zinc-200 w-full ${proposta.autorizacao ? 'md:w-[94vw] xl:w-[86vw] max-w-[1600px]' : 'md:w-[94vw] lg:w-[960px]'}`}
             >
               <header className="flex items-start justify-between gap-4 px-6 pt-5 pb-4 border-b border-zinc-800/60 shrink-0">
                 <div className="min-w-0">
@@ -384,6 +524,10 @@ export default function PropostasKanban({ projects, projectDisplays, unidades, v
                   </p>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
+                  <SeletorResponsavel
+                    usuarios={allUsers} valor={proposta.responsavelId} desabilitado={!podeEditar}
+                    onChange={id => trocarResponsavel(proposta, id)}
+                  />
                   <label className="hidden sm:flex items-center gap-2">
                     <span className="text-[12px] text-zinc-500">Mover para</span>
                     <span className="block w-[200px]">
@@ -410,7 +554,14 @@ export default function PropostasKanban({ projects, projectDisplays, unidades, v
                 </div>
               </header>
 
-              <div className="flex-1 min-h-0 overflow-y-auto scrollbar-minimal px-6 py-5 space-y-6 text-xs">
+              {/* Conteúdo + conversa: lado a lado em telas largas; no celular a conversa vem depois. */}
+              <div className="flex-1 min-h-0 overflow-y-auto lg:overflow-hidden flex flex-col lg:flex-row">
+              <div className="min-w-0 lg:flex-1 lg:min-h-0 lg:overflow-y-auto scrollbar-minimal px-6 py-5 space-y-6 text-xs">
+                {erro && (
+                  <p className="text-[12px] text-rose-300 bg-rose-500/[0.06] border border-rose-500/20 rounded-lg px-3 py-2">{erro}</p>
+                )}
+                <BarraDecisao key={`${proposta.id}-${proposta.etapa}`} p={proposta} gestor={isMaster} onMover={para => mover(proposta.id, para)} />
+
                 {/* No celular o seletor de etapa não cabe no cabeçalho. */}
                 <label className="sm:hidden flex flex-col gap-1.5">
                   <span className="text-[11px] text-zinc-500">Mover para</span>
@@ -447,6 +598,14 @@ export default function PropostasKanban({ projects, projectDisplays, unidades, v
                     {anexos}
                   </>
                 )}
+              </div>
+              <PropostaChat
+                propostaId={proposta.id}
+                mensagens={mensagens.filter(m => m.propostaId === proposta.id)}
+                usuarios={allUsers}
+                meuId={currentUser?.id ?? null}
+                className="h-[560px] lg:h-auto lg:w-[360px] xl:w-[380px] shrink-0 border-t lg:border-t-0 lg:border-l border-zinc-800/60"
+              />
               </div>
             </aside>
           </>

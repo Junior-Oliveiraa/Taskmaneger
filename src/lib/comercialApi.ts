@@ -91,7 +91,7 @@ export async function registrarMovimentoComercial(params: {
 // ─── Propostas ────────────────────────────────────────────────────────────
 // Acompanhamento da negociação. Não mexe na situação da unidade: é CRUD simples.
 
-export type PropostaEtapa = 'visita' | 'realizada' | 'em_analise' | 'contra_proposta' | 'analise_final' | 'venda';
+export type PropostaEtapa = 'visita' | 'realizada' | 'em_analise' | 'contra_proposta' | 'analise_final' | 'venda' | 'perdido';
 
 export const PROPOSTA_ETAPAS: { id: PropostaEtapa; label: string; dot: string; accentBg: string; accentBorder: string; texto: string; borda: string }[] = [
   { id: 'visita',          label: 'Visitas',              dot: 'bg-sky-400',     accentBg: 'bg-sky-500/[0.04]',     accentBorder: 'border-sky-500/30',     texto: 'text-sky-300',     borda: 'border-l-sky-400' },
@@ -100,6 +100,7 @@ export const PROPOSTA_ETAPAS: { id: PropostaEtapa; label: string; dot: string; a
   { id: 'contra_proposta', label: 'Contra proposta',      dot: 'bg-amber-400',   accentBg: 'bg-amber-500/[0.04]',   accentBorder: 'border-amber-500/30',   texto: 'text-amber-300',   borda: 'border-l-amber-400' },
   { id: 'analise_final',   label: 'Análise final',        dot: 'bg-orange-400',  accentBg: 'bg-orange-500/[0.04]',  accentBorder: 'border-orange-500/30',  texto: 'text-orange-300',  borda: 'border-l-orange-400' },
   { id: 'venda',           label: 'Venda',                dot: 'bg-emerald-400', accentBg: 'bg-emerald-500/[0.04]', accentBorder: 'border-emerald-500/30', texto: 'text-emerald-300', borda: 'border-l-emerald-400' },
+  { id: 'perdido',         label: 'Perdido/cancelado',    dot: 'bg-rose-400',    accentBg: 'bg-rose-500/[0.04]',    accentBorder: 'border-rose-500/30',    texto: 'text-rose-300',    borda: 'border-l-rose-400' },
 ];
 
 export interface PropostaAnexo {
@@ -184,6 +185,8 @@ export interface ComercialProposta {
   visitaEm: string | null;
   /** yyyy-mm-dd: quando virou proposta (realizada em diante), gravado por trigger. */
   propostaEm: string | null;
+  /** Quem conduz a proposta (users_profile.id). */
+  responsavelId: string | null;
   /** Calculados pelo banco na gravação. Nulos nas propostas sem ficha. */
   descontoPct: number | null;
   descontoLimitePct: number | null;
@@ -215,6 +218,7 @@ function toProposta(r: any): ComercialProposta {
     // Sem as colunas (migration ainda não aplicada), a etapa atual e a data de envio.
     visitaEm: r.visita_em ?? (r.etapa === 'visita' ? r.enviada_em : null),
     propostaEm: r.proposta_em ?? (r.etapa !== 'visita' ? r.enviada_em : null),
+    responsavelId: r.responsavel_id ?? null,
     descontoPct: r.desconto_pct == null ? null : Number(r.desconto_pct),
     descontoLimitePct: r.desconto_limite_pct == null ? null : Number(r.desconto_limite_pct),
     aprovacao: r.aprovacao ?? 'dispensada',
@@ -288,6 +292,52 @@ export async function decidirAprovacaoProposta(id: string, decisao: 'aprovada' |
     .from('comercial_propostas')
     .update({ aprovacao: decisao, aprovacao_obs: obs?.trim() || null })
     .eq('id', id);
+  if (error) throw error;
+}
+
+export async function definirResponsavelProposta(id: string, responsavelId: string | null): Promise<void> {
+  const { error } = await supabase.from('comercial_propostas').update({ responsavel_id: responsavelId }).eq('id', id);
+  if (error) throw error;
+}
+
+// ─── Conversa da proposta ────────────────────────────────────────────────
+// Mensagens dos usuários e eventos (mudança de etapa, responsável) gravados
+// pelo banco. Autor e data também vêm do banco.
+
+export interface PropostaMensagem {
+  id: string;
+  propostaId: string;
+  autorId: string | null;
+  autorNome: string | null;
+  texto: string;
+  tipo: 'mensagem' | 'evento';
+  createdAt: string;
+}
+
+export async function fetchPropostaMensagens(): Promise<PropostaMensagem[]> {
+  const { data, error } = await supabase
+    .from('comercial_propostas_mensagens')
+    .select('*')
+    .order('created_at', { ascending: true });
+  if (error) throw error;
+  return (data || []).map((r: any) => ({
+    id: r.id,
+    propostaId: r.proposta_id,
+    autorId: r.autor_id ?? null,
+    autorNome: r.autor_nome ?? null,
+    texto: r.texto,
+    tipo: r.tipo ?? 'mensagem',
+    createdAt: r.created_at,
+  }));
+}
+
+export async function enviarPropostaMensagem(propostaId: string, texto: string): Promise<void> {
+  const { error } = await supabase.from('comercial_propostas_mensagens').insert({ proposta_id: propostaId, texto: texto.trim() });
+  if (error) throw error;
+}
+
+export async function apagarPropostaMensagem(id: string): Promise<void> {
+  const { error } = await supabase.from('comercial_propostas_mensagens').delete().eq('id', id);
   if (error) throw error;
 }
 
