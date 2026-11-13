@@ -5,6 +5,7 @@ import {
   CANAIS, FINANCIAMENTOS, financiamentoDe, CvDados, CvReserva, ValorTabela, VendaOrbit, valoresDeTabela, Desfecho, FiltrosPainel, Kpis, Painel, Periodo, SituacaoEstoque, SITUACOES_ESTOQUE, ValorParado,
   PrecoOrbit, calcularPainel, fetchCvComercial, hojeBrasilia, nomeCurto, nomeCurtoEmpreendimento, precosDasUnidades, unidadesForaDoOrbit,
 } from '../../lib/cvComercial';
+import { FotosEstoque, MesVso, calcularVsoMensal, fetchFotosEstoque, mediaVso, mesesEntre } from '../../lib/cvVso';
 import FiltroLista from './FiltroLista';
 import { fetchProjects, fetchSiengeTabelaVendaVersoes, fetchSiengeTabelaVendas, fetchSiengeVendas } from '../../lib/api';
 import { BOTAO_FILTRO, BOTAO_FILTRO_NEUTRO, ICONE_FILTRO } from './filtroEstilo';
@@ -285,11 +286,22 @@ function VendasDoEmpreendimento({ vendas, tabelaPor }: { vendas: CvReserva[]; ta
 
 const SEM_ORBIT: VendaOrbit[] = [];
 const SEM_PRECOS: PrecoOrbit[] = [];
+const SEM_FOTOS: FotosEstoque = new Map();
 
 const porNome = (a: string, b: string) => a.localeCompare(b, 'pt-BR');
 
-export function PainelDesempenho({ dados, hoje = hojeBrasilia(), metas = null, vendasOrbit = SEM_ORBIT, precosOrbit = SEM_PRECOS }: {
-  dados: CvDados; hoje?: string; metas?: MetasComercial | null; vendasOrbit?: VendaOrbit[]; precosOrbit?: PrecoOrbit[];
+const ROTULO_ORIGEM_VSO: Record<MesVso['origem'], string> = {
+  fechamento: 'Estoque do fechamento do mês',
+  estimado: 'Estimado: mês anterior à primeira foto do estoque',
+  parcial: 'Mês em andamento: estoque de agora',
+};
+
+/** Diferença em pontos percentuais: "+2,3 p.p.". */
+const fmtPp = (d: number) =>
+  `${d >= 0 ? '+' : '−'}${Math.abs(d * 100).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} p.p.`;
+
+export function PainelDesempenho({ dados, hoje = hojeBrasilia(), metas = null, vendasOrbit = SEM_ORBIT, precosOrbit = SEM_PRECOS, fotos = SEM_FOTOS }: {
+  dados: CvDados; hoje?: string; metas?: MetasComercial | null; vendasOrbit?: VendaOrbit[]; precosOrbit?: PrecoOrbit[]; fotos?: FotosEstoque;
 }) {
   const [empreendimentos, setEmpreendimentos] = useState<number[] | null>(null);
   const [aberto, setAberto] = useState<number | null>(null);
@@ -358,6 +370,31 @@ export function PainelDesempenho({ dados, hoje = hojeBrasilia(), metas = null, v
     return fora.size ? { ...dados, unidades: dados.unidades.filter(u => !fora.has(Number(u.idunidade))) } : dados;
   }, [dados, precosOrbit]);
   const painel: Painel = useMemo(() => calcularPainel(dadosDoPainel, filtros, precos), [dadosDoPainel, filtros, precos]);
+
+  // ── VSO mensal: só o filtro de empreendimento vale (o estoque não tem canal nem corretor).
+  // As fotos passam pelo mesmo corte de unidades fora da tabela do Orbit.
+  const fotosDoPainel = useMemo(() => new Map([...fotos].map(([mes, us]) => {
+    const fora = unidadesForaDoOrbit(us, precosOrbit);
+    return [mes, fora.size ? us.filter(u => !fora.has(Number(u.idunidade))) : us];
+  })), [fotos, precosOrbit]);
+  const mesAtual = hoje.slice(0, 7);
+  const mesesVso = useMemo(() => {
+    const de = (periodo.de ?? primeiraData).slice(0, 7);
+    const ate = (periodo.ate ?? hoje).slice(0, 7);
+    return mesesEntre(de, ate < mesAtual ? ate : mesAtual);
+  }, [periodo, primeiraData, hoje, mesAtual]);
+  const vsoDe = useMemo(() => (ids: number[] | null, meses: string[]) => calcularVsoMensal({
+    reservas: dados.reservas, unidadesAtuais: dadosDoPainel.unidades, fotos: fotosDoPainel, empreendimentos: ids, meses, mesAtual,
+  }), [dados.reservas, dadosDoPainel.unidades, fotosDoPainel, mesAtual]);
+  const vsoMeses = useMemo(() => vsoDe(empreendimentos, mesesVso), [vsoDe, empreendimentos, mesesVso]);
+  const vsoAtual = useMemo(() => vsoDe(empreendimentos, [mesAtual])[0], [vsoDe, empreendimentos, mesAtual]);
+  const vsoMedio = useMemo(() => mediaVso(vsoMeses), [vsoMeses]);
+  const vsoEstimados = vsoMedio.meses.filter(m => m.origem === 'estimado').length;
+  // Na tabela de empreendimentos: o VSO médio de cada um no período.
+  const vsoMedioPor = useMemo(
+    () => new Map(painel.empreendimentos.map(e => [e.id, mediaVso(vsoDe([e.id], mesesVso)).media])),
+    [painel.empreendimentos, vsoDe, mesesVso],
+  );
 
   const toggleEmpreendimento = (id: number) => {
     setEmpreendimentos(prev => {
@@ -640,14 +677,9 @@ export function PainelDesempenho({ dados, hoje = hojeBrasilia(), metas = null, v
           </CardGrafico>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
           <Tile rotulo="Ticket médio" valor={fmtCompacto(k.ticket)} variacao={<Variacao rotulo={rotuloComp} atual={k.ticket} anterior={a?.ticket} />} />
           <Tile rotulo="Preço por m²" valor={fmtMoeda(k.precoM2)} variacao={<Variacao rotulo={rotuloComp} atual={k.precoM2} anterior={a?.precoM2} />} />
-          <Tile
-            rotulo="VSO"
-            valor={fmtPct(k.vso)}
-            detalhe={`${fmtInt(k.unidades)} de ${fmtInt(k.unidades + estoqueAberto)} un. ofertadas`}
-          />
           <Tile
             rotulo="Distrato"
             valor={fmtMilhoes(k.distratosValor)}
@@ -675,6 +707,105 @@ export function PainelDesempenho({ dados, hoje = hojeBrasilia(), metas = null, v
           />
         </div>
 
+        {/* ── VSO ── */}
+        <TituloSecao
+          titulo="VSO"
+          descricao={`Vendas líquidas do mês ÷ estoque do mês (disponíveis + reservadas no dia 1)${canal || financiamento ? ' · o filtro de canal e financiamento não se aplica ao VSO' : ''}`}
+        />
+        <div className="grid grid-cols-1 xl:grid-cols-12 gap-3">
+          <div className="xl:col-span-4 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-1 xl:grid-rows-2 gap-3">
+            <div className="min-w-0 flex flex-col justify-between gap-2 rounded-xl border border-zinc-800/80 bg-zinc-900/40 p-4 short:p-3">
+              <p className="text-[11px] font-medium text-zinc-500">VSO do mês atual · {vsoAtual.labelLongo}</p>
+              <p className="text-[32px] short:text-[28px] leading-none font-bold text-zinc-100 tracking-tight">
+                {vsoAtual.vso === null ? '–' : fmtPct(vsoAtual.vso)}
+              </p>
+              <div className="flex items-end justify-between gap-2 flex-wrap">
+                <div className="min-w-0">
+                  <p className="text-xs text-zinc-400">
+                    {fmtInt(vsoAtual.liquidas)} {Math.abs(vsoAtual.liquidas) === 1 ? 'venda líquida' : 'vendas líquidas'} de {fmtInt(vsoAtual.estoqueInicial)} un. em estoque
+                  </p>
+                  <p className="text-[11px] text-zinc-500">
+                    {fmtInt(vsoAtual.vendas)} {vsoAtual.vendas === 1 ? 'venda' : 'vendas'} − {fmtInt(vsoAtual.distratos)} {vsoAtual.distratos === 1 ? 'distrato' : 'distratos'} · mês em andamento
+                  </p>
+                </div>
+                {vsoAtual.vso !== null && vsoMedio.media !== null && (
+                  <span
+                    className={`text-[11px] font-semibold ${vsoAtual.vso >= vsoMedio.media ? 'text-emerald-400' : 'text-red-400'}`}
+                    title="Diferença para o VSO médio dos meses fechados do período"
+                  >
+                    {fmtPp(vsoAtual.vso - vsoMedio.media)} <span className="font-normal text-zinc-500">vs. média</span>
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <div className="min-w-0 flex flex-col justify-between gap-2 rounded-xl border border-zinc-800/80 bg-zinc-900/40 p-4 short:p-3">
+              <p className="text-[11px] font-medium text-zinc-500">VSO médio · {rotuloPeriodo}</p>
+              <p className="text-[32px] short:text-[28px] leading-none font-bold text-zinc-100 tracking-tight">
+                {vsoMedio.media === null ? '–' : fmtPct(vsoMedio.media)}
+              </p>
+              <div>
+                <p className="text-xs text-zinc-400">
+                  {vsoMedio.meses.length
+                    ? `Média de ${fmtInt(vsoMedio.meses.length)} ${vsoMedio.meses.length === 1 ? 'mês fechado' : 'meses fechados'} (${vsoMedio.meses[0].label} a ${vsoMedio.meses[vsoMedio.meses.length - 1].label})`
+                    : 'Nenhum mês fechado no período'}
+                </p>
+                <p className="text-[11px] text-zinc-500">
+                  {vsoEstimados > 0
+                    ? `${fmtInt(vsoEstimados)} ${vsoEstimados === 1 ? 'mês com estoque estimado' : 'meses com estoque estimado'} (antes da primeira foto do fechamento)`
+                    : 'O mês atual entra na média quando fechar'}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <CardGrafico
+            className="xl:col-span-8"
+            titulo="VSO por mês"
+            subtitulo="Vendas líquidas ÷ estoque do mês"
+            acao={<Legenda itens={vsoMedio.media !== null
+              ? [
+                  { label: 'VSO do mês', cor: COR.azul },
+                  { label: 'Acima da média', cor: COR.verde },
+                  { label: `Média ${fmtPct(vsoMedio.media)}`, cor: COR.cinza, tracejado: true },
+                ]
+              : [{ label: 'VSO do mês', cor: COR.azul }]} />}
+            tabela={{
+              colunas: ['Mês', 'Vendas', 'Distratos', 'Líquidas', 'Estoque no dia 1', 'Estoque no fechamento', 'VSO', 'Origem do estoque'],
+              linhas: vsoMeses.map(m => [
+                m.label, fmtInt(m.vendas), fmtInt(m.distratos), fmtInt(m.liquidas),
+                fmtInt(m.estoqueInicial), fmtInt(m.estoqueFinal),
+                m.vso === null ? '–' : fmtPct(m.vso),
+                m.origem === 'fechamento' ? 'Fechamento' : m.origem === 'estimado' ? 'Estimado' : 'Em andamento',
+              ]),
+            }}
+          >
+            <GraficoColunasMeta
+              formatarEixo={n => fmtPct(n, 0)}
+              formatarRotulo={n => fmtPct(n)}
+              colunas={vsoMeses.map(m => ({
+                chave: m.mes,
+                label: m.label,
+                valor: Math.max(m.vso ?? 0, 0),
+                meta: vsoMedio.media,
+                aria: `${m.labelLongo}: VSO ${m.vso === null ? 'sem estoque' : fmtPct(m.vso)}`,
+                tip: (
+                  <>
+                    <TipTitulo>{m.labelLongo}</TipTitulo>
+                    <p className="tabular-nums font-semibold">VSO: {m.vso === null ? 'sem estoque' : fmtPct(m.vso)}</p>
+                    <p className="tabular-nums">{fmtInt(m.vendas)} vendas − {fmtInt(m.distratos)} distratos = {fmtInt(m.liquidas)} líquidas</p>
+                    <p className="tabular-nums">Estoque no dia 1: {fmtInt(m.estoqueInicial)} · no fechamento: {fmtInt(m.estoqueFinal)}</p>
+                    {vsoMedio.media !== null && m.vso !== null && (
+                      <p className="tabular-nums text-zinc-500">{fmtPp(m.vso - vsoMedio.media)} vs. média</p>
+                    )}
+                    <p className="text-zinc-500">{ROTULO_ORIGEM_VSO[m.origem]}</p>
+                  </>
+                ),
+              }))}
+            />
+          </CardGrafico>
+        </div>
+
         {/* ── Empreendimentos ── */}
         <TituloSecao titulo="Empreendimentos" descricao="Vendas no período selecionado; estoque na posição atual" />
         <section className="rounded-xl border border-zinc-800/80 bg-zinc-900/40 overflow-hidden">
@@ -690,7 +821,7 @@ export function PainelDesempenho({ dados, hoje = hojeBrasilia(), metas = null, v
                   <th className="text-right font-semibold px-3 py-2 border-b border-zinc-800">VGV</th>
                   <th className="text-right font-semibold px-3 py-2 border-b border-zinc-800">Ticket</th>
                   <th className="text-right font-semibold px-3 py-2 border-b border-zinc-800">R$/m²</th>
-                  <th className="text-right font-semibold px-3 py-2 border-b border-zinc-800">VSO</th>
+                  <th className="text-right font-semibold px-3 py-2 border-b border-zinc-800" title="VSO médio mensal dos meses fechados do período">VSO médio</th>
                   <th className="text-left font-semibold px-3 py-2 border-b border-zinc-800 w-[30%]">Posição do estoque</th>
                   <th className="text-right font-semibold px-3 py-2 border-b border-zinc-800 whitespace-nowrap" title="Disponíveis + reservadas, pelo valor atual da tabela de vendas (versão principal)">Estoque</th>
                   <th className="text-right font-semibold px-3 py-2 border-b border-zinc-800 whitespace-nowrap" title="Bloqueadas no CV com motivo Permutante, pelo valor atual da tabela de vendas (versão principal)">Permutas</th>
@@ -728,7 +859,9 @@ export function PainelDesempenho({ dados, hoje = hojeBrasilia(), metas = null, v
                     <td className="px-3 py-2.5 border-b border-zinc-800/50 text-right tabular-nums whitespace-nowrap">{e.vgvPeriodo > 0 ? fmtCompacto(e.vgvPeriodo) : '–'}</td>
                     <td className="px-3 py-2.5 border-b border-zinc-800/50 text-right tabular-nums whitespace-nowrap">{e.ticket > 0 ? fmtCompacto(e.ticket) : '–'}</td>
                     <td className="px-3 py-2.5 border-b border-zinc-800/50 text-right tabular-nums whitespace-nowrap">{e.precoM2 > 0 ? fmtMoeda(e.precoM2) : '–'}</td>
-                    <td className="px-3 py-2.5 border-b border-zinc-800/50 text-right tabular-nums">{fmtPct(e.vso)}</td>
+                    <td className="px-3 py-2.5 border-b border-zinc-800/50 text-right tabular-nums">
+                      {(() => { const v = vsoMedioPor.get(e.id); return v == null ? '–' : fmtPct(v); })()}
+                    </td>
                     <td className="px-3 py-2.5 border-b border-zinc-800/50">
                       <BarraSegmentada
                         nome={e.nome}
@@ -1001,6 +1134,8 @@ export default function DesempenhoComercial() {
   // Sem a tabela de metas (ou com erro), o painel segue e o cartão mostra "Não definida".
   const { data: metas } = useQuery({ queryKey: ['comercialMetas'], queryFn: fetchMetasComercial, staleTime: 60 * 1000, retry: 1 });
   const { data: projetos } = useQuery({ queryKey: ['projects'], queryFn: fetchProjects });
+  // Fotos do estoque no fechamento de cada mês (VSO). Sem elas, os meses passados são estimados.
+  const { data: fotosEstoque } = useQuery({ queryKey: ['cvFotosEstoque'], queryFn: fetchFotosEstoque, staleTime: 60 * 60 * 1000, retry: 1 });
   const vendasOrbit = useMemo<VendaOrbit[]>(() => {
     const nomePor = new Map((projetos ?? []).map(p => [p.id, p.name]));
     return (siengeVendas ?? []).flatMap(v => {
@@ -1052,7 +1187,7 @@ export default function DesempenhoComercial() {
         ) : (
           <div className="flex flex-col h-full">
             <div className="view-pad-x pt-2.5 shrink-0"><AvisoSync dados={data} /></div>
-            <div className="flex-1 min-h-0"><PainelDesempenho dados={data} metas={metas ?? null} vendasOrbit={vendasOrbit} precosOrbit={precosOrbit} /></div>
+            <div className="flex-1 min-h-0"><PainelDesempenho dados={data} metas={metas ?? null} vendasOrbit={vendasOrbit} precosOrbit={precosOrbit} fotos={fotosEstoque ?? SEM_FOTOS} /></div>
           </div>
         )}
       </div>

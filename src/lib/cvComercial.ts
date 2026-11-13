@@ -318,7 +318,6 @@ export interface Kpis {
   unidades: number;
   ticket: number;
   precoM2: number;
-  vso: number;
   distratos: number;
   distratosValor: number;
   taxaDistrato: number;
@@ -337,7 +336,6 @@ export interface LinhaEmpreendimento {
   total: number;
   vendaveis: number;
   pctVendido: number;
-  vso: number;
   /** Disponíveis + reservadas pelo valor de tabela; nulo se nenhuma tiver preço. */
   valorEstoque: number | null;
   /** Unidades do estoque sem preço na tabela de vendas. */
@@ -498,7 +496,7 @@ const ehVenda = (r: CvReserva) => r.situacao === 'Vendida';
 const somaValor = (rows: CvReserva[]) => rows.reduce((s, r) => s + r.valor_contrato, 0);
 
 function somarKpis(
-  vendas: CvReserva[], preVendas: CvReserva[], distratos: CvReserva[], estoqueAberto: number,
+  vendas: CvReserva[], preVendas: CvReserva[], distratos: CvReserva[],
   /** Vendas do período que depois viraram distrato: entram no bruto. */
   vendasDistratadas: CvReserva[] = [],
 ): Kpis {
@@ -516,7 +514,6 @@ function somarKpis(
     unidades,
     ticket: comValor.length ? comValor.reduce((s, r) => s + r.valor_contrato, 0) / comValor.length : 0,
     precoM2: area > 0 ? comArea.reduce((s, r) => s + r.valor_contrato, 0) / area : 0,
-    vso: unidades + estoqueAberto > 0 ? unidades / (unidades + estoqueAberto) : 0,
     distratos: distratos.length,
     distratosValor,
     taxaDistrato: unidades + distratos.length > 0 ? distratos.length / (unidades + distratos.length) : 0,
@@ -677,7 +674,6 @@ export function calcularPainel(dados: CvDados, f: FiltrosPainel, precos: Map<num
   });
   const parado = (n: number, v: Soma | undefined): ValorParado =>
     ({ unidades: n, valor: v && v.comPreco > 0 ? v.valor : null, semPreco: v?.semPreco ?? 0 });
-  const estoqueAberto = estoqueTotal['disponível'] + estoqueTotal.reservada;
 
   const vendasDe = (p: Periodo) => reservas.filter(r => ehVenda(r) && dentro(r.data_venda, p));
   const preVendasDe = (p: Periodo) => reservas.filter(r => r.situacao === 'Termo Assinado' && dentro(r.data_cad, p));
@@ -685,7 +681,7 @@ export function calcularPainel(dados: CvDados, f: FiltrosPainel, precos: Map<num
 
   // A venda distratada deixa de ser "Vendida" no CV, mas foi venda na data dela: conta no bruto.
   const vendasDistratadasDe = (p: Periodo) => reservas.filter(r => r.situacao === 'Distrato' && dentro(r.data_venda ?? r.data_cad, p));
-  const kpisDe = (p: Periodo) => somarKpis(vendasDe(p), preVendasDe(p), distratosDe(p), estoqueAberto, vendasDistratadasDe(p));
+  const kpisDe = (p: Periodo) => somarKpis(vendasDe(p), preVendasDe(p), distratosDe(p), vendasDistratadasDe(p));
 
   const vendas = vendasDe(f.periodo);
   const kpis = kpisDe(f.periodo);
@@ -700,7 +696,7 @@ export function calcularPainel(dados: CvDados, f: FiltrosPainel, precos: Map<num
 
   const empreendimentos: LinhaEmpreendimento[] = [...estoquePor.entries()].map(([id, estoque]) => {
     const vs = vendas.filter(r => Number(r.idempreendimento) === id);
-    const k = somarKpis(vs, [], [], estoque['disponível'] + estoque.reservada);
+    const k = somarKpis(vs, [], []);
     const vendaveis = estoque.vendida + estoque.reservada + estoque['disponível'];
     const g = valorPor.get(id);
     const ve = g?.estoque;
@@ -719,7 +715,6 @@ export function calcularPainel(dados: CvDados, f: FiltrosPainel, precos: Map<num
       total: vendaveis + estoque.permuta + estoque.bloqueada,
       vendaveis,
       pctVendido: vendaveis > 0 ? estoque.vendida / vendaveis : 0,
-      vso: k.vso,
       vendas: [...vs].sort((a, b) => (b.data_venda ?? '').localeCompare(a.data_venda ?? '')),
     };
   }).sort((a, b) => b.vgvPeriodo - a.vgvPeriodo || b.pctVendido - a.pctVendido);
