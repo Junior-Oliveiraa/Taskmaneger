@@ -6,6 +6,7 @@ import RichTextEditor from './RichTextEditor';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
 import { UPLOAD_LIMITS, uploadToStorage, sanitizeFileName } from '../lib/storage';
+import { CANAIS, FORMATOS } from '../lib/redeSocial';
 
 interface SocialMediaApprovalProps {
   task: Task;
@@ -565,6 +566,31 @@ export default function SocialMediaApproval({ task, allTasks, saveChange, curren
                <User size={16} />
             </div>
             <span className="text-sm font-medium text-zinc-200">uchoaempreendimentos</span>
+          </div>
+
+          {/* Agenda da publicação: alimenta o módulo Rede Social. A data é o prazo da tarefa. */}
+          <div className="mb-4 grid grid-cols-[1fr_1fr_auto] gap-2 relative z-40">
+            <MinimalSelect
+              value={approvalData.canal || ''}
+              onChange={(val: string) => patch({ canal: val || undefined })}
+              options={[{ value: '', label: 'Sem canal' }, ...CANAIS.map(c => ({ value: c, label: c }))]}
+              placeholder="Canal"
+              openUp={false}
+            />
+            <MinimalSelect
+              value={approvalData.formato || ''}
+              onChange={(val: string) => patch({ formato: val || undefined })}
+              options={[{ value: '', label: 'Sem formato' }, ...FORMATOS.map(f => ({ value: f, label: f }))]}
+              placeholder="Formato"
+              openUp={false}
+            />
+            <input
+              type="time"
+              aria-label="Horário da publicação"
+              value={approvalData.horario || ''}
+              onChange={(e) => patch({ horario: e.target.value || undefined })}
+              className="w-[96px] bg-zinc-900/40 hover:bg-zinc-800/60 border border-zinc-800/50 rounded-md px-2.5 py-2 text-xs text-zinc-300 font-medium outline-none [color-scheme:dark]"
+            />
           </div>
 
           <div className="mb-3 flex items-center justify-between gap-2">
