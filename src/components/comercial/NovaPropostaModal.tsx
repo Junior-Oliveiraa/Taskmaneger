@@ -744,11 +744,14 @@ const descreverParcela = (p: PropostaAutorizacao['parcelas'][number]) => {
   return `Parcela única · ${dataBr(p.primeiroVencimento)}`;
 };
 
-// A ficha já salva, no detalhe do card.
-export function AutorizacaoResumo({ autorizacao: a, cliente, corretor }: {
+// A ficha já salva, no painel lateral do card. Duas colunas em telas largas:
+// valores e fluxo (a leitura principal) à esquerda; pessoas, contrato e o que
+// vier em `lateral` (anexos) numa coluna de apoio à direita.
+export function AutorizacaoResumo({ autorizacao: a, cliente, corretor, lateral }: {
   autorizacao: PropostaAutorizacao;
   cliente: string;
   corretor: string;
+  lateral?: React.ReactNode;
 }) {
   const c = calcularAutorizacao(a);
   const emails = a.emails.split(/[;,\s]+/).filter(Boolean);
@@ -759,110 +762,119 @@ export function AutorizacaoResumo({ autorizacao: a, cliente, corretor }: {
     ['Data do contrato', dataOuMesBr(a.dataContrato)],
     ['Vigência da tabela', dataOuMesBr(a.vigenciaTabela)],
   ];
+  const referencias: [string, string][] = [
+    ['Valor de tabela', moedaBr(a.valorTabela)],
+    ['m² contratado', c.m2Contratado === null ? '—' : moedaBr(c.m2Contratado)],
+    ['m² tabela', c.m2Tabela === null ? '—' : moedaBr(c.m2Tabela)],
+  ];
 
   return (
-    <div className="space-y-6">
-      {/* Valores: o contratado em destaque, o resto como referência. */}
-      <section className="rounded-xl border border-zinc-800/80 bg-gradient-to-b from-zinc-900/70 to-zinc-900/20 p-4">
-        <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
-          <div className="min-w-0">
-            <Rotulo>Valor contratado</Rotulo>
-            <p className="mt-1 text-2xl font-semibold tracking-tight text-zinc-50 tabular-nums">{moedaBr(c.contratado)}</p>
-            <div className="mt-2"><SeloDiferenca difValor={c.difValor} difPercentual={c.difPercentual} /></div>
+    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
+      <div className="min-w-0 space-y-6">
+        {/* Valores: o contratado em destaque, as referências ao lado. */}
+        <section className="rounded-xl border border-zinc-800/80 bg-gradient-to-br from-zinc-900/80 to-zinc-900/20 p-5">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-5">
+            <div className="min-w-0">
+              <Rotulo>Valor contratado</Rotulo>
+              <p className="mt-1 text-3xl font-semibold tracking-tight text-zinc-50 tabular-nums">{moedaBr(c.contratado)}</p>
+              <div className="mt-2.5"><SeloDiferenca difValor={c.difValor} difPercentual={c.difPercentual} /></div>
+            </div>
+            <dl className="grid grid-cols-3 gap-2 md:w-[400px] shrink-0">
+              {referencias.map(([r, v]) => (
+                <div key={r} className="rounded-lg bg-zinc-950/50 border border-zinc-800/60 px-3 py-2 min-w-0">
+                  <dt className="text-[11px] text-zinc-500 truncate">{r}</dt>
+                  <dd className="mt-0.5 text-[13px] font-medium text-zinc-200 tabular-nums truncate" title={v}>{v}</dd>
+                </div>
+              ))}
+            </dl>
           </div>
-          <dl className="grid grid-cols-3 sm:grid-cols-1 gap-x-4 gap-y-1.5 sm:text-right text-[12px] tabular-nums shrink-0">
-            {([
-              ['Tabela', moedaBr(a.valorTabela)],
-              ['m² contratado', c.m2Contratado === null ? '—' : moedaBr(c.m2Contratado)],
-              ['m² tabela', c.m2Tabela === null ? '—' : moedaBr(c.m2Tabela)],
-            ] as [string, string][]).map(([r, v]) => (
-              <div key={r} className="sm:flex sm:items-baseline sm:justify-end sm:gap-3">
-                <dt className="text-zinc-500">{r}</dt>
-                <dd className="text-zinc-300">{v}</dd>
+        </section>
+
+        {/* Fluxo: barra de composição + uma linha legível por parcela. */}
+        <section>
+          <TituloBloco extra={<span className="text-[12px] text-zinc-500 tabular-nums">{a.parcelas.length} {a.parcelas.length === 1 ? 'item' : 'itens'}</span>}>
+            Fluxo de pagamento
+          </TituloBloco>
+          {c.contratado > 0 && (
+            <div className="flex h-2 rounded-full overflow-hidden bg-zinc-800 gap-px mb-3">
+              {a.parcelas.map((p, i) => (
+                <div
+                  key={i} className={CORES_FLUXO[i % CORES_FLUXO.length]}
+                  style={{ width: `${c.linhas[i].percentual}%` }}
+                  title={`${p.descricao} · ${percentualBr(c.linhas[i].percentual)}`}
+                />
+              ))}
+            </div>
+          )}
+          <ul className="rounded-xl border border-zinc-800/70 divide-y divide-zinc-800/70 overflow-hidden">
+            {a.parcelas.map((p, i) => (
+              <li key={i} className="flex items-center gap-3 px-4 py-3">
+                <span className={`w-1 self-stretch rounded-full shrink-0 ${CORES_FLUXO[i % CORES_FLUXO.length]}`} />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[13px] font-medium text-zinc-100 truncate">{p.descricao || 'Sem descrição'}</span>
+                    {p.atualizacao === 'INCC' && (
+                      <span className="rounded px-1 py-px text-[9px] font-semibold tracking-wider text-zinc-400 bg-zinc-800/80" title="Corrigida pelo INCC">INCC</span>
+                    )}
+                  </div>
+                  <p className="text-[12px] text-zinc-500 tabular-nums truncate">{descreverParcela(p)}</p>
+                </div>
+                <div className="text-right shrink-0 tabular-nums">
+                  <p className="text-[14px] font-medium text-zinc-100">{moedaBr(c.linhas[i].total)}</p>
+                  <p className="text-[11px] text-zinc-500" title={`Acumulado: ${percentualBr(c.linhas[i].acumulado)}`}>{percentualBr(c.linhas[i].percentual)}</p>
+                </div>
+              </li>
+            ))}
+            <li className="flex items-center justify-between gap-3 px-4 py-3 bg-zinc-900/50">
+              <span className="text-[12px] font-medium text-zinc-400">Total</span>
+              <span className="text-[14px] font-semibold text-zinc-50 tabular-nums">{moedaBr(c.contratado)}</span>
+            </li>
+          </ul>
+        </section>
+
+        {a.observacoes && (
+          <section>
+            <TituloBloco>Observações</TituloBloco>
+            <p className="text-[13px] leading-relaxed text-zinc-300 whitespace-pre-wrap break-words rounded-xl bg-zinc-900/40 border border-zinc-800/70 p-4">{a.observacoes}</p>
+          </section>
+        )}
+      </div>
+
+      {/* Coluna de apoio */}
+      <aside className="min-w-0 space-y-6 lg:border-l lg:border-zinc-800/60 lg:pl-6">
+        <section className="space-y-3">
+          <TituloBloco>Pessoas</TituloBloco>
+          <div className="rounded-xl border border-zinc-800/70 p-3.5 min-w-0">
+            <Rotulo>Cliente</Rotulo>
+            <p className="mt-0.5 text-[14px] font-medium text-zinc-100 truncate">{cliente}</p>
+            <div className="mt-2 space-y-1.5">
+              {a.telefone && (
+                <Contato icone={<Phone size={12} />} href={`tel:${a.telefone.replace(/\D/g, '')}`}>{a.telefone}</Contato>
+              )}
+              {emails.map(e => <Contato key={e} icone={<Mail size={12} />} href={`mailto:${e}`}>{e}</Contato>)}
+              {!a.telefone && emails.length === 0 && <span className="text-[12px] text-zinc-600">Sem contato</span>}
+            </div>
+          </div>
+          <div className="rounded-xl border border-zinc-800/70 p-3.5 min-w-0">
+            <Rotulo>Corretor / imobiliária</Rotulo>
+            <p className="mt-0.5 text-[14px] font-medium text-zinc-100 truncate" title={corretor}>{corretor}</p>
+          </div>
+        </section>
+
+        <section>
+          <TituloBloco>Contrato</TituloBloco>
+          <dl className="divide-y divide-zinc-800/60">
+            {detalhes.map(([rotulo, valor]) => (
+              <div key={rotulo} className="flex items-baseline justify-between gap-3 py-2 first:pt-0">
+                <dt className="text-[12px] text-zinc-500 shrink-0">{rotulo}</dt>
+                <dd className="text-[13px] text-zinc-200 tabular-nums text-right break-words min-w-0">{valor}</dd>
               </div>
             ))}
           </dl>
-        </div>
-      </section>
-
-      {/* Pessoas */}
-      <section className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div className="rounded-lg border border-zinc-800/70 p-3 min-w-0">
-          <Rotulo>Cliente</Rotulo>
-          <p className="mt-0.5 text-[13px] font-medium text-zinc-100 truncate">{cliente}</p>
-          <div className="mt-2 space-y-1">
-            {a.telefone && (
-              <Contato icone={<Phone size={12} />} href={`tel:${a.telefone.replace(/\D/g, '')}`}>{a.telefone}</Contato>
-            )}
-            {emails.map(e => <Contato key={e} icone={<Mail size={12} />} href={`mailto:${e}`}>{e}</Contato>)}
-            {!a.telefone && emails.length === 0 && <span className="text-[12px] text-zinc-600">Sem contato</span>}
-          </div>
-        </div>
-        <div className="rounded-lg border border-zinc-800/70 p-3 min-w-0">
-          <Rotulo>Corretor / imobiliária</Rotulo>
-          <p className="mt-0.5 text-[13px] font-medium text-zinc-100 truncate">{corretor}</p>
-        </div>
-      </section>
-
-      {/* Dados da unidade e do contrato */}
-      <section>
-        <TituloBloco>Contrato</TituloBloco>
-        <dl className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-3">
-          {detalhes.map(([rotulo, valor]) => (
-            <div key={rotulo} className="min-w-0">
-              <dt><Rotulo>{rotulo}</Rotulo></dt>
-              <dd className="mt-0.5 text-[13px] text-zinc-200 tabular-nums break-words">{valor}</dd>
-            </div>
-          ))}
-        </dl>
-      </section>
-
-      {/* Fluxo: barra de composição + uma linha legível por parcela, sem tabela larga. */}
-      <section>
-        <TituloBloco>Fluxo de pagamento</TituloBloco>
-        {c.contratado > 0 && (
-          <div className="flex h-1.5 rounded-full overflow-hidden bg-zinc-800 gap-px mb-3">
-            {a.parcelas.map((p, i) => (
-              <div
-                key={i} className={CORES_FLUXO[i % CORES_FLUXO.length]}
-                style={{ width: `${c.linhas[i].percentual}%` }}
-                title={`${p.descricao} · ${percentualBr(c.linhas[i].percentual)}`}
-              />
-            ))}
-          </div>
-        )}
-        <ul className="rounded-lg border border-zinc-800/70 divide-y divide-zinc-800/70 overflow-hidden">
-          {a.parcelas.map((p, i) => (
-            <li key={i} className="flex items-center gap-3 px-3 py-2.5">
-              <span className={`w-1 self-stretch rounded-full shrink-0 ${CORES_FLUXO[i % CORES_FLUXO.length]}`} />
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="text-[13px] font-medium text-zinc-100 truncate">{p.descricao || 'Sem descrição'}</span>
-                  {p.atualizacao === 'INCC' && (
-                    <span className="rounded px-1 py-px text-[9px] font-semibold tracking-wider text-zinc-400 bg-zinc-800/80" title="Corrigida pelo INCC">INCC</span>
-                  )}
-                </div>
-                <p className="text-[11px] text-zinc-500 tabular-nums truncate">{descreverParcela(p)}</p>
-              </div>
-              <div className="text-right shrink-0 tabular-nums">
-                <p className="text-[13px] text-zinc-100">{moedaBr(c.linhas[i].total)}</p>
-                <p className="text-[11px] text-zinc-500" title={`Acumulado: ${percentualBr(c.linhas[i].acumulado)}`}>{percentualBr(c.linhas[i].percentual)}</p>
-              </div>
-            </li>
-          ))}
-          <li className="flex items-center justify-between gap-3 px-3 py-2.5 bg-zinc-900/50">
-            <span className="text-[12px] font-medium text-zinc-400">Total</span>
-            <span className="text-[13px] font-semibold text-zinc-50 tabular-nums">{moedaBr(c.contratado)}</span>
-          </li>
-        </ul>
-      </section>
-
-      {a.observacoes && (
-        <section>
-          <TituloBloco>Observações</TituloBloco>
-          <p className="text-[13px] leading-relaxed text-zinc-300 whitespace-pre-wrap break-words rounded-lg bg-zinc-900/40 border border-zinc-800/70 p-3">{a.observacoes}</p>
         </section>
-      )}
+
+        {lateral}
+      </aside>
     </div>
   );
 }

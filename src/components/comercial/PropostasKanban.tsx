@@ -136,6 +136,13 @@ export default function PropostasKanban({ projects, projectDisplays, unidades, v
     const t = window.setInterval(() => setAgora(Date.now()), 60_000);
     return () => window.clearInterval(t);
   }, []);
+  // Esc fecha o painel da proposta, como na task.
+  useEffect(() => {
+    if (!aberta) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setAberta(null); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [aberta]);
   // Mesmo padrão do Dashboard do Comercial: este ano, comparado ao ano anterior.
   const [filtro, setFiltro] = useState<FiltroPropostas>(() => ({
     projetos: null, imobiliaria: null, corretor: null,
@@ -324,99 +331,89 @@ export default function PropostasKanban({ projects, projectDisplays, unidades, v
         })}
       </div>
 
-      {proposta && (
-        <div
-          className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4"
-          onClick={() => setAberta(null)}
-        >
-          <div
-            className={`w-full ${proposta.autorizacao ? 'max-w-2xl' : 'max-w-lg'} max-h-[88vh] flex flex-col rounded-2xl border border-zinc-800 bg-[#0f0f12] shadow-2xl overflow-hidden`}
-            onClick={e => e.stopPropagation()}
-          >
-            <header className="flex items-start justify-between gap-3 px-5 pt-4 pb-3.5 border-b border-zinc-800/60 shrink-0">
-              <div className="min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  {proposta.numero !== null && (
-                    <span className="rounded-md bg-zinc-800/80 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-zinc-300 tracking-wide">{codigoProposta(proposta.numero)}</span>
-                  )}
-                  <h3 className="text-base font-semibold text-zinc-50 truncate">{nomeProjeto(proposta.projectId)}</h3>
-                  {proposta.unidade && (
-                    <span className="rounded-md bg-zinc-800/80 px-1.5 py-0.5 text-[11px] font-medium text-zinc-300 tabular-nums">Unid. {proposta.unidade}</span>
-                  )}
-                </div>
-                <p className="mt-1 flex items-center gap-1.5 text-[12px] text-zinc-500">
-                  <span className={`w-1.5 h-1.5 rounded-full ${etapaAtual?.dot ?? 'bg-zinc-500'}`} />
-                  <span className="text-zinc-300">{etapaAtual?.label}</span>
-                  <span>· enviada em {dataBr(proposta.enviadaEm)}</span>
-                </p>
-              </div>
-              <button onClick={() => setAberta(null)} className="-mr-1 p-1 rounded-md text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800/60" title="Fechar">
-                <X size={16} />
-              </button>
-            </header>
-
-            <div className="flex-1 min-h-0 overflow-y-auto scrollbar-minimal px-5 py-4 space-y-5 text-xs">
-              <PainelAprovacao key={proposta.id} p={proposta} gestor={isMaster} onDecidir={(d, obs) => decidir(proposta, d, obs)} />
-
-              {proposta.autorizacao ? (
-                <AutorizacaoResumo
-                  autorizacao={proposta.autorizacao}
-                  cliente={proposta.cliente}
-                  corretor={`${proposta.corretor}${proposta.imobiliaria ? ` · ${proposta.imobiliaria}` : ''}`}
-                />
-              ) : (
-                <>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div className="rounded-lg border border-zinc-800/70 p-3 min-w-0">
-                      <span className="block text-[11px] text-zinc-500">Cliente</span>
-                      <p className="mt-0.5 text-[13px] font-medium text-zinc-100 truncate">{proposta.cliente}</p>
-                    </div>
-                    <div className="rounded-lg border border-zinc-800/70 p-3 min-w-0">
-                      <span className="block text-[11px] text-zinc-500">Corretor / imobiliária</span>
-                      <p className="mt-0.5 text-[13px] font-medium text-zinc-100 truncate">{proposta.corretor}{proposta.imobiliaria ? ` · ${proposta.imobiliaria}` : ''}</p>
-                    </div>
-                  </div>
-                  <div>
-                    <h4 className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-2">Fluxo de pagamento</h4>
-                    <p className="text-[13px] leading-relaxed text-zinc-300 whitespace-pre-wrap break-words">{proposta.fluxoPagamento || '—'}</p>
-                  </div>
-                </>
-              )}
-
-              {proposta.anexos.length > 0 && (
-                <div>
-                  <h4 className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-2.5">Anexos</h4>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                    {proposta.anexos.map(a => {
-                      const ehImagem = /\.(png|jpe?g|gif|webp|bmp)$/i.test(a.name);
-                      return (
-                        <a
-                          key={a.url} href={a.url} target="_blank" rel="noreferrer"
-                          className="block rounded-md border border-zinc-800 bg-[#121214] hover:border-zinc-600 overflow-hidden transition-colors"
-                          title={a.name}
-                        >
-                          {ehImagem && <img src={a.url} alt={a.name} className="w-full h-24 object-cover" loading="lazy" />}
-                          <span className="flex items-center gap-1 px-2 py-1 text-[11px] text-zinc-300 truncate">
-                            <Paperclip size={10} className="shrink-0" /> <span className="truncate">{a.name}</span>
-                          </span>
-                        </a>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
+      {proposta && (() => {
+        const anexos = proposta.anexos.length > 0 && (
+          <section>
+            <h4 className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-2.5">Anexos · {proposta.anexos.length}</h4>
+            <div className="grid grid-cols-2 gap-2">
+              {proposta.anexos.map(a => {
+                const ehImagem = /\.(png|jpe?g|gif|webp|bmp)$/i.test(a.name);
+                return (
+                  <a
+                    key={a.url} href={a.url} target="_blank" rel="noreferrer"
+                    className="block rounded-lg border border-zinc-800 bg-[#121214] hover:border-zinc-600 overflow-hidden transition-colors"
+                    title={a.name}
+                  >
+                    {ehImagem && <img src={a.url} alt={a.name} className="w-full h-20 object-cover" loading="lazy" />}
+                    <span className="flex items-center gap-1 px-2 py-1.5 text-[11px] text-zinc-300 truncate">
+                      <Paperclip size={10} className="shrink-0" /> <span className="truncate">{a.name}</span>
+                    </span>
+                  </a>
+                );
+              })}
             </div>
+          </section>
+        );
+        const corretor = `${proposta.corretor}${proposta.imobiliaria ? ` · ${proposta.imobiliaria}` : ''}`;
+        return (
+          <>
+            {/* Painel lateral, como a task: entra da direita e deixa o kanban visível à esquerda. */}
+            <div className="fixed inset-0 z-40 bg-black/55 backdrop-blur-xs animate-fade-in" onMouseDown={() => setAberta(null)} />
+            <aside
+              role="dialog" aria-modal="true" aria-label={`Proposta ${codigoProposta(proposta.numero) ?? ''}`}
+              className={`fixed top-0 right-0 bottom-0 z-50 flex flex-col bg-[#0c0c0e] border-l border-zinc-800/80 shadow-2xl animate-slide-in text-zinc-200 w-full ${proposta.autorizacao ? 'md:w-[78vw] xl:w-[68vw] max-w-[1280px]' : 'md:w-[560px]'}`}
+            >
+              <header className="flex items-start justify-between gap-4 px-6 pt-5 pb-4 border-b border-zinc-800/60 shrink-0">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2.5 flex-wrap">
+                    {proposta.numero !== null && (
+                      <span className={`font-mono text-[12px] font-bold tracking-wide ${etapaAtual?.texto ?? 'text-zinc-400'}`}>{codigoProposta(proposta.numero)}</span>
+                    )}
+                    <h2 className="text-lg font-semibold text-blue-400 truncate">{nomeProjeto(proposta.projectId)}</h2>
+                    {proposta.unidade && (
+                      <span className="rounded-md bg-zinc-800/80 px-1.5 py-0.5 text-[11px] font-medium text-zinc-300 tabular-nums">Unid. {proposta.unidade}</span>
+                    )}
+                  </div>
+                  <p className="mt-1.5 flex items-center gap-1.5 text-[12px] text-zinc-500 flex-wrap">
+                    <span className={`w-1.5 h-1.5 rounded-full ${etapaAtual?.dot ?? 'bg-zinc-500'}`} />
+                    <span className="text-zinc-300">{etapaAtual?.label}</span>
+                    <span>· enviada em {dataBr(proposta.enviadaEm)}</span>
+                    <span className="inline-flex items-center gap-1" title={`Criada em ${dataHoraBr(proposta.createdAt)}`}>
+                      · <Clock3 size={11} /> {tempoDecorrido(proposta.createdAt, agora)}
+                    </span>
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <label className="hidden sm:flex items-center gap-2">
+                    <span className="text-[12px] text-zinc-500">Mover para</span>
+                    <span className="block w-[200px]">
+                      <select
+                        className={selectCls} value={proposta.etapa}
+                        onChange={e => mover(proposta.id, e.target.value as PropostaEtapa)}
+                      >
+                        {PROPOSTA_ETAPAS.map(et => (
+                          <option key={et.id} value={et.id} disabled={travada(proposta) && !ETAPAS_SEM_APROVACAO.includes(et.id)}>{et.label}</option>
+                        ))}
+                      </select>
+                    </span>
+                  </label>
+                  <button
+                    type="button" onClick={() => excluir(proposta)} title="Excluir proposta"
+                    className="p-2 rounded-md text-zinc-500 hover:text-rose-300 hover:bg-rose-500/10 transition-colors"
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                  <span className="w-px h-5 bg-zinc-800" aria-hidden />
+                  <button onClick={() => setAberta(null)} className="p-2 rounded-md text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800/60" title="Fechar (Esc)">
+                    <X size={16} />
+                  </button>
+                </div>
+              </header>
 
-            <footer className="flex items-center justify-between gap-3 px-5 py-3 border-t border-zinc-800/60 bg-zinc-950/40 shrink-0">
-              <button
-                type="button" onClick={() => excluir(proposta)}
-                className="inline-flex items-center gap-1.5 rounded-md px-2 py-1.5 text-[12px] text-zinc-500 hover:text-rose-300 hover:bg-rose-500/10 transition-colors"
-              >
-                <Trash2 size={13} /> Excluir
-              </button>
-              <label className="flex items-center gap-2">
-                <span className="hidden sm:inline text-[12px] text-zinc-500">Mover para</span>
-                <span className="block w-[200px]">
+              <div className="flex-1 min-h-0 overflow-y-auto scrollbar-minimal px-6 py-5 space-y-6 text-xs">
+                {/* No celular o seletor de etapa não cabe no cabeçalho. */}
+                <label className="sm:hidden flex flex-col gap-1.5">
+                  <span className="text-[11px] text-zinc-500">Mover para</span>
                   <select
                     className={selectCls} value={proposta.etapa}
                     onChange={e => mover(proposta.id, e.target.value as PropostaEtapa)}
@@ -425,12 +422,36 @@ export default function PropostasKanban({ projects, projectDisplays, unidades, v
                       <option key={et.id} value={et.id} disabled={travada(proposta) && !ETAPAS_SEM_APROVACAO.includes(et.id)}>{et.label}</option>
                     ))}
                   </select>
-                </span>
-              </label>
-            </footer>
-          </div>
-        </div>
-      )}
+                </label>
+
+                <PainelAprovacao key={proposta.id} p={proposta} gestor={isMaster} onDecidir={(d, obs) => decidir(proposta, d, obs)} />
+
+                {proposta.autorizacao ? (
+                  <AutorizacaoResumo autorizacao={proposta.autorizacao} cliente={proposta.cliente} corretor={corretor} lateral={anexos} />
+                ) : (
+                  <>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="rounded-xl border border-zinc-800/70 p-3.5 min-w-0">
+                        <span className="block text-[11px] text-zinc-500">Cliente</span>
+                        <p className="mt-0.5 text-[14px] font-medium text-zinc-100 truncate">{proposta.cliente}</p>
+                      </div>
+                      <div className="rounded-xl border border-zinc-800/70 p-3.5 min-w-0">
+                        <span className="block text-[11px] text-zinc-500">Corretor / imobiliária</span>
+                        <p className="mt-0.5 text-[14px] font-medium text-zinc-100 truncate">{corretor}</p>
+                      </div>
+                    </div>
+                    <section>
+                      <h4 className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-2">Fluxo de pagamento</h4>
+                      <p className="text-[13px] leading-relaxed text-zinc-300 whitespace-pre-wrap break-words">{proposta.fluxoPagamento || '—'}</p>
+                    </section>
+                    {anexos}
+                  </>
+                )}
+              </div>
+            </aside>
+          </>
+        );
+      })()}
 
       {novaAberta && (
         <NovaPropostaModal
