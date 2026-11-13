@@ -30,7 +30,8 @@ import {
   Receipt,
   BarChart2,
   Handshake,
-  Home
+  Home,
+  Share2
 } from 'lucide-react';
 import { ViewType, Project, Task } from '../types';
 import { useAuth } from '../context/AuthContext';
@@ -137,6 +138,10 @@ export default function Sidebar({
   const reworkCount = tasks.filter(t => t.status === 'rework').length;
   const implementationCount = tasks.filter(t => t.status === 'implementation').length;
   const activeTasksCount = noForecastCount + todoCount + inProgressCount + pausedCount + approvalCount + reworkCount + implementationCount;
+  // Posts de rede social ainda não concluídos (aprovado também conta como concluído).
+  const openPostsCount = tasks.filter(t =>
+    t.labels.some(l => l.name === 'Social Media') && t.status !== 'done' && t.socialMediaApproval?.status !== 'approved'
+  ).length;
 
   const navigateToTasks = (subView: 'board' | 'list') => {
     setActiveView('tasks_board');
@@ -413,6 +418,28 @@ export default function Sidebar({
                   <div className="relative z-10 flex-1 flex items-center justify-between">
                     <span>Quadro Kanban</span>
                     <span className="text-[10px] text-zinc-400 font-mono bg-zinc-800/40 px-1.5 py-0.5 rounded border border-zinc-700/30">{activeTasksCount}</span>
+                  </div>
+                )}
+              </button>
+
+              <button
+                onClick={() => setActiveView('rede_social')}
+                className={`relative w-full flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                  activeView === 'rede_social'
+                    ? 'text-zinc-100'
+                    : 'hover:bg-zinc-900/55 hover:text-zinc-200 border border-transparent'
+                }`}
+              >
+                {activeView === 'rede_social' && (
+                  <motion.div layoutId="sidebar-active-pill" className="absolute inset-0 bg-zinc-900/80 border border-zinc-800/50 rounded-md" transition={{ duration: 0.18, ease: 'easeOut' }} />
+                )}
+                <Share2 size={14} className={`relative z-10 ${activeView === 'rede_social' ? 'text-zinc-200' : 'text-zinc-550'}`} />
+                {!collapsed && (
+                  <div className="relative z-10 flex-1 flex items-center justify-between">
+                    <span>Rede Social</span>
+                    {openPostsCount > 0 && (
+                      <span className="text-[10px] text-zinc-400 font-mono bg-zinc-800/40 px-1.5 py-0.5 rounded border border-zinc-700/30">{openPostsCount}</span>
+                    )}
                   </div>
                 )}
               </button>

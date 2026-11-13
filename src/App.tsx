@@ -53,12 +53,14 @@ const SiengeView = lazy(() => import('./components/SiengeView'));
 const ComercialHistorico = lazy(() => import('./components/comercial/ComercialHistorico'));
 const PropostasKanban = lazy(() => import('./components/comercial/PropostasKanban'));
 const DashboardView = lazy(() => import('./components/DashboardView'));
+const RedeSocialView = lazy(() => import('./components/redeSocial/RedeSocialView'));
 
 /** Módulo(s) que liberam cada tela. Telas fora do mapa são de todos. */
 const MODULOS_DA_TELA: Partial<Record<ViewType, Modulo[]>> = {
   tasks_board: ['tarefas'],
   tasks_list: ['tarefas'],
   calendar: ['tarefas'],
+  rede_social: ['tarefas'],
   crm: ['crm'],
   projects: ['empreendimentos'],
   sienge: ['financas', 'financas_orcamento'],
@@ -1267,6 +1269,29 @@ export default function App() {
     setIsTaskSheetOpen(true);
   };
 
+  // Post do módulo Rede Social: tarefa com a etiqueta "Social Media". Com data,
+  // já nasce em 'A fazer' (o prazo é o dia da publicação).
+  const handleNewSocialPost = (dueDate?: string) => {
+    const etiqueta = labels.find(l => l.name === 'Social Media');
+    const newTask: any = {
+      id: crypto.randomUUID(),
+      title: '',
+      description: '',
+      status: dueDate ? 'todo' : 'no_forecast',
+      priority: 'medium',
+      projectId: '',
+      labels: [etiqueta || labels[0]].filter(Boolean) as Label[],
+      subtasks: [],
+      createdAt: new Date().toISOString().split('T')[0],
+      assigneeId: currentUser?.id,
+      ...(dueDate ? { dueDate } : {}),
+      _isLocal: true,
+    };
+    handleAddTask(newTask as Task);
+    setSelectedTask(newTask as Task);
+    setIsTaskSheetOpen(true);
+  };
+
   const handleSelectTask = useCallback(async (task: Task) => {
     setSelectedTask(task);
     setIsTaskSheetOpen(true);
@@ -1401,6 +1426,8 @@ export default function App() {
         return 'Empreendimentos Globais';
       case 'calendar':
         return 'Calendário';
+      case 'rede_social':
+        return 'Rede Social';
       case 'crm':
         return 'CRM';
       case 'settings':
@@ -1609,6 +1636,16 @@ export default function App() {
               currentProjectFilter={currentProjectFilter}
               socialMediaFilter={socialMediaFilter}
               setSocialMediaFilter={setSocialMediaFilter}
+            />
+          )}
+
+          {activeView === 'rede_social' && (
+            <RedeSocialView
+              tasks={tasks}
+              projects={projects}
+              onSelectTask={handleSelectTask}
+              onUpdateTask={handleUpdateTask}
+              onNewPost={handleNewSocialPost}
             />
           )}
 
