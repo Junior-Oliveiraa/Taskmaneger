@@ -290,9 +290,9 @@ export default function PropostasKanban({ projects, projectDisplays, unidades, v
                           {p.unidade && <span className="shrink-0 font-medium text-zinc-300 tabular-nums">Un. {p.unidade}</span>}
                         </div>
                       )}
-                      <p className="text-xs font-semibold text-zinc-100 leading-snug break-words">{nomeProjeto(p.projectId)}</p>
+                      <p className="text-xs font-semibold text-blue-400 leading-snug break-words">{nomeProjeto(p.projectId)}</p>
                       <p
-                        className={`mt-1 text-[14px] font-bold tabular-nums ${vgvDe(p) > 0 ? 'text-emerald-300' : 'text-[12px] font-medium text-zinc-600'}`}
+                        className={`mt-1 text-[14px] font-bold tabular-nums ${vgvDe(p) > 0 ? 'text-zinc-50' : 'text-[12px] font-medium text-zinc-600'}`}
                         title={p.autorizacao ? 'VGV: valor contratado na ficha' : 'VGV: valor da unidade na Tabela de Vendas'}
                       >
                         {vgvDe(p) > 0 ? moedaBr(vgvDe(p)) : 'VGV não informado'}
