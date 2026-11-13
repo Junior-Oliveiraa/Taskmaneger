@@ -93,13 +93,13 @@ export async function registrarMovimentoComercial(params: {
 
 export type PropostaEtapa = 'visita' | 'realizada' | 'em_analise' | 'contra_proposta' | 'analise_final' | 'venda';
 
-export const PROPOSTA_ETAPAS: { id: PropostaEtapa; label: string; dot: string; accentBg: string; accentBorder: string }[] = [
-  { id: 'visita',          label: 'Visitas',              dot: 'bg-sky-400',     accentBg: 'bg-sky-500/[0.04]',     accentBorder: 'border-sky-500/30' },
-  { id: 'realizada',       label: 'Propostas realizadas', dot: 'bg-violet-400',  accentBg: 'bg-violet-500/[0.04]',  accentBorder: 'border-violet-500/30' },
-  { id: 'em_analise',      label: 'Propostas em análise', dot: 'bg-blue-400',    accentBg: 'bg-blue-500/[0.04]',    accentBorder: 'border-blue-500/30' },
-  { id: 'contra_proposta', label: 'Contra proposta',      dot: 'bg-amber-400',   accentBg: 'bg-amber-500/[0.04]',   accentBorder: 'border-amber-500/30' },
-  { id: 'analise_final',   label: 'Análise final',        dot: 'bg-orange-400',  accentBg: 'bg-orange-500/[0.04]',  accentBorder: 'border-orange-500/30' },
-  { id: 'venda',           label: 'Venda',                dot: 'bg-emerald-400', accentBg: 'bg-emerald-500/[0.04]', accentBorder: 'border-emerald-500/30' },
+export const PROPOSTA_ETAPAS: { id: PropostaEtapa; label: string; dot: string; accentBg: string; accentBorder: string; texto: string; borda: string }[] = [
+  { id: 'visita',          label: 'Visitas',              dot: 'bg-sky-400',     accentBg: 'bg-sky-500/[0.04]',     accentBorder: 'border-sky-500/30',     texto: 'text-sky-300',     borda: 'border-l-sky-400' },
+  { id: 'realizada',       label: 'Propostas realizadas', dot: 'bg-violet-400',  accentBg: 'bg-violet-500/[0.04]',  accentBorder: 'border-violet-500/30',  texto: 'text-violet-300',  borda: 'border-l-violet-400' },
+  { id: 'em_analise',      label: 'Propostas em análise', dot: 'bg-blue-400',    accentBg: 'bg-blue-500/[0.04]',    accentBorder: 'border-blue-500/30',    texto: 'text-blue-300',    borda: 'border-l-blue-400' },
+  { id: 'contra_proposta', label: 'Contra proposta',      dot: 'bg-amber-400',   accentBg: 'bg-amber-500/[0.04]',   accentBorder: 'border-amber-500/30',   texto: 'text-amber-300',   borda: 'border-l-amber-400' },
+  { id: 'analise_final',   label: 'Análise final',        dot: 'bg-orange-400',  accentBg: 'bg-orange-500/[0.04]',  accentBorder: 'border-orange-500/30',  texto: 'text-orange-300',  borda: 'border-l-orange-400' },
+  { id: 'venda',           label: 'Venda',                dot: 'bg-emerald-400', accentBg: 'bg-emerald-500/[0.04]', accentBorder: 'border-emerald-500/30', texto: 'text-emerald-300', borda: 'border-l-emerald-400' },
 ];
 
 export interface PropostaAnexo {

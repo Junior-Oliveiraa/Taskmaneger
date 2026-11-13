@@ -278,33 +278,36 @@ export default function PropostasKanban({ projects, projectDisplays, unidades, v
                       onDragStart={e => { e.dataTransfer.setData('text/plain', p.id); setArrastando(p.id); }}
                       onDragEnd={() => { setArrastando(null); setDragOver(null); }}
                       onClick={() => setAberta(p.id)}
-                      className={`bg-[#121214] hover:bg-[#161619] border border-zinc-900/60 hover:border-zinc-800 rounded-lg p-2.5 cursor-pointer transition-all ${
+                      className={`bg-[#141417] hover:bg-[#18181c] border border-zinc-800/70 hover:border-zinc-700 border-l-2 ${coluna.borda} rounded-lg p-2.5 pl-3 cursor-pointer transition-all ${
                         arrastando === p.id ? 'opacity-40' : ''
                       }`}
                     >
                       {(p.numero !== null || p.unidade) && (
                         <div className="flex items-baseline justify-between gap-2 mb-0.5 text-[10px] leading-4">
                           {p.numero !== null
-                            ? <span className="font-mono font-semibold text-zinc-400 tracking-wide">{codigoProposta(p.numero)}</span>
+                            ? <span className={`font-mono font-bold tracking-wide ${coluna.texto}`}>{codigoProposta(p.numero)}</span>
                             : <span />}
-                          {p.unidade && <span className="shrink-0 text-zinc-500 tabular-nums">Un. {p.unidade}</span>}
+                          {p.unidade && <span className="shrink-0 font-medium text-zinc-300 tabular-nums">Un. {p.unidade}</span>}
                         </div>
                       )}
-                      <p className="text-xs font-medium text-zinc-100 leading-snug break-words">{nomeProjeto(p.projectId)}</p>
+                      <p className="text-xs font-semibold text-zinc-100 leading-snug break-words">{nomeProjeto(p.projectId)}</p>
                       <p
-                        className={`mt-1 text-[13px] font-semibold tabular-nums ${vgvDe(p) > 0 ? 'text-zinc-50' : 'text-zinc-600'}`}
+                        className={`mt-1 text-[14px] font-bold tabular-nums ${vgvDe(p) > 0 ? 'text-emerald-300' : 'text-[12px] font-medium text-zinc-600'}`}
                         title={p.autorizacao ? 'VGV: valor contratado na ficha' : 'VGV: valor da unidade na Tabela de Vendas'}
                       >
                         {vgvDe(p) > 0 ? moedaBr(vgvDe(p)) : 'VGV não informado'}
                       </p>
-                      <p className="text-[11px] text-zinc-400 mt-0.5 truncate">{primeiroNome(p.corretor)}{p.imobiliaria ? ` · ${p.imobiliaria}` : ''}</p>
+                      <p className="text-[11px] mt-0.5 truncate">
+                        <span className="text-zinc-200 font-medium">{primeiroNome(p.corretor)}</span>
+                        {p.imobiliaria && <span className="text-zinc-500"> · {p.imobiliaria}</span>}
+                      </p>
                       <SeloAprovacao p={p} />
-                      <div className="flex items-center justify-between mt-2 pt-1.5 border-t border-zinc-800/60 text-[10px] text-zinc-500">
+                      <div className="flex items-center justify-between mt-2 pt-1.5 border-t border-zinc-800/60 text-[10px] text-zinc-400">
                         <span
                           className="inline-flex items-center gap-1 tabular-nums"
                           title={`Criada em ${dataHoraBr(p.createdAt)} · enviada em ${dataBr(p.enviadaEm)}`}
                         >
-                          <Clock3 size={10} /> {tempoDecorrido(p.createdAt, agora)}
+                          <Clock3 size={10} className={coluna.texto} /> {tempoDecorrido(p.createdAt, agora)}
                         </span>
                         {p.anexos.length > 0 && (
                           <span className="inline-flex items-center gap-0.5" title={`${p.anexos.length} anexo(s)`}>
