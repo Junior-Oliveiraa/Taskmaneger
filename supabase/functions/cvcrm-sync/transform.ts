@@ -40,6 +40,8 @@ export interface CvUnidadeRow {
   empreendimento: string;
   unidade: string;
   situacao: string;
+  /** Só nas bloqueadas; "Permutante" marca as permutas. */
+  motivo_bloqueio: string | null;
 }
 
 // deno-lint-ignore no-explicit-any
@@ -175,11 +177,15 @@ export function montarReservas(reservas: Raw[], vendas: Raw[], distratos: Raw[],
 }
 
 export function montarUnidades(idempreendimento: number, empreendimento: string, mapa: Raw[]): CvUnidadeRow[] {
-  return mapa.map(u => ({
-    idunidade: numero(u.idunidade),
-    idempreendimento,
-    empreendimento,
-    unidade: texto(u.unidade) ?? '',
-    situacao: (texto(u.situacao) ?? 'sem situação').toLowerCase(),
-  }));
+  return mapa.map(u => {
+    const situacao = (texto(u.situacao) ?? 'sem situação').toLowerCase();
+    return {
+      idunidade: numero(u.idunidade),
+      idempreendimento,
+      empreendimento,
+      unidade: texto(u.unidade) ?? '',
+      situacao,
+      motivo_bloqueio: situacao === 'bloqueada' ? texto(u.motivo_bloqueio) : null,
+    };
+  });
 }

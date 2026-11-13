@@ -1,16 +1,104 @@
 import React, { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Layers, Paperclip, Plus, Trash2, X } from 'lucide-react';
+import { Check, Layers, Paperclip, Plus, ShieldAlert, ShieldCheck, ShieldX, Trash2, X } from 'lucide-react';
 import { Project, SiengeProjectDisplay, SiengeTabelaVendaColuna, SiengeTabelaVendaUnidade, SiengeTabelaVendaVersao } from '../../types';
 import NovaPropostaModal, { AutorizacaoResumo } from './NovaPropostaModal';
 import {
-  ComercialProposta, PROPOSTA_ETAPAS, PropostaEtapa, excluirProposta, fetchComercialPropostas, moverProposta,
+  ComercialProposta, PROPOSTA_ETAPAS, PropostaEtapa, decidirAprovacaoProposta, excluirProposta, fetchComercialPropostas, moverProposta,
 } from '../../lib/comercialApi';
+import { usePermissoes } from '../../lib/permissoes';
+import { percentualBr } from './PropostaCampos';
 import { CrmButton, selectCls } from '../crm/CrmShared';
 
 // Data pura (yyyy-mm-dd): formatada sem passar por Date, que a leria como UTC.
 const dataBr = (iso: string) => iso.slice(0, 10).split('-').reverse().join('/');
 const primeiroNome = (nome: string) => nome.trim().split(/\s+/)[0] || nome;
+const dataHoraBr = (iso: string) => new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+
+// Sem aprovação, a proposta não sai destas etapas (o banco também recusa).
+const ETAPAS_SEM_APROVACAO: PropostaEtapa[] = ['visita', 'realizada'];
+const travada = (p: ComercialProposta) => p.aprovacao === 'pendente' || p.aprovacao === 'recusada';
+
+function SeloAprovacao({ p }: { p: ComercialProposta }) {
+  if (p.aprovacao === 'dispensada') return null;
+  const desc = p.descontoPct !== null ? percentualBr(p.descontoPct) : '';
+  const estilo = {
+    pendente: ['bg-amber-500/10 text-amber-300 border-amber-500/25', <ShieldAlert size={10} />, `Aprovação · ${desc}`],
+    aprovada: ['bg-emerald-500/10 text-emerald-300 border-emerald-500/20', <ShieldCheck size={10} />, `Desconto aprovado · ${desc}`],
+    recusada: ['bg-rose-500/10 text-rose-300 border-rose-500/25', <ShieldX size={10} />, `Desconto recusado · ${desc}`],
+  }[p.aprovacao] as [string, React.ReactNode, string];
+  return (
+    <span className={`mt-1.5 inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-medium tabular-nums ${estilo[0]}`}>
+      {estilo[1]} {estilo[2]}
+    </span>
+  );
+}
+
+function PainelAprovacao({ p, gestor, onDecidir }: {
+  p: ComercialProposta;
+  gestor: boolean;
+  onDecidir: (decisao: 'aprovada' | 'recusada', obs: string) => Promise<void>;
+}) {
+  const [obs, setObs] = useState('');
+  const [enviando, setEnviando] = useState<'aprovada' | 'recusada' | null>(null);
+  if (p.aprovacao === 'dispensada') return null;
+  const desc = p.descontoPct !== null ? percentualBr(p.descontoPct) : '—';
+  const lim = p.descontoLimitePct !== null ? percentualBr(p.descontoLimitePct) : '—';
+  const decidir = async (d: 'aprovada' | 'recusada') => {
+    setEnviando(d);
+    try { await onDecidir(d, obs); setObs(''); } finally { setEnviando(null); }
+  };
+  const tom = p.aprovacao === 'pendente' ? 'border-amber-500/25 bg-amber-500/[0.05]'
+    : p.aprovacao === 'aprovada' ? 'border-emerald-500/20 bg-emerald-500/[0.04]'
+    : 'border-rose-500/25 bg-rose-500/[0.05]';
+
+  return (
+    <div className={`rounded-lg border p-3 space-y-2 ${tom}`}>
+      <div className="flex items-start gap-2">
+        {p.aprovacao === 'pendente' ? <ShieldAlert size={14} className="text-amber-300 mt-px shrink-0" />
+          : p.aprovacao === 'aprovada' ? <ShieldCheck size={14} className="text-emerald-300 mt-px shrink-0" />
+          : <ShieldX size={14} className="text-rose-300 mt-px shrink-0" />}
+        <div className="min-w-0 text-[12px]">
+          <p className="text-zinc-100 font-medium">
+            {p.aprovacao === 'pendente' ? 'Aguardando aprovação do gestor'
+              : p.aprovacao === 'aprovada' ? 'Desconto aprovado' : 'Desconto recusado'}
+          </p>
+          <p className="text-zinc-400">
+            Desconto de <b className="text-zinc-200 tabular-nums">{desc}</b> sobre a tabela; o limite do empreendimento é <span className="tabular-nums">{lim}</span>.
+            {p.aprovacao === 'pendente' && ' A proposta não avança de etapa até a decisão.'}
+            {p.aprovacao === 'recusada' && ' A proposta fica parada em "Propostas realizadas".'}
+          </p>
+          {p.aprovacao !== 'pendente' && p.aprovacaoEm && (
+            <p className="text-zinc-500 mt-0.5">
+              {p.aprovacaoPorNome ? `${p.aprovacaoPorNome} · ` : ''}{dataHoraBr(p.aprovacaoEm)}
+              {p.aprovacaoObs && <span className="block text-zinc-400 whitespace-pre-wrap break-words">“{p.aprovacaoObs}”</span>}
+            </p>
+          )}
+        </div>
+      </div>
+
+      {gestor && p.aprovacao !== 'aprovada' && (
+        <div className="flex flex-col sm:flex-row gap-2 pt-1">
+          <input
+            className="flex-1 h-8 px-2.5 text-[12px] rounded-md bg-zinc-950/70 border border-zinc-800 text-zinc-100 outline-none focus:border-blue-500/60"
+            placeholder="Observação (opcional)"
+            value={obs} onChange={e => setObs(e.target.value)}
+          />
+          <div className="flex gap-2 shrink-0">
+            {p.aprovacao === 'pendente' && (
+              <CrmButton variant="danger" disabled={!!enviando} onClick={() => decidir('recusada')}>
+                <X size={12} /> {enviando === 'recusada' ? 'Recusando…' : 'Recusar'}
+              </CrmButton>
+            )}
+            <CrmButton variant="primary" disabled={!!enviando} onClick={() => decidir('aprovada')}>
+              <Check size={12} /> {enviando === 'aprovada' ? 'Aprovando…' : 'Aprovar desconto'}
+            </CrmButton>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 interface Props {
   projects: Project[];
@@ -29,13 +117,21 @@ export default function PropostasKanban({ projects, projectDisplays, unidades, v
   const [aberta, setAberta] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
 
+  const { isMaster } = usePermissoes();
   const nomeProjeto = (id: string) => projects.find(p => p.id === id)?.name || '—';
   const proposta = propostas.find(p => p.id === aberta) ?? null;
+  const aguardando = propostas.filter(p => p.aprovacao === 'pendente').length;
 
   const mover = async (id: string, etapa: PropostaEtapa) => {
     const atual = propostas.find(p => p.id === id);
     if (!atual || atual.etapa === etapa) return;
     setErro(null);
+    if (travada(atual) && !ETAPAS_SEM_APROVACAO.includes(etapa)) {
+      setErro(atual.aprovacao === 'pendente'
+        ? `A proposta de ${atual.cliente} tem desconto acima do limite e aguarda a aprovação do gestor.`
+        : `O desconto da proposta de ${atual.cliente} foi recusado: ela não avança de etapa.`);
+      return;
+    }
     // Otimista: o card muda de coluna na hora; se falhar, a consulta devolve o estado real.
     queryClient.setQueryData<ComercialProposta[]>(['comercialPropostas'], old =>
       (old ?? []).map(p => (p.id === id ? { ...p, etapa } : p)));
@@ -45,6 +141,17 @@ export default function PropostasKanban({ projects, projectDisplays, unidades, v
       setErro(e?.message || 'Não foi possível mover a proposta.');
     } finally {
       queryClient.invalidateQueries({ queryKey: ['comercialPropostas'] });
+    }
+  };
+
+  const decidir = async (p: ComercialProposta, decisao: 'aprovada' | 'recusada', obs: string) => {
+    setErro(null);
+    try {
+      await decidirAprovacaoProposta(p.id, decisao, obs);
+    } catch (e: any) {
+      setErro(e?.message || 'Não foi possível registrar a decisão.');
+    } finally {
+      await queryClient.invalidateQueries({ queryKey: ['comercialPropostas'] });
     }
   };
 
@@ -69,6 +176,14 @@ export default function PropostasKanban({ projects, projectDisplays, unidades, v
         <span className="text-[10px] font-mono text-zinc-500 bg-zinc-950 px-1.5 py-0.5 rounded border border-zinc-900/60">
           {propostas.length}
         </span>
+        {aguardando > 0 && (
+          <span
+            className="inline-flex items-center gap-1 rounded-md border border-amber-500/25 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-300"
+            title={isMaster ? 'Abra o card para aprovar ou recusar o desconto.' : 'Desconto acima do limite: depende do gestor.'}
+          >
+            <ShieldAlert size={11} /> {aguardando} aguardando aprovação
+          </span>
+        )}
         <span className="text-[10px] text-zinc-500 ml-auto hidden sm:inline">Arraste os cards entre as etapas.</span>
         <button
           type="button"
@@ -130,6 +245,7 @@ export default function PropostasKanban({ projects, projectDisplays, unidades, v
                     >
                       <p className="text-xs font-medium text-zinc-100 leading-snug break-words">{nomeProjeto(p.projectId)}</p>
                       <p className="text-[11px] text-zinc-400 mt-1 truncate">{primeiroNome(p.corretor)}{p.imobiliaria ? ` · ${p.imobiliaria}` : ''}</p>
+                      <SeloAprovacao p={p} />
                       <div className="flex items-center justify-between mt-1.5 text-[10px] text-zinc-500">
                         <span>Enviada em {dataBr(p.enviadaEm)}</span>
                         {p.anexos.length > 0 && (
@@ -169,6 +285,7 @@ export default function PropostasKanban({ projects, projectDisplays, unidades, v
             </header>
 
             <div className="p-4 space-y-3 text-xs">
+              <PainelAprovacao key={proposta.id} p={proposta} gestor={isMaster} onDecidir={(d, obs) => decidir(proposta, d, obs)} />
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Cliente</span>
@@ -219,7 +336,9 @@ export default function PropostasKanban({ projects, projectDisplays, unidades, v
                     className={selectCls} value={proposta.etapa}
                     onChange={e => mover(proposta.id, e.target.value as PropostaEtapa)}
                   >
-                    {PROPOSTA_ETAPAS.map(et => <option key={et.id} value={et.id}>{et.label}</option>)}
+                    {PROPOSTA_ETAPAS.map(et => (
+                      <option key={et.id} value={et.id} disabled={travada(proposta) && !ETAPAS_SEM_APROVACAO.includes(et.id)}>{et.label}</option>
+                    ))}
                   </select>
                 </label>
                 <CrmButton variant="danger" onClick={() => excluir(proposta)}>

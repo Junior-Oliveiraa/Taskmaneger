@@ -22,9 +22,9 @@ export const LP_EMPRESA: LpEmpresa = {
   logoUrl: '/Logo_Primaria.png',
   creci: '',
   endereco: 'Av. Dr. Antônio Gomes de Barros, 625 — Jatiúca, Maceió/AL, 57036-001',
-  telefone: '+55 82 99156-3575',
-  whatsapp: '558281096793', // só dígitos com DDI — é o que o wa.me aceita
-  email: 'rodrigues@uchoaempreendimentos.com.br',
+  telefone: '+55 82 98109-6793',
+  whatsapp: '5582981096793', // só dígitos com DDI — é o que o wa.me aceita
+  email: 'comercial@uchoaempreendimentos.com.br',
   site: 'https://www.uchoaempreendimentos.com.br',
   instagram: 'uchoaempreendimentos',
 };

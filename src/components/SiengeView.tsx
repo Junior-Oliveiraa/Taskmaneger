@@ -8,6 +8,7 @@ import SiengeMetasDashboard from './SiengeMetasDashboard';
 import SiengeVendasModal from './SiengeVendasModal';
 import SiengeVendasDashboard from './SiengeVendasDashboard';
 import ComercialDashboard from './comercial/ComercialDashboard';
+import type { ComercialDashboardTab } from './comercial/ComercialTabs';
 import { usePermissoes } from '../lib/permissoes';
 
 interface SiengeViewProps {
@@ -85,7 +86,7 @@ interface SiengeViewProps {
    * de aba. As duas rotas compartilham o mesmo componente para não duplicar a
    * fiação enorme de handlers que o App.tsx já monta uma vez.
    */
-  forcedTab?: 'vendas' | 'vendas_dashboard';
+  forcedTab?: 'vendas' | ComercialDashboardTab;
 }
 
 export default function SiengeView({
@@ -233,8 +234,9 @@ export default function SiengeView({
             projects={projects}
             taxonomy={taxonomy}
           />
-        ) : tab === 'vendas_dashboard' ? (
+        ) : tab === 'vendas_dashboard' || tab === 'vendas_estoque' || tab === 'vendas_metas' ? (
           <ComercialDashboard
+            aba={tab}
             estoque={
               <SiengeVendasDashboard
                 projects={visibleProjects}

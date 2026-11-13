@@ -40,7 +40,7 @@ import ListView from './components/ListView';
 import CalendarView from './components/CalendarView';
 import InboxView from './components/InboxView';
 import ConfirmModal from './components/ConfirmModal';
-import { ComercialTabBar, ComercialTab, ABAS_COMERCIAL } from './components/comercial/ComercialTabs';
+import { ComercialTabBar, ComercialTab, ComercialDashboardTab, ABAS_COMERCIAL, ABAS_DASHBOARD } from './components/comercial/ComercialTabs';
 import HomeView from './components/HomeView';
 
 // Módulos carregados sob demanda: o código de cada área só é baixado quando
@@ -50,7 +50,6 @@ const CrmView = lazy(() => import('./components/crm/CrmView'));
 const ProjectsView = lazy(() => import('./components/ProjectsView'));
 const SettingsView = lazy(() => import('./components/SettingsView'));
 const SiengeView = lazy(() => import('./components/SiengeView'));
-const ComercialInicio = lazy(() => import('./components/comercial/ComercialInicio'));
 const ComercialHistorico = lazy(() => import('./components/comercial/ComercialHistorico'));
 const PropostasKanban = lazy(() => import('./components/comercial/PropostasKanban'));
 const DashboardView = lazy(() => import('./components/DashboardView'));
@@ -124,7 +123,7 @@ export default function App() {
   // Navigation Routing states
   const [activeView, setActiveView] = useState<ViewType>('home');
   const [activeTaskViewType, setActiveTaskViewType] = useState<'board' | 'list'>('board');
-  const [comercialTab, setComercialTab] = useState<ComercialTab>('inicio');
+  const [comercialTab, setComercialTab] = useState<ComercialTab>('vendas_dashboard');
   // A sidebar expandida come 280px — 20% de um notebook de 1366px, e é o que
   // sobra de largura para o kanban. Abaixo de 1280px ela nasce recolhida e volta
   // sozinha quando a janela cresce. O listener reage só à TRANSIÇÃO do limiar
@@ -248,7 +247,9 @@ export default function App() {
     const mods = MODULOS_DA_TELA[view];
     return !mods || permissoes.podeAlgum(mods);
   };
-  const abasComercial = ABAS_COMERCIAL.filter(a => permissoes.pode(a.modulo)).map(a => a.id);
+  const abasComercial = ABAS_COMERCIAL
+    .filter(a => permissoes.pode(a.modulo) && (!a.apenasMaster || permissoes.isMaster))
+    .map(a => a.id);
   useEffect(() => {
     if (permissoes.carregando) return;
     if (!podeVerTela(activeView)) setActiveView('home');
@@ -614,7 +615,10 @@ export default function App() {
         else if (table === 'sienge_vendas') invalidate('siengeVendas');
         else if (table === 'comercial_movimentos') invalidate('comercialMovimentos');
         else if (table === 'comercial_propostas') invalidate('comercialPropostas');
-        else if (table === 'comercial_metas' || table === 'comercial_metas_empreendimentos' || table === 'comercial_metas_config') invalidate('comercialMetas');
+        else if (table === 'comercial_metas' || table === 'comercial_metas_empreendimentos') invalidate('comercialMetas');
+        // O config guarda também o limite padrão de desconto das propostas.
+        else if (table === 'comercial_metas_config') { invalidate('comercialMetas'); invalidate('comercialDescontos'); }
+        else if (table === 'comercial_descontos_limite') invalidate('comercialDescontos');
         else if (table === 'sienge_unidade_historico') invalidate('siengeUnidadeHistorico');
         else if (table === 'sienge_orcamento_config') invalidate('siengeOrcamentoConfig');
         else if (table === 'sienge_calculo_regras') invalidate('siengeCalculoRegras');
@@ -1634,18 +1638,6 @@ export default function App() {
             <ComercialTabBar tab={comercialTab} onChange={setComercialTab} permitidas={abasComercial} />
           )}
 
-          {activeView === 'comercial' && comercialTab === 'inicio' && (
-            <div className="flex-1 min-h-0">
-              <ComercialInicio
-                projects={projects}
-                projectDisplays={siengeProjectDisplays}
-                unidades={siengeTabelaVendas}
-                versoes={siengeTabelaVendaVersoes}
-                vendas={siengeVendas}
-              />
-            </div>
-          )}
-
           {activeView === 'comercial' && comercialTab === 'propostas' && (
             <div className="flex-1 min-h-0">
               <PropostasKanban
@@ -1668,10 +1660,10 @@ export default function App() {
               mesma instância: no Comercial ela fica travada na aba escolhida e
               sem barra de abas própria. Compartilhar o componente evita duplicar
               toda a fiação de handlers abaixo. */}
-          {(activeView === 'sienge' || (activeView === 'comercial' && (comercialTab === 'vendas' || comercialTab === 'vendas_dashboard'))) && (
+          {(activeView === 'sienge' || (activeView === 'comercial' && (comercialTab === 'vendas' || ABAS_DASHBOARD.includes(comercialTab)))) && (
             <div className="flex-1 min-h-0">
             <SiengeView
-              forcedTab={activeView === 'comercial' && (comercialTab === 'vendas' || comercialTab === 'vendas_dashboard') ? comercialTab : undefined}
+              forcedTab={activeView === 'comercial' && (comercialTab === 'vendas' || ABAS_DASHBOARD.includes(comercialTab)) ? comercialTab as 'vendas' | ComercialDashboardTab : undefined}
               titles={siengeTitles}
               statusHistory={siengeTitleStatusHistory}
               lotes={siengeLotes}

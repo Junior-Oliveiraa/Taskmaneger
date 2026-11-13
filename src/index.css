@@ -1289,7 +1289,7 @@
    gráfico compensam o contraste menor do verde e do amarelo. */
 .dark {
   --cv-azul: #3987e5;
-  --cv-laranja: #d95926;
+  --cv-roxo: #9466f0;
   --cv-verde: #199e70;
   --cv-amarelo: #c98500;
   --cv-cinza: #63636b;
@@ -1297,7 +1297,7 @@
 }
 html:not(.dark) {
   --cv-azul: #2a78d6;
-  --cv-laranja: #eb6834;
+  --cv-roxo: #7a4fd6;
   --cv-verde: #1baf7a;
   --cv-amarelo: #eda100;
   --cv-cinza: #8a8f99;

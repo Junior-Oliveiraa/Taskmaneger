@@ -2,8 +2,8 @@ import React, { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { AlertTriangle, ArrowDownRight, ArrowUpRight, Briefcase, Building2, ChevronRight, Clock3, Landmark, Minus, RefreshCw, Store, UserRound } from 'lucide-react';
 import {
-  CANAIS, FINANCIAMENTOS, financiamentoDe, CvDados, CvReserva, ValorTabela, VendaOrbit, valoresDeTabela, Desfecho, FiltrosPainel, Kpis, Painel, Periodo, SituacaoEstoque, SITUACOES_ESTOQUE,
-  PrecoOrbit, calcularPainel, fetchCvComercial, hojeBrasilia, nomeCurto, nomeCurtoEmpreendimento, precosDasUnidades,
+  CANAIS, FINANCIAMENTOS, financiamentoDe, CvDados, CvReserva, ValorTabela, VendaOrbit, valoresDeTabela, Desfecho, FiltrosPainel, Kpis, Painel, Periodo, SituacaoEstoque, SITUACOES_ESTOQUE, ValorParado,
+  PrecoOrbit, calcularPainel, fetchCvComercial, hojeBrasilia, nomeCurto, nomeCurtoEmpreendimento, precosDasUnidades, unidadesForaDoOrbit,
 } from '../../lib/cvComercial';
 import FiltroLista from './FiltroLista';
 import { fetchProjects, fetchSiengeTabelaVendaVersoes, fetchSiengeTabelaVendas, fetchSiengeVendas } from '../../lib/api';
@@ -46,7 +46,7 @@ const dataHora = (iso: string) =>
 
 const COR_CANAL: Record<string, string> = {
   'Imobiliárias': COR.azul,
-  'Autônomos': COR.laranja,
+  'Autônomos': COR.roxo,
   'House': COR.verde,
   'Não classificado': COR.cinza,
 };
@@ -55,6 +55,7 @@ const COR_ESTOQUE: Record<SituacaoEstoque, string> = {
   vendida: COR.verde,
   reservada: COR.amarelo,
   'disponível': COR.azul,
+  permuta: COR.roxo,
   bloqueada: COR.cinza,
 };
 
@@ -62,25 +63,51 @@ const ROTULO_ESTOQUE: Record<SituacaoEstoque, string> = {
   vendida: 'Vendidas',
   reservada: 'Reservadas',
   'disponível': 'Disponíveis',
+  permuta: 'Permutas',
   bloqueada: 'Bloqueadas',
 };
+
+/** "R$ 42,6 mil" / "R$ 15,3 mi": uma casa decimal, para caber ao lado das unidades. */
+function fmtValorCurto(n: number) {
+  const a = Math.abs(n);
+  const f = (x: number) => x.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  if (a >= 1e6) return `R$ ${f(n / 1e6)} mi`;
+  if (a >= 1e3) return `R$ ${f(n / 1e3)} mil`;
+  return fmtMoeda(n);
+}
+
+/** Célula "32 uni | R$ 42,6 mil" do estoque, das permutas e das bloqueadas. */
+function CelulaUnidades({ v, rotulo }: { v: ValorParado; rotulo: string }) {
+  if (v.unidades === 0) return <span className="text-zinc-600">–</span>;
+  const titulo = [
+    v.valor !== null ? `${rotulo}: ${fmtMoeda(v.valor)} pelo valor atual da tabela de vendas` : `${rotulo}: sem preço na tabela de vendas`,
+    v.valor !== null && v.semPreco > 0 ? `${fmtInt(v.semPreco)} sem preço ${v.semPreco === 1 ? 'ficou' : 'ficaram'} fora da soma` : '',
+  ].filter(Boolean).join('. ');
+  return (
+    <span title={titulo}>
+      {fmtInt(v.unidades)} uni <span className="text-zinc-600">|</span>{' '}
+      {v.valor !== null ? fmtValorCurto(v.valor) : <span className="text-zinc-600">sem tabela</span>}
+      {v.valor !== null && v.semPreco > 0 && <span className="ml-1 text-amber-400">*</span>}
+    </span>
+  );
+}
 
 const COR_DESFECHO: Record<Desfecho, string> = {
   'Vendida': COR.verde,
   'Pré-venda': COR.azul,
   'Em andamento': COR.amarelo,
-  'Distrato': COR.laranja,
+  'Distrato': COR.roxo,
   'Cancelada': COR.cinza,
   'Vencida': COR.cinzaClaro,
 };
 
 const COR_PESSOA: Record<string, string> = {
   'Pessoa física': COR.azul,
-  'Pessoa jurídica': COR.laranja,
+  'Pessoa jurídica': COR.roxo,
 };
 
 const COR_SEXO: Record<string, string> = {
-  'Feminino': COR.laranja,
+  'Feminino': COR.roxo,
   'Masculino': COR.azul,
 };
 
@@ -325,7 +352,12 @@ export function PainelDesempenho({ dados, hoje = hojeBrasilia(), metas = null, v
     () => ({ empreendimentos, periodo, comparacao, canal, imobiliaria, corretor, financiamento, fimSerie: fimDoMes }),
     [empreendimentos, periodo, comparacao, canal, imobiliaria, corretor, financiamento, fimDoMes],
   );
-  const painel: Painel = useMemo(() => calcularPainel(dados, filtros, precos), [dados, filtros, precos]);
+  // Empreendimento com tabela no Orbit: unidade que não está nela (garagem, cadastro avulso do CV) não entra.
+  const dadosDoPainel = useMemo(() => {
+    const fora = unidadesForaDoOrbit(dados.unidades, precosOrbit);
+    return fora.size ? { ...dados, unidades: dados.unidades.filter(u => !fora.has(Number(u.idunidade))) } : dados;
+  }, [dados, precosOrbit]);
+  const painel: Painel = useMemo(() => calcularPainel(dadosDoPainel, filtros, precos), [dadosDoPainel, filtros, precos]);
 
   const toggleEmpreendimento = (id: number) => {
     setEmpreendimentos(prev => {
@@ -369,10 +401,11 @@ export function PainelDesempenho({ dados, hoje = hojeBrasilia(), metas = null, v
   const superMeta = metaTotal === null ? null : metaTotal * fatorSuper;
   const faixaPlanilha = faixaAtingimento(atingido, fatorSuper);
   // Pontos depois do fim do período (os dias que ainda virão em "Este mês") só têm meta.
-  const ehFuturo = (p: { chave: string }) => fimDoMes !== null && p.chave > selecao.ate;
+  const ehFuturo = (p: { chave: string }) => fimDoMes !== null && p.chave > hoje;
   // Ritmo: quanto da meta do mês já deveria estar vendido até hoje.
-  const metaAteHoje = fimDoMes !== null && temMeta
-    ? painel.serie.filter(p => !ehFuturo(p)).reduce((t, p) => t + metaBruta(p), 0)
+  // Em "Este mês" o período é o mês inteiro: a meta até hoje é a proporção dos dias já passados.
+  const metaAteHoje = fimDoMes !== null && metaTotal !== null
+    ? metaTotal * Number(hoje.slice(8, 10)) / Number(fimDoMes.slice(8, 10))
     : null;
   const ritmo = metaAteHoje ? k.vgv / metaAteHoje : null;
 
@@ -386,7 +419,7 @@ export function PainelDesempenho({ dados, hoje = hojeBrasilia(), metas = null, v
     const futuro = ehFuturo(p);
     return { ...p, futuro, valorPonto: p.valor, metaPonto: m, realizado: futuro ? null : acumulado, meta: m === null ? null : metaAcumulada };
   });
-  const rotuloSerie = painel.granularidade === 'dia' ? 'Dia' : painel.granularidade === 'mês' ? 'Mês' : 'Trimestre';
+  const rotuloSerie = painel.granularidade === 'semana' ? 'Semana' : painel.granularidade === 'mês' ? 'Mês' : 'Trimestre';
 
   return (
     <div className="h-full overflow-y-auto custom-scrollbar">
@@ -607,7 +640,7 @@ export function PainelDesempenho({ dados, hoje = hojeBrasilia(), metas = null, v
           </CardGrafico>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-3">
           <Tile rotulo="Ticket médio" valor={fmtCompacto(k.ticket)} variacao={<Variacao rotulo={rotuloComp} atual={k.ticket} anterior={a?.ticket} />} />
           <Tile rotulo="Preço por m²" valor={fmtMoeda(k.precoM2)} variacao={<Variacao rotulo={rotuloComp} atual={k.precoM2} anterior={a?.precoM2} />} />
           <Tile
@@ -617,10 +650,19 @@ export function PainelDesempenho({ dados, hoje = hojeBrasilia(), metas = null, v
           />
           <Tile
             rotulo="Distrato"
-            valor={fmtInt(k.distratos)}
-            detalhe={k.distratos > 0 ? `${fmtCompacto(k.distratosValor)} · ${fmtPct(k.taxaDistrato)} das vendas` : 'Nenhum no período'}
-            variacao={<Variacao rotulo={rotuloComp} atual={k.distratos} anterior={a?.distratos} invertida />}
+            valor={fmtMilhoes(k.distratosValor)}
+            detalhe={k.distratos > 0 ? `${fmtInt(k.distratos)} ${k.distratos === 1 ? 'unidade' : 'unidades'} · ${fmtPct(k.taxaDistrato)} das vendas` : 'Nenhum no período'}
+            variacao={<Variacao rotulo={rotuloComp} atual={k.distratosValor} anterior={a?.distratosValor} invertida />}
           />
+          {/* Desde o lançamento: ignora o período, mas respeita empreendimento, canal etc. */}
+          <div title={`${fmtMoeda(painel.acumulado.vgvBruto)} bruto − ${fmtMoeda(painel.acumulado.distratosValor)} em distratos, desde a primeira venda`}>
+            <Tile
+              className="h-full"
+              rotulo="VGV líquido acumulado"
+              valor={fmtCompacto(painel.acumulado.vgvLiquido)}
+              detalhe={`${fmtInt(painel.acumulado.unidades)} un. vendidas · desde o início`}
+            />
+          </div>
           <Tile
             rotulo="Estoque"
             valor={fmtInt(estoqueAberto)}
@@ -640,7 +682,7 @@ export function PainelDesempenho({ dados, hoje = hojeBrasilia(), metas = null, v
             <Legenda itens={SITUACOES_ESTOQUE.map(s => ({ label: ROTULO_ESTOQUE[s], cor: COR_ESTOQUE[s] }))} />
           </div>
           <div className="overflow-x-auto custom-scrollbar">
-            <table className="w-full text-xs min-w-[960px]">
+            <table className="w-full text-xs min-w-[1120px]">
               <thead>
                 <tr className="text-zinc-500">
                   <th className="text-left font-semibold px-4 py-2 border-b border-zinc-800">Empreendimento</th>
@@ -650,9 +692,10 @@ export function PainelDesempenho({ dados, hoje = hojeBrasilia(), metas = null, v
                   <th className="text-right font-semibold px-3 py-2 border-b border-zinc-800">R$/m²</th>
                   <th className="text-right font-semibold px-3 py-2 border-b border-zinc-800">VSO</th>
                   <th className="text-left font-semibold px-3 py-2 border-b border-zinc-800 w-[30%]">Posição do estoque</th>
-                  <th className="text-right font-semibold px-3 py-2 border-b border-zinc-800">Disponíveis</th>
-                  <th className="text-right font-semibold px-3 py-2 border-b border-zinc-800 whitespace-nowrap" title="Disponíveis + reservadas pelo valor atual da tabela de vendas (versão principal)">Valor do estoque</th>
-                  <th className="text-right font-semibold px-4 py-2 border-b border-zinc-800" title="Vendidas ÷ (vendidas + reservadas + disponíveis). Bloqueadas ficam fora.">% vendido</th>
+                  <th className="text-right font-semibold px-3 py-2 border-b border-zinc-800 whitespace-nowrap" title="Disponíveis + reservadas, pelo valor atual da tabela de vendas (versão principal)">Estoque</th>
+                  <th className="text-right font-semibold px-3 py-2 border-b border-zinc-800 whitespace-nowrap" title="Bloqueadas no CV com motivo Permutante, pelo valor atual da tabela de vendas (versão principal)">Permutas</th>
+                  <th className="text-right font-semibold px-3 py-2 border-b border-zinc-800 whitespace-nowrap" title="Demais bloqueadas no CV (Estratégia Comercial, Diretoria, Sienge…), pelo valor atual da tabela de vendas (versão principal)">Bloqueadas</th>
+                  <th className="text-right font-semibold px-4 py-2 border-b border-zinc-800" title="Vendidas ÷ (vendidas + reservadas + disponíveis). Permutas e bloqueadas ficam fora.">% vendido</th>
                 </tr>
               </thead>
               <tbody>
@@ -697,21 +740,19 @@ export function PainelDesempenho({ dados, hoje = hojeBrasilia(), metas = null, v
                         }))}
                       />
                     </td>
-                    <td className="px-3 py-2.5 border-b border-zinc-800/50 text-right tabular-nums">{fmtInt(e.estoque['disponível'])}</td>
-                    <td
-                      className="px-3 py-2.5 border-b border-zinc-800/50 text-right tabular-nums whitespace-nowrap"
-                      title={e.estoqueSemPreco > 0
-                        ? `${fmtInt(e.estoqueSemPreco)} ${e.estoqueSemPreco === 1 ? 'unidade do estoque está' : 'unidades do estoque estão'} sem preço na tabela de vendas e ${e.estoqueSemPreco === 1 ? 'ficou' : 'ficaram'} fora da soma`
-                        : e.valorEstoque !== null ? fmtMoeda(e.valorEstoque) : undefined}
-                    >
-                      {e.valorEstoque !== null ? fmtMilhoes(e.valorEstoque) : <span className="text-zinc-600">{e.estoque['disponível'] + e.estoque.reservada > 0 ? 'sem tabela' : '–'}</span>}
-                      {e.valorEstoque !== null && e.estoqueSemPreco > 0 && <span className="ml-1 text-amber-400">*</span>}
+                    <td className="px-3 py-2.5 border-b border-zinc-800/50 text-right tabular-nums whitespace-nowrap">
+                      <CelulaUnidades
+                        rotulo="Estoque"
+                        v={{ unidades: e.estoque['disponível'] + e.estoque.reservada, valor: e.valorEstoque, semPreco: e.estoqueSemPreco }}
+                      />
                     </td>
+                    <td className="px-3 py-2.5 border-b border-zinc-800/50 text-right tabular-nums whitespace-nowrap"><CelulaUnidades v={e.permuta} rotulo="Permutas" /></td>
+                    <td className="px-3 py-2.5 border-b border-zinc-800/50 text-right tabular-nums whitespace-nowrap"><CelulaUnidades v={e.bloqueada} rotulo="Bloqueadas" /></td>
                     <td className="px-4 py-2.5 border-b border-zinc-800/50 text-right tabular-nums font-semibold text-zinc-100">{fmtPct(e.pctVendido, 0)}</td>
                   </tr>
                   {estaAberto && (
                     <tr>
-                      <td colSpan={10} className="p-0 border-b border-zinc-800/50 bg-zinc-950/40">
+                      <td colSpan={11} className="p-0 border-b border-zinc-800/50 bg-zinc-950/40">
                         <VendasDoEmpreendimento vendas={e.vendas} tabelaPor={tabelaPor} />
                       </td>
                     </tr>
@@ -838,7 +879,7 @@ export function PainelDesempenho({ dados, hoje = hojeBrasilia(), metas = null, v
             subtitulo={k.distratos > 0 ? `${fmtInt(k.distratos)} no período · ${fmtCompacto(k.distratosValor)} · ${fmtPct(k.taxaDistrato)} das vendas` : 'Nenhum distrato no período'}
             tabela={{ colunas: ['Motivo', 'Distratos'], linhas: painel.motivosDistrato.map(m => [m.label, fmtInt(m.n)]) }}
           >
-            <ListaBarras cor={COR.laranja} barras={painel.motivosDistrato.map(m => ({
+            <ListaBarras cor={COR.roxo} barras={painel.motivosDistrato.map(m => ({
               label: m.label, valor: m.n, rotulo: fmtInt(m.n),
               tip: <><TipTitulo>{m.label}</TipTitulo><p className="tabular-nums">{fmtInt(m.n)} distratos</p></>,
             }))} />

@@ -40,6 +40,8 @@ export interface CvUnidade {
   empreendimento: string;
   unidade: string;
   situacao: string;
+  /** Só nas bloqueadas; "Permutante" marca as permutas. */
+  motivo_bloqueio?: string | null;
 }
 
 export interface CvSync {
@@ -175,9 +177,30 @@ export function ultimos12Meses(hoje: string): Periodo {
   return { de: inicio, ate: hoje };
 }
 
-/** O mesmo intervalo um ano antes; 29/02 vira 28/02. */
+const fimDoMesDe = (y: number, m: number) => new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
+
+/** Quantos meses inteiros o período cobre (do dia 1 ao último dia), ou 0 se não for de meses inteiros. */
+function mesesInteiros(p: Periodo): number {
+  if (!p.de || !p.ate || !p.de.endsWith('-01')) return 0;
+  const [ya, ma] = p.ate.split('-').map(Number);
+  if (p.ate !== fimDoMesDe(ya, ma)) return 0;
+  const [yd, md] = p.de.split('-').map(Number);
+  return (ya - yd) * 12 + (ma - md) + 1;
+}
+
+/** Desloca um período de meses inteiros em n meses, mantendo-o de meses inteiros. */
+function deslocarMeses(p: Periodo, n: number): Periodo {
+  const [yd, md] = p.de!.split('-').map(Number);
+  const [ya, ma] = p.ate!.split('-').map(Number);
+  const de = new Date(Date.UTC(yd, md - 1 + n, 1)).toISOString().slice(0, 10);
+  const fim = new Date(Date.UTC(ya, ma - 1 + n, 1));
+  return { de, ate: fimDoMesDe(fim.getUTCFullYear(), fim.getUTCMonth() + 1) };
+}
+
+/** O mesmo intervalo um ano antes; 29/02 vira 28/02. Meses inteiros continuam inteiros. */
 export function periodoAnoAnterior(p: Periodo): Periodo | null {
   if (!p.de || !p.ate) return null;
+  if (mesesInteiros(p)) return deslocarMeses(p, -12);
   const menosUm = (ymd: string) => {
     const [y, m, d] = ymd.split("-").map(Number);
     return `${y - 1}-${String(m).padStart(2, "0")}-${String(Math.min(d, new Date(Date.UTC(y - 1, m, 0)).getUTCDate())).padStart(2, "0")}`;
@@ -185,9 +208,14 @@ export function periodoAnoAnterior(p: Periodo): Periodo | null {
   return { de: menosUm(p.de), ate: menosUm(p.ate) };
 }
 
-/** Período imediatamente anterior, de mesma duração. */
+/**
+ * Período imediatamente anterior, de mesma duração. Se o período for de meses
+ * inteiros (ex.: novembro todo), o anterior também é (outubro todo, 1 a 31).
+ */
 export function periodoAnterior(p: Periodo): Periodo | null {
   if (!p.de || !p.ate) return null;
+  const meses = mesesInteiros(p);
+  if (meses) return deslocarMeses(p, -meses);
   const de = Date.parse(`${p.de}T00:00:00Z`);
   const ate = Date.parse(`${p.ate}T00:00:00Z`);
   const dur = ate - de;
@@ -247,8 +275,22 @@ export const financiamentoDe = (r: CvReserva) => r.financiamento ?? 'Sem informa
 
 export const FAIXAS_ETARIAS = ['18–29', '30–39', '40–49', '50–59', '60+'];
 
-export type SituacaoEstoque = 'vendida' | 'reservada' | 'disponível' | 'bloqueada';
-export const SITUACOES_ESTOQUE: SituacaoEstoque[] = ['vendida', 'reservada', 'disponível', 'bloqueada'];
+export type SituacaoEstoque = 'vendida' | 'reservada' | 'disponível' | 'permuta' | 'bloqueada';
+export const SITUACOES_ESTOQUE: SituacaoEstoque[] = ['vendida', 'reservada', 'disponível', 'permuta', 'bloqueada'];
+
+/** O CV não tem situação "permuta": vem como bloqueada com motivo "Permutante". */
+export function situacaoEstoqueDe(u: CvUnidade): string {
+  if (u.situacao === 'bloqueada' && /permut/i.test(u.motivo_bloqueio ?? '')) return 'permuta';
+  return u.situacao;
+}
+
+/** Unidades fora da venda (permuta e bloqueada) pelo valor de tabela. */
+export interface ValorParado {
+  unidades: number;
+  /** Nulo se nenhuma das unidades tiver preço na tabela. */
+  valor: number | null;
+  semPreco: number;
+}
 
 // ── Resultado ────────────────────────────────────────────────────────────────
 
@@ -300,6 +342,8 @@ export interface LinhaEmpreendimento {
   valorEstoque: number | null;
   /** Unidades do estoque sem preço na tabela de vendas. */
   estoqueSemPreco: number;
+  permuta: ValorParado;
+  bloqueada: ValorParado;
   /** As vendas do período que somam o VGV da linha, mais recentes primeiro. */
   vendas: CvReserva[];
 }
@@ -391,11 +435,37 @@ export function precosDasUnidades(unidades: CvUnidade[], orbit: PrecoOrbit[]): M
   return out;
 }
 
+/**
+ * Unidades do CV que ficam fora do painel: o empreendimento tem tabela no Orbit,
+ * mas a unidade não está nela (garagens, cadastros avulsos do CV). Empreendimento
+ * sem tabela no Orbit fica inteiro, só sem valor.
+ */
+export function unidadesForaDoOrbit(unidades: CvUnidade[], orbit: PrecoOrbit[]): Set<number> {
+  const porProjeto = new Map<string, string[]>();
+  orbit.forEach(u => {
+    const p = nomeCurtoEmpreendimento(u.projeto).nome;
+    porProjeto.set(p, [...(porProjeto.get(p) ?? []), normUnidade(u.unidade)]);
+  });
+  const conjuntos = new Map([...porProjeto].map(([p, l]) => [p, new Set(l)]));
+  const fora = new Set<number>();
+  unidades.forEach(u => {
+    const s = conjuntos.get(nomeCurtoEmpreendimento(u.empreendimento).nome);
+    if (!s) return;
+    const n = normUnidade(u.unidade);
+    // Mesma regra do preço: igual, ou o final do nome do Orbit sem ambiguidade.
+    if (s.has(n) || (n && [...s].filter(k => k.endsWith(n)).length === 1)) return;
+    fora.add(Number(u.idunidade));
+  });
+  return fora;
+}
+
 export interface Contagem { label: string; n: number }
 
 export interface Painel {
   kpis: Kpis;
   anterior: Kpis | null;
+  /** Desde sempre, ignorando o período: os demais filtros continuam valendo. */
+  acumulado: Kpis;
   serie: PontoSerie[];
   granularidade: Granularidade;
   empreendimentos: LinhaEmpreendimento[];
@@ -495,7 +565,14 @@ const MES_LONGO = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', '
 
 const diasNoMes = (y: number, m: number) => new Date(Date.UTC(y, m, 0)).getUTCDate();
 
-export type Granularidade = 'dia' | 'mês' | 'trimestre';
+export type Granularidade = 'semana' | 'mês' | 'trimestre';
+
+/** Segunda-feira da semana de uma data (yyyy-mm-dd). */
+const segundaDe = (ymd: string) => {
+  const t = Date.parse(`${ymd}T00:00:00Z`);
+  const dow = (new Date(t).getUTCDay() + 6) % 7;
+  return new Date(t - dow * 86400000).toISOString().slice(0, 10);
+};
 
 function montarSerie(vendas: CvReserva[], p: Periodo): { serie: PontoSerie[]; granularidade: Granularidade } {
   const datas = vendas.map(r => r.data_venda as string).sort();
@@ -507,18 +584,23 @@ function montarSerie(vendas: CvReserva[], p: Periodo): { serie: PontoSerie[]; gr
   const [yf, mf] = ate.split('-').map(Number);
   const meses = (yf - yi) * 12 + (mf - mi) + 1;
   const dias = Math.round((Date.parse(`${ate}T00:00:00Z`) - Date.parse(`${de}T00:00:00Z`)) / 86400000) + 1;
-  const granularidade: Granularidade = dias <= 45 ? 'dia' : meses > 24 ? 'trimestre' : 'mês';
+  // A meta é mensal, então o gráfico é por mês. Só um recorte menor que um mês
+  // (ou que não fecha meses inteiros e é curto) vai por semana; nunca por dia.
+  const granularidade: Granularidade = meses > 24 ? 'trimestre'
+    : mesesInteiros({ de, ate }) ? 'mês'
+    : dias <= 45 ? 'semana' : 'mês';
 
   const chaveDe = (ymd: string) => {
-    if (granularidade === 'dia') return ymd;
+    if (granularidade === 'semana') return segundaDe(ymd);
     if (granularidade === 'mês') return ymd.slice(0, 7);
     return `${ymd.slice(0, 4)}-T${Math.ceil(Number(ymd.slice(5, 7)) / 3)}`;
   };
   const novoPonto = (ymd: string): PontoSerie => {
     const [y, m, d] = ymd.split('-').map(Number);
     const chave = chaveDe(ymd);
-    if (granularidade === 'dia') {
-      return { chave, label: `${String(d).padStart(2, '0')}/${MES_CURTO[m - 1]}`, labelLongo: `${d} de ${MES_LONGO[m - 1]} de ${y}`, valor: 0, unidades: 0, fracaoMeses: 0, meses: {} };
+    if (granularidade === 'semana') {
+      // Rótulo pelo primeiro dia da semana dentro do período; o longo ganha o fim depois.
+      return { chave, label: `${String(d).padStart(2, '0')}/${MES_CURTO[m - 1]}`, labelLongo: `${d} de ${MES_LONGO[m - 1]}`, valor: 0, unidades: 0, fracaoMeses: 0, meses: {} };
     }
     if (granularidade === 'mês') {
       return { chave, label: `${MES_CURTO[m - 1]}/${String(y).slice(2)}`, labelLongo: `${MES_LONGO[m - 1]} de ${y}`, valor: 0, unidades: 0, fracaoMeses: 0, meses: {} };
@@ -531,11 +613,13 @@ function montarSerie(vendas: CvReserva[], p: Periodo): { serie: PontoSerie[]; gr
   // proporcional a isso (meio mês selecionado = meia meta).
   const serie: PontoSerie[] = [];
   const porChave = new Map<string, PontoSerie>();
+  const ultimoDiaDe = new Map<string, string>();
   for (let t = Date.parse(`${de}T00:00:00Z`), fim = Date.parse(`${ate}T00:00:00Z`); t <= fim; t += 86400000) {
     const ymd = new Date(t).toISOString().slice(0, 10);
     const chave = chaveDe(ymd);
     let ponto = porChave.get(chave);
     if (!ponto) { ponto = novoPonto(ymd); porChave.set(chave, ponto); serie.push(ponto); }
+    ultimoDiaDe.set(chave, ymd);
     const [y, m] = ymd.split('-').map(Number);
     ponto.fracaoMeses += 1 / diasNoMes(y, m);
     const ym = ymd.slice(0, 7);
@@ -545,6 +629,12 @@ function montarSerie(vendas: CvReserva[], p: Periodo): { serie: PontoSerie[]; gr
     const ponto = porChave.get(chaveDe(r.data_venda as string));
     if (ponto) { ponto.valor += r.valor_contrato; ponto.unidades += 1; }
   });
+  if (granularidade === 'semana') {
+    serie.forEach(p => {
+      const [y, m, d] = ultimoDiaDe.get(p.chave)!.split('-').map(Number);
+      p.labelLongo = `Semana de ${p.labelLongo} a ${d} de ${MES_LONGO[m - 1]} de ${y}`;
+    });
+  }
   return { serie, granularidade };
 }
 
@@ -559,25 +649,34 @@ export function calcularPainel(dados: CvDados, f: FiltrosPainel, precos: Map<num
     && (!f.financiamento || financiamentoDe(r) === f.financiamento));
   const unidades = dados.unidades.filter(noRecorte);
 
-  const estoqueVazio = (): Record<SituacaoEstoque, number> => ({ vendida: 0, reservada: 0, 'disponível': 0, bloqueada: 0 });
+  const estoqueVazio = (): Record<SituacaoEstoque, number> => ({ vendida: 0, reservada: 0, 'disponível': 0, permuta: 0, bloqueada: 0 });
   const estoqueTotal = estoqueVazio();
   const estoquePor = new Map<number, Record<SituacaoEstoque, number>>();
-  const valorEstoquePor = new Map<number, { valor: number; comPreco: number; semPreco: number }>();
+  // Valor de tabela por empreendimento: "estoque" (disponível + reservada), permuta e bloqueada.
+  type Soma = { valor: number; comPreco: number; semPreco: number };
+  type Grupo = 'estoque' | 'permuta' | 'bloqueada';
+  const valorPor = new Map<number, Record<Grupo, Soma>>();
+  const somaVazia = (): Soma => ({ valor: 0, comPreco: 0, semPreco: 0 });
   const nomePor = new Map<number, string>();
   unidades.forEach(u => {
     const id = Number(u.idempreendimento);
     const e = estoquePor.get(id) ?? estoqueVazio();
-    const s = u.situacao as SituacaoEstoque;
+    const s = situacaoEstoqueDe(u) as SituacaoEstoque;
     if (s in e) { e[s] += 1; estoqueTotal[s] += 1; }
     estoquePor.set(id, e);
     nomePor.set(id, nomeEmpreendimento(u.empreendimento));
-    if (s === 'disponível' || s === 'reservada') {
-      const v = valorEstoquePor.get(id) ?? { valor: 0, comPreco: 0, semPreco: 0 };
+    const grupo: Grupo | null = s === 'disponível' || s === 'reservada' ? 'estoque'
+      : s === 'permuta' || s === 'bloqueada' ? s : null;
+    if (grupo) {
+      const g = valorPor.get(id) ?? { estoque: somaVazia(), permuta: somaVazia(), bloqueada: somaVazia() };
+      const v = g[grupo];
       const preco = precos.get(Number(u.idunidade));
       if (preco !== undefined) { v.valor += preco; v.comPreco += 1; } else v.semPreco += 1;
-      valorEstoquePor.set(id, v);
+      valorPor.set(id, g);
     }
   });
+  const parado = (n: number, v: Soma | undefined): ValorParado =>
+    ({ unidades: n, valor: v && v.comPreco > 0 ? v.valor : null, semPreco: v?.semPreco ?? 0 });
   const estoqueAberto = estoqueTotal['disponível'] + estoqueTotal.reservada;
 
   const vendasDe = (p: Periodo) => reservas.filter(r => ehVenda(r) && dentro(r.data_venda, p));
@@ -592,6 +691,7 @@ export function calcularPainel(dados: CvDados, f: FiltrosPainel, precos: Map<num
   const kpis = kpisDe(f.periodo);
   const pa = f.comparacao;
   const anterior = pa ? kpisDe(pa) : null;
+  const acumulado = kpisDe({ de: null, ate: null });
 
   const { serie, granularidade } = montarSerie(vendas, {
     de: f.periodo.de,
@@ -602,10 +702,13 @@ export function calcularPainel(dados: CvDados, f: FiltrosPainel, precos: Map<num
     const vs = vendas.filter(r => Number(r.idempreendimento) === id);
     const k = somarKpis(vs, [], [], estoque['disponível'] + estoque.reservada);
     const vendaveis = estoque.vendida + estoque.reservada + estoque['disponível'];
-    const ve = valorEstoquePor.get(id);
+    const g = valorPor.get(id);
+    const ve = g?.estoque;
     return {
       valorEstoque: ve && ve.comPreco > 0 ? ve.valor : null,
       estoqueSemPreco: ve?.semPreco ?? 0,
+      permuta: parado(estoque.permuta, g?.permuta),
+      bloqueada: parado(estoque.bloqueada, g?.bloqueada),
       id,
       nome: nomePor.get(id) ?? String(id),
       vendidasPeriodo: k.unidades,
@@ -613,7 +716,7 @@ export function calcularPainel(dados: CvDados, f: FiltrosPainel, precos: Map<num
       ticket: k.ticket,
       precoM2: k.precoM2,
       estoque,
-      total: vendaveis + estoque.bloqueada,
+      total: vendaveis + estoque.permuta + estoque.bloqueada,
       vendaveis,
       pctVendido: vendaveis > 0 ? estoque.vendida / vendaveis : 0,
       vso: k.vso,
@@ -650,6 +753,7 @@ export function calcularPainel(dados: CvDados, f: FiltrosPainel, precos: Map<num
   return {
     kpis,
     anterior,
+    acumulado,
     serie,
     granularidade,
     empreendimentos,

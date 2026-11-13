@@ -8,7 +8,7 @@ import { Table2, BarChart3 } from 'lucide-react';
 
 export const COR = {
   azul: 'var(--cv-azul)',
-  laranja: 'var(--cv-laranja)',
+  roxo: 'var(--cv-roxo)',
   verde: 'var(--cv-verde)',
   amarelo: 'var(--cv-amarelo)',
   cinza: 'var(--cv-cinza)',

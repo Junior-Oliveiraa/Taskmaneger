@@ -131,6 +131,23 @@ export function fluxoDaTabela(
   return linhas;
 }
 
+/**
+ * Mesmo fluxo sobre outro valor da unidade (com desconto ou ágio): cada série
+ * mantém o % que tem na tabela e a quantidade; só o valor da parcela muda. Os
+ * centavos de arredondamento vão para o primeiro pagamento único, para o fluxo
+ * fechar exatamente no novo valor.
+ */
+export function escalarFluxo(linhas: ParcelaFluxo[], valorOriginal: number, novoValor: number): ParcelaFluxo[] {
+  if (!linhas.length || valorOriginal <= 0 || novoValor <= 0 || Math.abs(novoValor - valorOriginal) < 0.01) return linhas;
+  const fator = novoValor / valorOriginal;
+  const escaladas = linhas.map(l => ({ ...l, valorUnitario: centavos(l.valorUnitario * fator) }));
+  const soma = escaladas.reduce((t, l) => t + l.quantidade * l.valorUnitario, 0);
+  const resto = centavos(novoValor - soma);
+  const unica = escaladas.find(l => l.quantidade === 1);
+  if (unica && Math.abs(resto) >= 0.01) unica.valorUnitario = centavos(unica.valorUnitario + resto);
+  return escaladas;
+}
+
 // ── Remodelagens ──────────────────────────────────────────────────────────
 
 /** Mesma soma em outra quantidade de parcelas. Os centavos que sobram ficam no saldo. */

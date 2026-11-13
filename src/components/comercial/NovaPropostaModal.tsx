@@ -17,8 +17,10 @@ import { AutoCompletar, SelectLista } from './CampoLista';
 import SeletorData from './SeletorData';
 import { Campo, ValorInput, campoCls, mesCurto, moedaBr, numeroBr, percentualBr } from './PropostaCampos';
 import FluxoPagamentoEditor, { CORES_FLUXO, LinhaFluxo, linhaUsada, linhasGenericas, novaLinha } from './FluxoPagamentoEditor';
-import { PERIODICIDADES, fluxoDaTabela } from '../../lib/propostaFluxo';
+import { PERIODICIDADES, escalarFluxo, fluxoDaTabela } from '../../lib/propostaFluxo';
 import { fetchSiengeCalculoRegras } from '../../lib/api';
+import { acimaDoLimite, descontoPct, fetchLimitesDesconto, limiteDoProjeto } from '../../lib/comercialDescontos';
+import { usePermissoes } from '../../lib/permissoes';
 
 const SITUACOES_PROPOSTA: SiengeVendaSituacao[] = ['disponivel', 'reservado'];
 
@@ -99,6 +101,9 @@ export default function NovaPropostaModal({ projects, projectDisplays, unidades,
   const cv = useQuery({ queryKey: ['cvComercial'], queryFn: fetchCvComercial, staleTime: 5 * 60 * 1000, retry: 1 }).data;
   // Regras de cálculo: colunas calculadas da Tabela de Vendas, que também podem ser séries do fluxo.
   const regras = useQuery({ queryKey: ['siengeCalculoRegras'], queryFn: fetchSiengeCalculoRegras }).data ?? [];
+  // Limite de desconto sem aprovação (aba Metas). Sem resposta, vale o padrão de 1,5%.
+  const limites = useQuery({ queryKey: ['comercialDescontos'], queryFn: fetchLimitesDesconto, staleTime: 60_000 }).data;
+  const { isMaster } = usePermissoes();
 
   const [projectId, setProjectId] = useState('');
   const [torre, setTorre] = useState('Única');
@@ -124,7 +129,7 @@ export default function NovaPropostaModal({ projects, projectDisplays, unidades,
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
-  // Mesmo recorte do formulário do Início: versão principal, sem empreendimentos ocultos.
+  // Recorte: versão principal, sem empreendimentos ocultos.
   const unidadesPrincipais = useMemo(() => {
     const principais = new Set(versoes.filter(v => v.principal).map(v => v.id));
     const ocultos = new Set(projectDisplays.filter(d => d.hidden).map(d => d.projectId));
@@ -145,11 +150,17 @@ export default function NovaPropostaModal({ projects, projectDisplays, unidades,
 
   const unidadeSel = unidadesElegiveis.find(u => u.id === unidadeId);
 
-  // Fluxo padrão da unidade na Tabela de Vendas; vencimentos a partir da data do contrato.
-  const modelo = useMemo(
-    () => (unidadeSel ? fluxoDaTabela(unidadeSel, regras, colunas, dataContrato) : null),
-    [unidadeSel, regras, colunas, dataContrato]
-  );
+  // Valor que o fluxo precisa somar: o de tabela ou o definido no fluxo (desconto/ágio).
+  const alvo = alvoManual ?? valorTabela ?? 0;
+
+  // Fluxo padrão da unidade na Tabela de Vendas; vencimentos a partir da data do
+  // contrato. Com desconto, as séries são recalculadas sobre o novo valor da
+  // unidade mantendo o % de cada uma na tabela.
+  const modelo = useMemo(() => {
+    if (!unidadeSel) return null;
+    const base = fluxoDaTabela(unidadeSel, regras, colunas, dataContrato);
+    return escalarFluxo(base, unidadeSel.valorTabela, alvo);
+  }, [unidadeSel, regras, colunas, dataContrato, alvo]);
   const chaveModelo = JSON.stringify(modelo);
   const aplicarModelo = () => {
     setLinhas(modelo?.length ? modelo.map(p => novaLinha(p)) : linhasGenericas(dataContrato));
@@ -256,9 +267,13 @@ export default function NovaPropostaModal({ projects, projectDisplays, unidades,
   const usadas = linhas.filter(linhaUsada);
   const parcelasCompletas = usadas.length > 0 && !usadas.some(l => !l.descricao.trim() || !l.quantidade || !l.primeiroVencimento);
   const telefoneValido = telefone.replace(/\D/g, '').length >= 10;
-  const alvo = alvoManual ?? valorTabela ?? 0;
   const saldo = Math.round((alvo - calculo.contratado) * 100) / 100;
   const temSaldo = Math.abs(saldo) >= 0.01;
+  // Desconto medido como o banco mede: contratado sobre o valor da unidade na Tabela de Vendas.
+  const referenciaDesconto = unidadeSel?.valorTabela ? Math.round(unidadeSel.valorTabela * 100) / 100 : valorTabela;
+  const limiteDesconto = limiteDoProjeto(limites, projectId);
+  const desconto = descontoPct(calculo.contratado, referenciaDesconto);
+  const precisaAprovacao = calculo.contratado > 0 && acimaDoLimite(desconto, limiteDesconto);
   const pendencia = !projectId ? 'Escolha o empreendimento.'
     : !unidadeId ? 'Escolha a unidade.'
     : !cliente.trim() ? 'Informe o nome do cliente.'
@@ -484,9 +499,14 @@ export default function NovaPropostaModal({ projects, projectDisplays, unidades,
                 onAlvo={setAlvoManual}
                 valorTabela={valorTabela}
                 dataContrato={dataContrato}
-                origem={modelo?.length && unidadeSel ? `${projetoNome ?? ''} · unidade ${unidadeSel.unidade}` : null}
+                origem={modelo?.length && unidadeSel
+                  ? `${projetoNome ?? ''} · unidade ${unidadeSel.unidade}${
+                    alvo > 0 && Math.abs(alvo - unidadeSel.valorTabela) >= 0.01 ? ` · recalculado sobre ${moedaBr(alvo)}` : ''}`
+                  : null}
                 modificado={fluxoEditado}
                 onRestaurar={aplicarModelo}
+                referenciaDesconto={unidadeSel ? referenciaDesconto : null}
+                limiteDesconto={limiteDesconto}
               />
             </Secao>
 
@@ -647,9 +667,16 @@ export default function NovaPropostaModal({ projects, projectDisplays, unidades,
         </div>
 
         <footer className="flex items-center justify-between gap-3 px-5 sm:px-6 py-3.5 border-t border-zinc-800/70 bg-[#0e0e11] shrink-0">
-          <span className={`flex items-center gap-1.5 text-[12px] min-w-0 ${pendencia ? 'text-zinc-400' : 'text-emerald-300/90'}`}>
-            {pendencia ? <AlertCircle size={13} className="shrink-0 text-amber-400/80" /> : <Check size={13} className="shrink-0" />}
-            <span className="truncate">{pendencia ?? 'Pronta. A proposta entra em "Propostas realizadas".'}</span>
+          <span className={`flex items-center gap-1.5 text-[12px] min-w-0 ${pendencia ? 'text-zinc-400' : precisaAprovacao && !isMaster ? 'text-amber-200' : 'text-emerald-300/90'}`}>
+            {pendencia || (precisaAprovacao && !isMaster) ? <AlertCircle size={13} className="shrink-0 text-amber-400/80" /> : <Check size={13} className="shrink-0" />}
+            <span className="truncate">
+              {pendencia
+                ?? (precisaAprovacao && !isMaster
+                  ? `Desconto de ${percentualBr(desconto)} passa do limite de ${percentualBr(limiteDesconto)}: a proposta vai para aprovação do gestor.`
+                  : precisaAprovacao
+                    ? `Desconto de ${percentualBr(desconto)} acima do limite: como gestor, a proposta já entra aprovada.`
+                    : 'Pronta. A proposta entra em "Propostas realizadas".')}
+            </span>
           </span>
           <div className="flex items-center gap-2 shrink-0">
             {/* Sem o resumo lateral (telas menores), o valor fica sempre à vista aqui. */}
@@ -659,7 +686,7 @@ export default function NovaPropostaModal({ projects, projectDisplays, unidades,
             </span>
             <CrmButton onClick={onClose}>Cancelar</CrmButton>
             <CrmButton type="submit" variant="primary" disabled={!!pendencia || salvando}>
-              <Check size={12} /> {salvando ? 'Salvando…' : 'Salvar proposta'}
+              <Check size={12} /> {salvando ? 'Salvando…' : precisaAprovacao && !isMaster ? 'Enviar para aprovação' : 'Salvar proposta'}
             </CrmButton>
           </div>
         </footer>

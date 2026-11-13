@@ -1,8 +1,9 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  ArrowDownToLine, Check, Copy, CornerDownRight, MoreHorizontal, Plus, RotateCcw, Scissors, SlidersHorizontal, Trash2, X,
+  ArrowDownToLine, Check, Copy, CornerDownRight, MoreHorizontal, Plus, RotateCcw, Scissors, ShieldAlert, SlidersHorizontal, Trash2, X,
 } from 'lucide-react';
+import { acimaDoLimite, descontoPct } from '../../lib/comercialDescontos';
 import type { PropostaParcela } from '../../lib/comercialApi';
 import {
   ParcelaFluxo, PERIODICIDADES, centavos, dividirEmAtoEParcelado, redistribuir, reduzirComParcelaFinal, somarMeses,
@@ -331,10 +332,15 @@ interface Props {
   origem: string | null;
   modificado: boolean;
   onRestaurar: () => void;
+  /** Valor da unidade na Tabela de Vendas: base do desconto. Null sem unidade. */
+  referenciaDesconto: number | null;
+  /** Desconto (%) que o operador dá sem aprovação do gestor. */
+  limiteDesconto: number;
 }
 
 export default function FluxoPagamentoEditor({
   linhas, onChange, contratado, alvo, alvoManual, onAlvo, valorTabela, dataContrato, origem, modificado, onRestaurar,
+  referenciaDesconto, limiteDesconto,
 }: Props) {
   const [assistente, setAssistente] = useState<{ id: string; tipo: TipoAssistente } | null>(null);
   // Total da linha no momento em que a quantidade começou a ser digitada: assim
@@ -407,7 +413,11 @@ export default function FluxoPagamentoEditor({
   const unica = usadas.find(l => l.quantidade === 1 && l.periodicidade === 0);
   const periodica = [...usadas].filter(l => (l.quantidade ?? 0) > 1).sort((a, b) => (b.quantidade ?? 0) - (a.quantidade ?? 0))[0];
   const ultimoDoFluxo = usadas.map(l => ultimoVencimento(paraParcela(l))).filter(Boolean).sort().pop() ?? '';
-  const difTabela = valorTabela ? (alvo / valorTabela - 1) * 100 : null;
+  // Diferença e desconto medidos sobre a Tabela de Vendas, como o banco mede.
+  const baseTabela = referenciaDesconto ?? valorTabela;
+  const difTabela = baseTabela ? (alvo / baseTabela - 1) * 100 : null;
+  const desconto = descontoPct(alvo, referenciaDesconto);
+  const acimaLimite = acimaDoLimite(desconto, limiteDesconto);
 
   // ── Ações sobre o saldo ──
   const ajustarNaUnica = () => unica && alterar(unica.id, { valorUnitario: centavos((unica.valorUnitario ?? 0) + saldo) });
@@ -462,10 +472,30 @@ export default function FluxoPagamentoEditor({
             <span className="text-[11px] text-zinc-500">Valor da unidade</span>
             <ValorInput value={alvo || null} onChange={v => onAlvo(v ?? 0)} prefixo="R$" />
           </label>
-          <div className="pb-2 text-[12px] text-zinc-500">
+          <label className="flex flex-col gap-1 w-28">
+            <span className="text-[11px] text-zinc-500">Desconto</span>
+            <PercentualInput
+              value={referenciaDesconto ? desconto : null}
+              desabilitado={!referenciaDesconto}
+              titulo={referenciaDesconto ? `Desconto sobre ${moedaBr(referenciaDesconto)} (Tabela de Vendas)` : 'Escolha a unidade'}
+              onChange={pct => {
+                if (!referenciaDesconto) return;
+                // Sem desconto volta a seguir o valor de tabela.
+                onAlvo(pct ? centavos(referenciaDesconto * (1 - pct / 100)) : null);
+              }}
+            />
+          </label>
+          <div className="pb-2 text-[12px] text-zinc-500 min-w-0">
             {difTabela === null ? 'Sem valor de tabela'
               : Math.abs(difTabela) < 0.005 ? 'Igual ao valor de tabela'
-              : <span className={difTabela < 0 ? 'text-rose-300' : 'text-emerald-300'}>{difTabela > 0 ? '+' : ''}{percentualBr(difTabela)} sobre a tabela</span>}
+              : difTabela > 0 ? <span className="text-emerald-300">+{percentualBr(difTabela)} sobre a tabela</span>
+              : acimaLimite ? (
+                <span className="inline-flex items-center gap-1.5 rounded-md bg-amber-500/10 px-2 py-1 text-amber-200">
+                  <ShieldAlert size={13} className="shrink-0" />
+                  Acima de {percentualBr(limiteDesconto)}: vai para aprovação do gestor
+                </span>
+              )
+              : <span className="text-zinc-400">Dentro do limite de {percentualBr(limiteDesconto)}</span>}
             {alvoManual && valorTabela ? (
               <button type="button" onClick={() => onAlvo(null)} className="ml-2 text-blue-400 hover:text-blue-300">usar valor de tabela</button>
             ) : null}
@@ -686,10 +716,11 @@ export default function FluxoPagamentoEditor({
 // % com duas casas, digitado como os valores (da direita para a esquerda). Enquanto
 // o campo tem foco vale o que foi digitado; fora dele, o % real que a parcela
 // arredondada produz — assim o número nunca "pula" no meio da digitação.
-function PercentualInput({ value, onChange, desabilitado }: {
+function PercentualInput({ value, onChange, desabilitado, titulo }: {
   value: number | null;
   onChange: (pct: number | null) => void;
   desabilitado?: boolean;
+  titulo?: string;
 }) {
   const [rascunho, setRascunho] = useState<number | null | undefined>(undefined);
   const mostrado = rascunho !== undefined ? rascunho : value === null ? null : Math.round(value * 100) / 100;
@@ -698,7 +729,7 @@ function PercentualInput({ value, onChange, desabilitado }: {
       <input
         inputMode="numeric"
         disabled={desabilitado}
-        title={desabilitado ? 'Informe o valor da unidade' : 'Fatia do valor da unidade'}
+        title={titulo ?? (desabilitado ? 'Informe o valor da unidade' : 'Fatia do valor da unidade')}
         className={`${campoCls} text-right tabular-nums pl-2 pr-6`}
         placeholder="0,00"
         value={mostrado === null ? '' : mostrado.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}

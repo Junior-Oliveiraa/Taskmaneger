@@ -43,7 +43,7 @@ export const MODULOS: { id: Modulo; grupo: string; label: string; descricao: str
   { id: 'crm',                  grupo: 'Operação',   label: 'CRM',                descricao: 'Leads, cadências e próximas ações.' },
   { id: 'financas',             grupo: 'Finanças',   label: 'Títulos e lotes',    descricao: 'Títulos, aprovações, lotes, faturas e mensalidades.' },
   { id: 'financas_orcamento',   grupo: 'Finanças',   label: 'Metas e orçamento',  descricao: 'Aba Metas: orçamento de marketing x VGV.' },
-  { id: 'comercial_movimentos', grupo: 'Comercial',  label: 'Início e histórico', descricao: 'Lançamento de vendas, reservas e distratos.' },
+  { id: 'comercial_movimentos', grupo: 'Comercial',  label: 'Histórico',          descricao: 'Histórico de vendas, reservas e distratos.' },
   { id: 'comercial_propostas',  grupo: 'Comercial',  label: 'Propostas',          descricao: 'Propostas, fluxo de pagamento e fichas.' },
   { id: 'comercial_tabela',     grupo: 'Comercial',  label: 'Tabela de Vendas',   descricao: 'Preços, reajustes, versões e LP do corretor.' },
   { id: 'comercial_dashboard',  grupo: 'Comercial',  label: 'Dashboard',          descricao: 'Desempenho, metas comerciais e relatórios.' },

@@ -160,6 +160,9 @@ export function calcularAutorizacao(a: Pick<PropostaAutorizacao, 'areaPrivativa'
   };
 }
 
+/** dispensada = desconto dentro do limite; as demais só existem acima dele. */
+export type PropostaAprovacao = 'dispensada' | 'pendente' | 'aprovada' | 'recusada';
+
 export interface ComercialProposta {
   id: string;
   autorizacao: PropostaAutorizacao | null;
@@ -175,6 +178,13 @@ export interface ComercialProposta {
   /** yyyy-mm-dd */
   enviadaEm: string;
   createdAt: string;
+  /** Calculados pelo banco na gravação. Nulos nas propostas sem ficha. */
+  descontoPct: number | null;
+  descontoLimitePct: number | null;
+  aprovacao: PropostaAprovacao;
+  aprovacaoPorNome: string | null;
+  aprovacaoEm: string | null;
+  aprovacaoObs: string | null;
 }
 
 function toProposta(r: any): ComercialProposta {
@@ -192,6 +202,12 @@ function toProposta(r: any): ComercialProposta {
     etapa: r.etapa,
     enviadaEm: r.enviada_em,
     createdAt: r.created_at,
+    descontoPct: r.desconto_pct == null ? null : Number(r.desconto_pct),
+    descontoLimitePct: r.desconto_limite_pct == null ? null : Number(r.desconto_limite_pct),
+    aprovacao: r.aprovacao ?? 'dispensada',
+    aprovacaoPorNome: r.aprovacao_por_nome ?? null,
+    aprovacaoEm: r.aprovacao_em ?? null,
+    aprovacaoObs: r.aprovacao_obs ?? null,
   };
 }
 
@@ -242,7 +258,7 @@ export async function criarProposta(params: {
     fluxo_pagamento: params.fluxoPagamento,
     anexos,
     enviada_em: params.enviadaEm,
-    // Só envia a coluna quando há ficha: o lançamento pelo Início não a usa.
+    // Só envia a coluna quando há ficha.
     ...(params.autorizacao ? { autorizacao: params.autorizacao } : {}),
   });
   if (error) throw error;
@@ -250,6 +266,15 @@ export async function criarProposta(params: {
 
 export async function moverProposta(id: string, etapa: PropostaEtapa): Promise<void> {
   const { error } = await supabase.from('comercial_propostas').update({ etapa }).eq('id', id);
+  if (error) throw error;
+}
+
+/** Só o gestor (master/administrador): o banco recusa os demais. */
+export async function decidirAprovacaoProposta(id: string, decisao: 'aprovada' | 'recusada', obs?: string): Promise<void> {
+  const { error } = await supabase
+    .from('comercial_propostas')
+    .update({ aprovacao: decisao, aprovacao_obs: obs?.trim() || null })
+    .eq('id', id);
   if (error) throw error;
 }
 

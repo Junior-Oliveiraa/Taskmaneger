@@ -1,13 +1,14 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, ArrowLeft, ArrowRight, ChevronLeft, ChevronRight, Link2, MoreHorizontal, Pencil, Plus, RefreshCw, Save, Trash2, Undo2 } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, ArrowRight, ChevronLeft, ChevronRight, Link2, MoreHorizontal, Pencil, Percent, Plus, RefreshCw, Save, Trash2, Undo2 } from 'lucide-react';
+import { LIMITE_DESCONTO_PADRAO, fetchLimitesDesconto, salvarLimitePadrao, salvarLimiteProjeto } from '../../lib/comercialDescontos';
+import { fetchProjects, fetchSiengeProjectDisplays, fetchSiengeTabelaVendas } from '../../lib/api';
 import {
   AlteracaoMeta, EmpreendimentoCv, MetaEmpreendimento, MetasComercial as Metas, ROTULO_FAIXA,
   atualizarEmpreendimentoMeta, criarEmpreendimentoMeta, fetchMetasComercial, idCvDaMeta,
   removerEmpreendimentoMeta, salvarFatorSuper, salvarMetas,
 } from '../../lib/comercialMetas';
 import { fetchCvComercial, hojeBrasilia, nomeCurtoEmpreendimento } from '../../lib/cvComercial';
-import { fetchProjects } from '../../lib/api';
 import { BOTAO_FILTRO, BOTAO_FILTRO_NEUTRO, MENU_FILTRO } from './filtroEstilo';
 
 // ── Formatação e leitura ─────────────────────────────────────────────────────
@@ -220,6 +221,144 @@ function MenuEmpreendimento({ emp, nomesExistentes, cv, projetos, idVinculado, p
 
       {erro && <p role="alert" className="text-[11px] text-red-400">{erro}</p>}
     </div>
+  );
+}
+
+// ── Desconto permitido nas propostas ─────────────────────────────────────────
+
+const fmtPct = (n: number) => n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+/** "1,5", "2.25", "3%" → número; vazio → null; fora de 0–100 → 'invalido'. */
+function lerPct(bruto: string): number | null | 'invalido' {
+  const t = bruto.replace('%', '').trim().replace(',', '.');
+  if (t === '') return null;
+  const v = Number(t);
+  if (!Number.isFinite(v) || v < 0 || v > 100) return 'invalido';
+  return Math.round(v * 100) / 100;
+}
+
+function CampoPct({ valor, placeholder, rotulo, onSalvar }: {
+  valor: number | null; placeholder?: string; rotulo: string; onSalvar: (v: number | null) => void;
+}) {
+  const [texto, setTexto] = useState<string | null>(null);
+  const [invalido, setInvalido] = useState(false);
+  const confirmar = () => {
+    if (texto === null) return;
+    const v = lerPct(texto);
+    setTexto(null);
+    if (v === 'invalido') { setInvalido(true); return; }
+    setInvalido(false);
+    if (v !== valor) onSalvar(v);
+  };
+  return (
+    <div className="relative w-24 shrink-0">
+      <input
+        aria-label={rotulo}
+        inputMode="decimal"
+        value={texto ?? (valor === null ? '' : fmtPct(valor))}
+        placeholder={placeholder}
+        onFocus={e => { setTexto(valor === null ? '' : fmtPct(valor)); const el = e.currentTarget; requestAnimationFrame(() => el.select()); }}
+        onChange={e => { setTexto(e.target.value); setInvalido(false); }}
+        onBlur={confirmar}
+        onKeyDown={e => {
+          if (e.key === 'Enter') e.currentTarget.blur();
+          if (e.key === 'Escape') { setTexto(null); setInvalido(false); }
+        }}
+        title={invalido ? 'Use um percentual entre 0 e 100, por exemplo 1,5' : undefined}
+        className={`w-full h-8 pl-2 pr-6 text-right text-xs tabular-nums rounded-md border outline-none transition-colors placeholder:text-zinc-600
+          focus:border-blue-500/70 focus:bg-zinc-900
+          ${invalido ? 'border-red-500/70 bg-red-500/10 text-red-300' : 'border-zinc-800 bg-zinc-950 text-zinc-100'}`}
+      />
+      <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-zinc-500">%</span>
+    </div>
+  );
+}
+
+function DescontosPropostas({ projetos }: { projetos: { id: string; name: string }[] }) {
+  const qc = useQueryClient();
+  const [erro, setErro] = useState<string | null>(null);
+  const { data: limites } = useQuery({ queryKey: ['comercialDescontos'], queryFn: fetchLimitesDesconto, staleTime: 60_000 });
+  // Mesmas consultas do App: vêm do cache. Só entram empreendimentos com Tabela de Vendas.
+  const { data: unidades } = useQuery({ queryKey: ['siengeTabelaVendas'], queryFn: fetchSiengeTabelaVendas });
+  const { data: displays } = useQuery({ queryKey: ['siengeProjectDisplays'], queryFn: fetchSiengeProjectDisplays });
+
+  const comTabela = useMemo(() => {
+    const ids = new Set((unidades ?? []).map(u => u.projectId));
+    const ocultos = new Set((displays ?? []).filter(d => d.hidden).map(d => d.projectId));
+    return projetos.filter(p => (ids.has(p.id) && !ocultos.has(p.id)) || limites?.porProjeto.has(p.id));
+  }, [projetos, unidades, displays, limites]);
+
+  const aoFalhar = (e: any) => setErro(e?.message ?? 'Não foi possível salvar o limite.');
+  const padraoMut = useMutation({
+    mutationFn: salvarLimitePadrao,
+    onSuccess: () => { setErro(null); qc.invalidateQueries({ queryKey: ['comercialDescontos'] }); },
+    onError: aoFalhar,
+  });
+  const projetoMut = useMutation({
+    mutationFn: ({ id, pct }: { id: string; pct: number | null }) => salvarLimiteProjeto(id, pct),
+    onSuccess: () => { setErro(null); qc.invalidateQueries({ queryKey: ['comercialDescontos'] }); },
+    onError: aoFalhar,
+  });
+
+  const padrao = limites?.padrao ?? LIMITE_DESCONTO_PADRAO;
+
+  return (
+    <section aria-labelledby="titulo-descontos" className="rounded-xl border border-zinc-800/80 bg-zinc-900/30">
+      <header className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 border-b border-zinc-800/70">
+        <div className="min-w-0 flex-1">
+          <h3 id="titulo-descontos" className="flex items-center gap-1.5 text-xs font-semibold text-zinc-100">
+            <Percent size={13} className="text-zinc-400" /> Desconto permitido nas propostas
+          </h3>
+          <p className="text-[11px] text-zinc-500 mt-0.5">
+            Até este percentual sobre a tabela o operador lança a proposta sozinho. Acima dele, a proposta fica aguardando a aprovação do gestor.
+          </p>
+        </div>
+        <label className="flex items-center gap-2 text-[11px] text-zinc-400">
+          Padrão para todos
+          <CampoPct
+            rotulo="Desconto padrão sem aprovação"
+            valor={padrao}
+            onSalvar={v => padraoMut.mutate(v ?? LIMITE_DESCONTO_PADRAO)}
+          />
+        </label>
+      </header>
+
+      {erro && (
+        <p role="alert" className="mx-4 mt-3 flex items-center gap-2 text-xs text-red-300 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2">
+          <AlertTriangle size={14} /> {erro}
+        </p>
+      )}
+
+      {comTabela.length === 0 ? (
+        <p className="px-4 py-4 text-xs text-zinc-500">Nenhum empreendimento com Tabela de Vendas.</p>
+      ) : (
+        <ul className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-x-6 px-4 py-2">
+          {comTabela.map(p => {
+            const proprio = limites?.porProjeto.get(p.id) ?? null;
+            return (
+              <li key={p.id} className="flex items-center gap-2 py-1.5 border-b border-zinc-800/50">
+                <span className="flex-1 min-w-0 truncate text-xs text-zinc-200" title={p.name}>{p.name}</span>
+                {proprio === null
+                  ? <span className="text-[10px] text-zinc-600 shrink-0">padrão</span>
+                  : (
+                    <button type="button" onClick={() => projetoMut.mutate({ id: p.id, pct: null })}
+                      title="Voltar ao padrão" aria-label={`Voltar ${p.name} ao padrão`}
+                      className="shrink-0 p-1 rounded text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800">
+                      <Undo2 size={12} />
+                    </button>
+                  )}
+                <CampoPct
+                  rotulo={`Desconto sem aprovação em ${p.name}`}
+                  valor={proprio}
+                  placeholder={fmtPct(padrao)}
+                  onSalvar={v => projetoMut.mutate({ id: p.id, pct: v })}
+                />
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
   );
 }
 
@@ -586,6 +725,8 @@ function PainelMetas({ metas, cv, projetos }: { metas: Metas; cv: Empreendimento
         {emps.length === 0 && (
           <p className="text-xs text-zinc-500">Nenhum empreendimento ainda. Use “+ Empreendimento” no cabeçalho da tabela.</p>
         )}
+
+        <DescontosPropostas projetos={projetos} />
       </div>
     </div>
   );

@@ -78,7 +78,9 @@ export function resolverAtalho(id: IdAtalho, hoje: string, primeira: string): { 
       const seg = somarDias(hoje, -diaSemana(hoje) - 7);
       return { de: seg, ate: somarDias(seg, 6) };
     }
-    case 'este_mes': return { de: `${mesDe(hoje)}-01`, ate: hoje };
+    // O mês inteiro, inclusive os dias que ainda virão: assim a comparação pega
+    // o mês anterior (ou o do ano anterior) completo.
+    case 'este_mes': return { de: `${mesDe(hoje)}-01`, ate: ultimoDia(mesDe(hoje)) };
     case 'mes_passado': { const m = somarMeses(mesDe(hoje), -1); return { de: `${m}-01`, ate: ultimoDia(m) }; }
     case 'este_ano': return { de: `${ano}-01-01`, ate: hoje };
     case 'ano_passado': return { de: `${Number(ano) - 1}-01-01`, ate: `${Number(ano) - 1}-12-31` };
