@@ -171,30 +171,21 @@ function SeloDesconto({ p }: { p: ComercialProposta }) {
   );
 }
 
-/** Desconto acima do limite: informação para o Diretor, que decide junto com a proposta. */
+/** Desconto acima do limite: alerta fixo (sempre amarelo) para quem analisa a proposta. */
 function PainelAprovacao({ p }: { p: ComercialProposta }) {
   if (p.aprovacao === 'dispensada') return null;
   const desc = p.descontoPct !== null ? percentualBr(p.descontoPct) : '—';
   const lim = p.descontoLimitePct !== null ? percentualBr(p.descontoLimitePct) : '—';
-  const aprovada = p.aprovacao === 'aprovada';
-  const tom = aprovada ? 'border-emerald-500/20 bg-emerald-500/[0.04]' : 'border-amber-500/25 bg-amber-500/[0.05]';
 
   return (
-    <div className={`rounded-lg border p-3 ${tom}`}>
+    <div className="rounded-lg border border-amber-500/25 bg-amber-500/[0.05] p-3">
       <div className="flex items-start gap-2">
-        {aprovada ? <ShieldCheck size={14} className="text-emerald-300 mt-px shrink-0" /> : <ShieldAlert size={14} className="text-amber-300 mt-px shrink-0" />}
+        <ShieldAlert size={14} className="text-amber-300 mt-px shrink-0" />
         <div className="min-w-0 text-[12px]">
-          <p className="text-zinc-100 font-medium">{aprovada ? 'Desconto aprovado pelo Diretor' : 'Desconto acima do limite'}</p>
+          <p className="text-amber-200 font-semibold">Atenção: proposta com desconto acima de {lim}</p>
           <p className="text-zinc-400">
-            Desconto de <b className="text-zinc-200 tabular-nums">{desc}</b> sobre a tabela; o limite do empreendimento é <span className="tabular-nums">{lim}</span>.
-            {!aprovada && ' O Diretor avalia junto com a proposta.'}
+            Desconto de <b className="text-zinc-200 tabular-nums">{desc}</b> sobre a tabela.
           </p>
-          {aprovada && p.aprovacaoEm && (
-            <p className="text-zinc-500 mt-0.5">
-              {p.aprovacaoPorNome ? `${p.aprovacaoPorNome} · ` : ''}{dataHoraBr(p.aprovacaoEm)}
-              {p.aprovacaoObs && <span className="block text-zinc-400 whitespace-pre-wrap break-words">“{p.aprovacaoObs}”</span>}
-            </p>
-          )}
         </div>
       </div>
     </div>
@@ -285,6 +276,18 @@ export default function PropostasKanban({ projects, projectDisplays, unidades, v
   const proposta = propostas.find(p => p.id === aberta) ?? null;
   const editada = editando ? propostas.find(p => p.id === editando) ?? null : null;
   const etapaAtual = proposta ? PROPOSTA_ETAPAS.find(e => e.id === proposta.etapa) : undefined;
+
+  // Editar fica junto do fluxo de pagamento, que é o que normalmente se ajusta.
+  const edicao = proposta ? podeEditarProposta(proposta, currentUser?.id, isMaster) : null;
+  const botaoEditar = proposta && edicao ? (
+    <button
+      type="button" disabled={!edicao.pode} onClick={() => setEditando(proposta.id)}
+      title={edicao.motivo ?? 'Editar fluxo de pagamento e dados da proposta'}
+      className="inline-flex items-center gap-1.5 h-8 px-3.5 rounded-md border text-[12px] font-semibold transition-colors text-blue-400 bg-blue-500/10 border-blue-500/20 hover:bg-blue-500/20 disabled:text-zinc-500 disabled:bg-zinc-900/60 disabled:border-zinc-800 disabled:cursor-not-allowed"
+    >
+      {edicao.pode ? <Pencil size={13} /> : <Lock size={13} />} Editar proposta
+    </button>
+  ) : null;
   const aguardando = propostas.filter(p => p.etapa === 'em_analise').length;
 
   const mover = async (id: string, etapa: PropostaEtapa) => {
@@ -521,18 +524,6 @@ export default function PropostasKanban({ projects, projectDisplays, unidades, v
                   )}
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
-                  {(() => {
-                    const { pode, motivo } = podeEditarProposta(proposta, currentUser?.id, isMaster);
-                    return (
-                      <button
-                        type="button" disabled={!pode} onClick={() => setEditando(proposta.id)}
-                        title={motivo ?? 'Editar fluxo de pagamento e dados da proposta'}
-                        className="inline-flex items-center gap-1.5 h-8 px-3 mr-1 rounded-md border text-[12px] font-semibold transition-colors text-blue-400 bg-blue-500/10 border-blue-500/15 hover:bg-blue-500/20 disabled:text-zinc-500 disabled:bg-zinc-900/60 disabled:border-zinc-800 disabled:cursor-not-allowed"
-                      >
-                        {pode ? <Pencil size={13} /> : <Lock size={13} />} Editar
-                      </button>
-                    );
-                  })()}
                   <button
                     type="button" onClick={() => excluir(proposta)} title="Excluir proposta"
                     className="p-2 rounded-md text-zinc-500 hover:text-rose-300 hover:bg-rose-500/10 transition-colors"
@@ -643,7 +634,7 @@ export default function PropostasKanban({ projects, projectDisplays, unidades, v
                 <PainelAprovacao key={proposta.id} p={proposta} />
 
                 {proposta.autorizacao ? (
-                  <AutorizacaoResumo autorizacao={proposta.autorizacao} cliente={proposta.cliente} corretor={corretor} lateral={anexos} />
+                  <AutorizacaoResumo autorizacao={proposta.autorizacao} cliente={proposta.cliente} corretor={corretor} lateral={anexos} acaoFluxo={botaoEditar} />
                 ) : (
                   <>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -657,7 +648,10 @@ export default function PropostasKanban({ projects, projectDisplays, unidades, v
                       </div>
                     </div>
                     <section>
-                      <h4 className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-2">Fluxo de pagamento</h4>
+                      <div className="flex items-center justify-between gap-3 mb-2">
+                        <h4 className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">Fluxo de pagamento</h4>
+                        {botaoEditar}
+                      </div>
                       <p className="text-[13px] leading-relaxed text-zinc-300 whitespace-pre-wrap break-words">{proposta.fluxoPagamento || '—'}</p>
                     </section>
                     {anexos}

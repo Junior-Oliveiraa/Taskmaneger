@@ -765,7 +765,7 @@ function Rotulo({ children }: { children: React.ReactNode }) {
 
 function TituloBloco({ children, extra }: { children: React.ReactNode; extra?: React.ReactNode }) {
   return (
-    <div className="flex items-baseline justify-between gap-3 mb-2.5">
+    <div className="flex items-center justify-between gap-3 mb-2.5">
       <h4 className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">{children}</h4>
       {extra}
     </div>
@@ -813,11 +813,13 @@ const descreverParcela = (p: PropostaAutorizacao['parcelas'][number]) => {
 // A ficha já salva, no painel lateral do card. Duas colunas em telas largas:
 // valores e fluxo (a leitura principal) à esquerda; pessoas, contrato e o que
 // vier em `lateral` (anexos) numa coluna de apoio à direita.
-export function AutorizacaoResumo({ autorizacao: a, cliente, corretor, lateral }: {
+export function AutorizacaoResumo({ autorizacao: a, cliente, corretor, lateral, acaoFluxo }: {
   autorizacao: PropostaAutorizacao;
   cliente: string;
   corretor: string;
   lateral?: React.ReactNode;
+  /** Ação ao lado do título "Fluxo de pagamento" (ex.: botão Editar). */
+  acaoFluxo?: React.ReactNode;
 }) {
   const c = calcularAutorizacao(a);
   const emails = a.emails.split(/[;,\s]+/).filter(Boolean);
@@ -858,7 +860,12 @@ export function AutorizacaoResumo({ autorizacao: a, cliente, corretor, lateral }
 
         {/* Fluxo: a mesma grade do editor (Nova proposta), só leitura. Em coluna estreita vira lista. */}
         <section className="@container">
-          <TituloBloco extra={<span className="text-[12px] text-zinc-500 tabular-nums">{a.parcelas.length} {a.parcelas.length === 1 ? 'série' : 'séries'}</span>}>
+          <TituloBloco extra={
+            <span className="flex items-center gap-3">
+              <span className="text-[12px] text-zinc-500 tabular-nums">{a.parcelas.length} {a.parcelas.length === 1 ? 'série' : 'séries'}</span>
+              {acaoFluxo}
+            </span>
+          }>
             Fluxo de pagamento
           </TituloBloco>
           <div className="rounded-xl border border-zinc-800/80 overflow-hidden">

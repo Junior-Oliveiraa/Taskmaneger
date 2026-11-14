@@ -553,7 +553,19 @@ export default function FluxoPagamentoEditor({
             {unica && (unica.valorUnitario ?? 0) + saldo > 0 && (
               <AcaoSaldo onClick={ajustarNaUnica}>{saldo > 0 ? 'Somar' : 'Descontar'} em {unica.descricao || 'pagamento único'}</AcaoSaldo>
             )}
-            {contratado > 0 && (
+            {/* Falta valor: o desconto sobe até o valor da unidade bater com o distribuído. */}
+            {saldo > 0 && contratado > 0 && referenciaDesconto ? (() => {
+              const novo = descontoPct(contratado, referenciaDesconto);
+              const passa = acimaDoLimite(novo, limiteDesconto);
+              return (
+                <AcaoSaldo
+                  onClick={() => onAlvo(contratado)}
+                  titulo={passa ? `Passa do limite de ${percentualBr(limiteDesconto)}: o Diretor avalia na aprovação.` : `Dentro do limite de ${percentualBr(limiteDesconto)}.`}
+                >
+                  Compensar no desconto ({percentualBr(novo)}){passa && <span className="ml-1 text-amber-300">· acima do limite</span>}
+                </AcaoSaldo>
+              );
+            })() : contratado > 0 && (
               <AcaoSaldo onClick={() => onAlvo(contratado)} discreta>Usar {moedaBr(contratado)} como valor da unidade</AcaoSaldo>
             )}
           </div>
@@ -797,10 +809,10 @@ function Rotulo({ texto, children }: { texto: string; children: React.ReactNode 
   );
 }
 
-function AcaoSaldo({ children, onClick, discreta }: { children: React.ReactNode; onClick: () => void; discreta?: boolean }) {
+function AcaoSaldo({ children, onClick, discreta, titulo }: { children: React.ReactNode; onClick: () => void; discreta?: boolean; titulo?: string }) {
   return (
     <button
-      type="button" onClick={onClick}
+      type="button" onClick={onClick} title={titulo}
       className={`h-7 px-2.5 rounded-md text-[12px] transition-colors ${
         discreta ? 'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800' : 'border border-zinc-700 bg-zinc-900 text-zinc-200 hover:bg-zinc-800 hover:border-zinc-600'
       }`}

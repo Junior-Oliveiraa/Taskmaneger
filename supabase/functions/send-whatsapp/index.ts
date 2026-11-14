@@ -166,11 +166,14 @@ async function montarProposta(supabase: any, cfg: Evo, propostaId: string, tipo:
   // Uma informação por linha: no celular a legenda é estreita e o "·" quebra mal.
   const acima = Number(p.desconto_pct) > Number(p.desconto_limite_pct) + 0.0001;
   const detalhes = [
-    `🏢 ${empreendimento}${p.unidade ? ` · Unid. ${p.unidade}` : ''}`,
-    p.cliente ? `👤 ${p.cliente}` : null,
+    `${empreendimento}${p.unidade ? ` · Unid. ${p.unidade}` : ''}`,
+    p.cliente ? p.cliente : null,
+    p.corretor || p.imobiliaria
+      ? `Corretor: ${[p.corretor, p.imobiliaria].filter(Boolean).join(' · ')}`
+      : null,
     Number(p.desconto_pct) > 0.005
-      ? `💰 Desconto: *${pctBR(p.desconto_pct)}*${acima ? ` ⚠️ limite ${pctBR(p.desconto_limite_pct)}` : ''}`
-      : '💰 Sem desconto',
+      ? `Desconto: *${pctBR(p.desconto_pct)}*${acima ? ' ⚠️' : ''}`
+      : 'Sem desconto',
   ];
   const link = APP_URL ? `\n${APP_URL}` : '';
   const caption = (tipo === 'proposta_contra'
@@ -181,7 +184,7 @@ async function montarProposta(supabase: any, cfg: Evo, propostaId: string, tipo:
         ...detalhes,
         '',
         'O Diretor alterou a proposta.',
-        '👉 Responda *1* para aprovar ou *2* para recusar.',
+        '▸ Responda *1* para aprovar ou *2* para recusar.',
         `Para editar e enviar novamente, use o Orbit.${link}`,
       ]
     : [
@@ -189,9 +192,9 @@ async function montarProposta(supabase: any, cfg: Evo, propostaId: string, tipo:
         `Proposta nº ${p.numero ?? '?'}`,
         '',
         ...detalhes,
-        solicitante ? `✍️ Enviada por ${solicitante}` : null,
+        solicitante ? `Enviada por ${solicitante}` : null,
         '',
-        '👉 Responda *1* para aprovar ou *2* para recusar.',
+        '▸ Responda *1* para aprovar ou *2* para recusar.',
         `Para contra proposta, use o Orbit.${link}`,
       ]
   ).filter((l) => l !== null).join('\n');
