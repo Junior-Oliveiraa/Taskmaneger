@@ -456,3 +456,26 @@ export async function fetchUnidadeHistorico(): Promise<UnidadeHistorico[]> {
     createdAt: r.created_at,
   }));
 }
+
+// ── Aprovador das propostas ──────────────────────────────────────────────────
+// Quem recebe no WhatsApp as propostas enviadas para aprovação (e pode
+// respondê-las com 1/2). Fica em whatsapp_config.proposta_aprovador_id; o banco
+// só aceita a troca vinda de master/administrador e só para um deles.
+
+export async function fetchAprovadorPropostas(): Promise<string | null> {
+  const { data, error } = await supabase
+    .from('whatsapp_config')
+    .select('proposta_aprovador_id')
+    .eq('id', 'default')
+    .maybeSingle();
+  if (error) throw error;
+  return data?.proposta_aprovador_id ?? null;
+}
+
+export async function salvarAprovadorPropostas(usuarioId: string | null): Promise<void> {
+  const { error } = await supabase
+    .from('whatsapp_config')
+    .update({ proposta_aprovador_id: usuarioId, updated_at: new Date().toISOString() })
+    .eq('id', 'default');
+  if (error) throw error;
+}

@@ -1,10 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { CalendarDays, Check, Clock3, Flag, Lock, Pencil, Hourglass, Layers, MessageSquare, Paperclip, Plus, Repeat2, Send, Tag, ShieldAlert, ShieldCheck, ShieldX, ThumbsDown, ThumbsUp, Trash2, UserRound, X } from 'lucide-react';
+import { CalendarDays, Check, Clock3, Flag, Lock, Pencil, Hourglass, Layers, MessageSquare, Paperclip, Plus, Repeat2, Send, Settings, Tag, ShieldAlert, ShieldCheck, ShieldX, ThumbsDown, ThumbsUp, Trash2, UserRound, X } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import PropostaChat, { AvatarUsuario, SeletorResponsavel } from './PropostaChat';
 import { Project, SiengeProjectDisplay, SiengeTabelaVendaColuna, SiengeTabelaVendaUnidade, SiengeTabelaVendaVersao } from '../../types';
 import NovaPropostaModal, { AutorizacaoResumo } from './NovaPropostaModal';
+import ConfigPropostas from './ConfigPropostas';
+import StatusWhatsApp from './StatusWhatsApp';
 import {
   ComercialProposta, PROPOSTA_ETAPAS, PropostaEtapa, codigoProposta, definirResponsavelProposta, excluirProposta, podeEditarProposta,
   fetchComercialPropostas, fetchPropostaMensagens, moverProposta,
@@ -203,6 +205,7 @@ interface Props {
 export default function PropostasKanban({ projects, projectDisplays, unidades, versoes, colunas }: Props) {
   const queryClient = useQueryClient();
   const [novaAberta, setNovaAberta] = useState(false);
+  const [configAberta, setConfigAberta] = useState(false);
   // Proposta aberta no formulário em modo edição.
   const [editando, setEditando] = useState<string | null>(null);
   const propostas = useQuery({ queryKey: ['comercialPropostas'], queryFn: fetchComercialPropostas, staleTime: 30_000 }).data ?? [];
@@ -359,10 +362,22 @@ export default function PropostasKanban({ projects, projectDisplays, unidades, v
           </span>
         )}
         <span className="text-[10px] text-zinc-500 ml-auto hidden sm:inline">Arraste os cards entre as etapas.</span>
+        {isMaster && <StatusWhatsApp className="ml-auto sm:ml-2" />}
+        {isMaster && (
+          <button
+            type="button"
+            onClick={() => setConfigAberta(true)}
+            title="Configurações das propostas"
+            aria-label="Configurações das propostas"
+            className="ml-1 h-10 w-10 inline-flex items-center justify-center rounded-lg border border-zinc-800 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/60 transition-colors shrink-0"
+          >
+            <Settings size={17} />
+          </button>
+        )}
         <button
           type="button"
           onClick={() => setNovaAberta(true)}
-          className="ml-auto sm:ml-2 inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold shadow-lg shadow-blue-500/30 ring-1 ring-blue-400/50 transition-colors shrink-0"
+          className={`${isMaster ? 'ml-1' : 'ml-auto sm:ml-2'} inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold shadow-lg shadow-blue-500/30 ring-1 ring-blue-400/50 transition-colors shrink-0`}
         >
           <Plus size={16} strokeWidth={3} /> Nova proposta
         </button>
@@ -373,7 +388,7 @@ export default function PropostasKanban({ projects, projectDisplays, unidades, v
           propostas={propostas} projects={projects} projectDisplays={projectDisplays}
           filtro={filtro} onChange={setFiltro} hoje={hoje}
         />
-        <ResumoPropostas propostas={doRecorte} unidades={unidades} filtro={filtro} />
+        <ResumoPropostas propostas={doRecorte} mensagens={mensagens} unidades={unidades} filtro={filtro} agora={Date.now()} />
       </div>
 
       {erro && (
@@ -684,6 +699,7 @@ export default function PropostasKanban({ projects, projectDisplays, unidades, v
           onClose={() => { setNovaAberta(false); setEditando(null); }}
         />
       )}
+      {configAberta && isMaster && <ConfigPropostas onClose={() => setConfigAberta(false)} />}
     </section>
     </div>
   );

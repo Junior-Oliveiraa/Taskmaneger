@@ -1764,6 +1764,28 @@ export async function enviarRelatorioVendasAgora(): Promise<number> {
   return body.enviados ?? 0;
 }
 
+/** Conexão do número do WhatsApp (instância da Evolution), via Edge Function whatsapp-status. */
+export interface WhatsAppStatus {
+  estado: 'online' | 'conectando' | 'offline' | 'desativado' | 'erro';
+  instancia?: string;
+  numero?: string | null;
+  nome?: string | null;
+  detalhe?: string;
+}
+
+export async function fetchWhatsAppStatus(): Promise<WhatsAppStatus> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) throw new Error('Sessão expirada.');
+  const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/whatsapp-status`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+    body: '{}',
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body?.error || `Erro ${res.status}`);
+  return body as WhatsAppStatus;
+}
+
 // Foto diária do resumo (ver migration 20260925140000). Mesma regra da Edge
 // Function relatorio-vendas: fechamento de 7 dias antes de hoje (Brasília) ou,
 // enquanto o histórico não tem uma semana, a foto mais antiga antes de hoje.
