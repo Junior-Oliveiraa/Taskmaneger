@@ -1,17 +1,17 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, Clock3, Hourglass, Layers, MessageSquare, Paperclip, Plus, Repeat2, Send, ShieldAlert, ShieldCheck, ShieldX, ThumbsDown, ThumbsUp, Trash2, X } from 'lucide-react';
+import { CalendarDays, Check, Clock3, Flag, Lock, Pencil, Hourglass, Layers, MessageSquare, Paperclip, Plus, Repeat2, Send, Tag, ShieldAlert, ShieldCheck, ShieldX, ThumbsDown, ThumbsUp, Trash2, UserRound, X } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import PropostaChat, { AvatarUsuario, SeletorResponsavel } from './PropostaChat';
 import { Project, SiengeProjectDisplay, SiengeTabelaVendaColuna, SiengeTabelaVendaUnidade, SiengeTabelaVendaVersao } from '../../types';
 import NovaPropostaModal, { AutorizacaoResumo } from './NovaPropostaModal';
 import {
-  ComercialProposta, PROPOSTA_ETAPAS, PropostaEtapa, codigoProposta, decidirAprovacaoProposta, definirResponsavelProposta, excluirProposta,
+  ComercialProposta, PROPOSTA_ETAPAS, PropostaEtapa, codigoProposta, definirResponsavelProposta, excluirProposta, podeEditarProposta,
   fetchComercialPropostas, fetchPropostaMensagens, moverProposta,
 } from '../../lib/comercialApi';
 import { usePermissoes } from '../../lib/permissoes';
-import { moedaBr, percentualBr } from './PropostaCampos';
-import { CrmButton, selectCls } from '../crm/CrmShared';
+import { moedaBr, numeroBr, percentualBr } from './PropostaCampos';
+import { CrmButton } from '../crm/CrmShared';
 import { BarraFiltrosPropostas, FiltroPropostas, ResumoPropostas, noPeriodo, passaFiltroFixo, useVgvDaProposta } from './PropostasResumo';
 import { resolverAtalho } from './SeletorPeriodo';
 import { hojeBrasilia } from '../../lib/cvComercial';
@@ -21,6 +21,9 @@ const dataBr = (iso: string) => iso.slice(0, 10).split('-').reverse().join('/');
 const primeiroNome = (nome: string) => nome.trim().split(/\s+/)[0] || nome;
 const dataHoraBr = (iso: string) => new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
 // "agora", "12 min", "3h 20min", "5d 4h": tempo desde a criação do card.
+// Relógio da proposta: corre desde o cadastro e para quando ela chega a Venda/Perdido.
+const tempoDaProposta = (p: ComercialProposta, agora: number) =>
+  tempoDecorrido(p.createdAt, p.encerradaEm ? new Date(p.encerradaEm).getTime() : agora);
 function tempoDecorrido(iso: string, agora: number) {
   const min = Math.max(0, Math.floor((agora - new Date(iso).getTime()) / 60000));
   if (min < 1) return 'agora';
@@ -30,75 +33,96 @@ function tempoDecorrido(iso: string, agora: number) {
   return `${Math.floor(h / 24)}d ${h % 24}h`;
 }
 
-// Sem aprovação do desconto, a proposta não sai destas etapas (o banco também recusa).
-const ETAPAS_SEM_APROVACAO: PropostaEtapa[] = ['visita', 'realizada', 'perdido'];
-const travada = (p: ComercialProposta) => p.aprovacao === 'pendente' || p.aprovacao === 'recusada';
+// A aprovação é da proposta: o Diretor decide em "Em análise" (desconto incluído).
+// Na contra proposta, o responsável aprova sozinho se não mexeu nela depois.
+// Mesmas regras do trigger comercial_propostas_decisao (o banco também recusa).
+function bloqueioEtapa(p: ComercialProposta, para: PropostaEtapa, gestor: boolean, usuarioId: string | undefined): string | null {
+  if (gestor || p.etapa === para) return null;
+  if (p.etapa === 'em_analise' && (para === 'venda' || para === 'contra_proposta' || para === 'perdido')) {
+    return 'Proposta em análise: só o Diretor aprova, faz contra proposta ou recusa.';
+  }
+  if (para === 'venda') {
+    if (p.etapa !== 'contra_proposta') return 'Só o Diretor aprova a proposta e a leva para Venda.';
+    if (!usuarioId || p.responsavelId !== usuarioId) return 'Só o responsável pela proposta (ou o Diretor) aprova a contra proposta.';
+    if (p.contraEditada) return 'Você alterou a proposta depois da contra proposta: envie novamente para aprovação.';
+    if (p.aprovacao === 'pendente') return 'O desconto está acima do limite e não passou pelo Diretor: envie para aprovação.';
+  }
+  return null;
+}
 
-// Decisões que só o gestor toma (o banco também recusa, inclusive no arrastar).
-const exigeGestor = (de: PropostaEtapa, para: PropostaEtapa) =>
-  para === 'venda' || (de === 'em_analise' && (para === 'contra_proposta' || para === 'perdido'));
-
-type Acao = { para: PropostaEtapa; rotulo: string; icone: React.ReactNode; estilo: string; confirmar?: string };
-const BTN = 'inline-flex items-center justify-center gap-1.5 h-9 px-4 rounded-lg text-[13px] font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed';
+type Acao = { para: PropostaEtapa; rotulo: string; estilo: string; confirmar?: string; bloqueio?: string | null };
+// Mesmo estilo das etiquetas da task (prioridade, prazo): fundo tingido a 10%,
+// borda sutil e o texto na cor do significado.
+const BTN = 'inline-flex items-center justify-center gap-1.5 h-8 px-3.5 rounded-md border text-[12px] font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed';
 const ESTILO = {
-  primario: `${BTN} bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-600/20`,
-  aprovar: `${BTN} bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-600/20`,
-  contra: `${BTN} border border-amber-500/40 text-amber-300 hover:bg-amber-500/10`,
-  recusar: `${BTN} border border-rose-500/40 text-rose-300 hover:bg-rose-500/10`,
+  primario: `${BTN} text-blue-400 bg-blue-500/10 border-blue-500/15 hover:bg-blue-500/20`,
+  aprovar: `${BTN} text-emerald-400 bg-emerald-500/10 border-emerald-500/15 hover:bg-emerald-500/20`,
+  contra: `${BTN} text-amber-400 bg-amber-500/10 border-amber-500/15 hover:bg-amber-500/20`,
+  recusar: `${BTN} text-red-400 bg-red-500/10 border-red-500/15 hover:bg-red-500/20`,
 };
 
 /** Fluxo de decisão da proposta: o que fazer a seguir, conforme a etapa. */
-function BarraDecisao({ p, gestor, onMover }: { p: ComercialProposta; gestor: boolean; onMover: (para: PropostaEtapa) => Promise<void> }) {
+function BarraDecisao({ p, gestor, usuarioId, onMover }: {
+  p: ComercialProposta;
+  gestor: boolean;
+  usuarioId: string | undefined;
+  onMover: (para: PropostaEtapa) => Promise<void>;
+}) {
   const [enviando, setEnviando] = useState<PropostaEtapa | null>(null);
   const executar = async (a: Acao) => {
     if (a.confirmar && !window.confirm(a.confirmar)) return;
     setEnviando(a.para);
     try { await onMover(a.para); } finally { setEnviando(null); }
   };
-  const recusar: Acao = { para: 'perdido', rotulo: 'Recusar', icone: <ThumbsDown size={14} />, estilo: ESTILO.recusar, confirmar: 'Recusar a proposta? Ela vai para Perdido/cancelado.' };
+  const recusar: Acao = { para: 'perdido', rotulo: 'Recusar', estilo: ESTILO.recusar, confirmar: 'Recusar a proposta? Ela vai para Perdido/cancelado.' };
 
   let tom = 'border-zinc-800/80 bg-zinc-900/40';
   let icone: React.ReactNode = <Send size={15} className="text-blue-400" />;
   let titulo = '';
   let texto = '';
   let acoes: Acao[] = [];
-  let bloqueio: string | null = null;
 
   switch (p.etapa) {
     case 'realizada':
       tom = 'border-blue-500/25 bg-blue-500/[0.05]';
       titulo = 'Pronta para análise?';
-      texto = 'Envie a proposta para o gestor aprovar, fazer contra proposta ou recusar.';
-      acoes = [{ para: 'em_analise', rotulo: 'Enviar para aprovação', icone: <Send size={14} />, estilo: ESTILO.primario }];
-      if (travada(p)) bloqueio = p.aprovacao === 'pendente' ? 'O desconto acima do limite precisa ser aprovado antes.' : 'O desconto foi recusado: ajuste a proposta antes de enviar.';
+      texto = 'Confira a proposta e envie ao Diretor, que aprova, faz contra proposta ou recusa.'
+        + (p.aprovacao === 'pendente' ? ' O desconto está acima do limite: ele avalia junto.' : '');
+      acoes = [{ para: 'em_analise', rotulo: 'Enviar para aprovação', estilo: ESTILO.primario }];
       break;
     case 'em_analise':
       tom = 'border-blue-500/25 bg-blue-500/[0.05]';
       icone = <Hourglass size={15} className="text-blue-400" />;
-      titulo = gestor ? 'Aguardando sua decisão' : 'Aguardando decisão do gestor';
-      texto = gestor ? 'Aprovar leva a proposta para Venda.' : 'O gestor vai aprovar, fazer contra proposta ou recusar.';
+      titulo = gestor ? 'Aguardando sua decisão' : 'Aguardando decisão do Diretor';
+      texto = gestor ? 'Aprovar leva a proposta para Venda.' : 'O Diretor vai aprovar, fazer contra proposta ou recusar.';
       acoes = gestor ? [
         recusar,
-        { para: 'contra_proposta', rotulo: 'Contra proposta', icone: <Repeat2 size={14} />, estilo: ESTILO.contra },
-        { para: 'venda', rotulo: 'Aprovar', icone: <ThumbsUp size={14} />, estilo: ESTILO.aprovar },
+        { para: 'contra_proposta', rotulo: 'Contra proposta', estilo: ESTILO.contra },
+        { para: 'venda', rotulo: 'Aprovar', estilo: ESTILO.aprovar },
       ] : [];
       break;
     case 'contra_proposta':
-      tom = 'border-amber-500/25 bg-amber-500/[0.05]';
-      icone = <Repeat2 size={15} className="text-amber-300" />;
-      titulo = 'Contra proposta enviada';
-      texto = 'Registre a resposta do cliente: tréplica volta para aprovação do gestor.';
-      acoes = [recusar, { para: 'em_analise', rotulo: 'Tréplica', icone: <Send size={14} />, estilo: ESTILO.primario }];
+      tom = 'border-amber-400/20 bg-amber-400/[0.03]';
+      icone = <Repeat2 size={15} className="text-amber-200/80" />;
+      titulo = 'Contra proposta do Diretor';
+      texto = p.contraEditada
+        ? 'Você alterou a proposta depois da contra proposta: envie novamente para o Diretor aprovar.'
+        : 'Se o cliente aceitou, aprove. Se não, recuse ou edite a proposta e envie novamente para aprovação.';
+      acoes = [
+        recusar,
+        { para: 'em_analise', rotulo: 'Enviar novamente para aprovação', estilo: ESTILO.primario },
+        { para: 'venda', rotulo: 'Aprovar', estilo: ESTILO.aprovar, bloqueio: bloqueioEtapa(p, 'venda', gestor, usuarioId) },
+      ];
       break;
     case 'venda':
-      tom = 'border-emerald-500/25 bg-emerald-500/[0.06]';
-      icone = <ThumbsUp size={15} className="text-emerald-300" />;
+      tom = 'border-emerald-400/20 bg-emerald-400/[0.03]';
+      icone = <ThumbsUp size={15} className="text-emerald-300/80" />;
       titulo = 'Proposta aprovada';
       texto = 'Lance a venda no formulário de Vendas para mudar a situação da unidade.';
       break;
     case 'perdido':
-      tom = 'border-rose-500/25 bg-rose-500/[0.05]';
-      icone = <ThumbsDown size={15} className="text-rose-300" />;
+      tom = 'border-rose-400/20 bg-rose-400/[0.03]';
+      icone = <ThumbsDown size={15} className="text-rose-300/80" />;
       titulo = 'Proposta perdida/cancelada';
       texto = 'Para reabrir, mova a proposta de volta para outra etapa.';
       break;
@@ -112,14 +136,14 @@ function BarraDecisao({ p, gestor, onMover }: { p: ComercialProposta; gestor: bo
         <span className="mt-0.5 shrink-0">{icone}</span>
         <div className="min-w-0">
           <p className="text-[14px] font-semibold text-zinc-100">{titulo}</p>
-          <p className="text-[12px] text-zinc-400">{bloqueio ?? texto}</p>
+          <p className="text-[12px] text-zinc-400">{texto}</p>
         </div>
       </div>
       {acoes.length > 0 && (
         <div className="flex items-center gap-2 flex-wrap md:justify-end shrink-0">
           {acoes.map(a => (
-            <button key={a.para} type="button" className={a.estilo} disabled={!!enviando || !!bloqueio} onClick={() => executar(a)}>
-              {a.icone} {enviando === a.para ? 'Salvando…' : a.rotulo}
+            <button key={a.para} type="button" className={a.estilo} disabled={!!enviando || !!a.bloqueio} title={a.bloqueio ?? undefined} onClick={() => executar(a)}>
+              {enviando === a.para ? 'Salvando…' : a.rotulo}
             </button>
           ))}
         </div>
@@ -128,56 +152,44 @@ function BarraDecisao({ p, gestor, onMover }: { p: ComercialProposta; gestor: bo
   );
 }
 
-function SeloAprovacao({ p }: { p: ComercialProposta }) {
-  if (p.aprovacao === 'dispensada') return null;
-  const desc = p.descontoPct !== null ? percentualBr(p.descontoPct) : '';
-  const estilo = {
-    pendente: ['bg-amber-500/10 text-amber-300 border-amber-500/25', <ShieldAlert size={10} />, `Aprovação · ${desc}`],
-    aprovada: ['bg-emerald-500/10 text-emerald-300 border-emerald-500/20', <ShieldCheck size={10} />, `Desconto aprovado · ${desc}`],
-    recusada: ['bg-rose-500/10 text-rose-300 border-rose-500/25', <ShieldX size={10} />, `Desconto recusado · ${desc}`],
-  }[p.aprovacao] as [string, React.ReactNode, string];
+/** Cor pela faixa do desconto: até 1,5% verde · até 2,5% amarelo · acima vermelho. */
+function corDoDesconto(pct: number): string {
+  if (pct <= 1.5) return 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20';
+  if (pct <= 2.5) return 'bg-amber-500/10 text-amber-300 border-amber-500/25';
+  return 'bg-rose-500/10 text-rose-300 border-rose-500/25';
+}
+
+function SeloDesconto({ p }: { p: ComercialProposta }) {
+  if (p.descontoPct === null) return null;
   return (
-    <span className={`mt-1.5 inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-medium tabular-nums ${estilo[0]}`}>
-      {estilo[1]} {estilo[2]}
+    <span
+      className={`mt-1.5 inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-medium tabular-nums ${corDoDesconto(p.descontoPct)}`}
+      title="Diferença entre o valor de tabela e o valor da proposta"
+    >
+      <Tag size={10} /> Desconto · {percentualBr(p.descontoPct)}
     </span>
   );
 }
 
-function PainelAprovacao({ p, gestor, onDecidir }: {
-  p: ComercialProposta;
-  gestor: boolean;
-  onDecidir: (decisao: 'aprovada' | 'recusada', obs: string) => Promise<void>;
-}) {
-  const [obs, setObs] = useState('');
-  const [enviando, setEnviando] = useState<'aprovada' | 'recusada' | null>(null);
+/** Desconto acima do limite: informação para o Diretor, que decide junto com a proposta. */
+function PainelAprovacao({ p }: { p: ComercialProposta }) {
   if (p.aprovacao === 'dispensada') return null;
   const desc = p.descontoPct !== null ? percentualBr(p.descontoPct) : '—';
   const lim = p.descontoLimitePct !== null ? percentualBr(p.descontoLimitePct) : '—';
-  const decidir = async (d: 'aprovada' | 'recusada') => {
-    setEnviando(d);
-    try { await onDecidir(d, obs); setObs(''); } finally { setEnviando(null); }
-  };
-  const tom = p.aprovacao === 'pendente' ? 'border-amber-500/25 bg-amber-500/[0.05]'
-    : p.aprovacao === 'aprovada' ? 'border-emerald-500/20 bg-emerald-500/[0.04]'
-    : 'border-rose-500/25 bg-rose-500/[0.05]';
+  const aprovada = p.aprovacao === 'aprovada';
+  const tom = aprovada ? 'border-emerald-500/20 bg-emerald-500/[0.04]' : 'border-amber-500/25 bg-amber-500/[0.05]';
 
   return (
-    <div className={`rounded-lg border p-3 space-y-2 ${tom}`}>
+    <div className={`rounded-lg border p-3 ${tom}`}>
       <div className="flex items-start gap-2">
-        {p.aprovacao === 'pendente' ? <ShieldAlert size={14} className="text-amber-300 mt-px shrink-0" />
-          : p.aprovacao === 'aprovada' ? <ShieldCheck size={14} className="text-emerald-300 mt-px shrink-0" />
-          : <ShieldX size={14} className="text-rose-300 mt-px shrink-0" />}
+        {aprovada ? <ShieldCheck size={14} className="text-emerald-300 mt-px shrink-0" /> : <ShieldAlert size={14} className="text-amber-300 mt-px shrink-0" />}
         <div className="min-w-0 text-[12px]">
-          <p className="text-zinc-100 font-medium">
-            {p.aprovacao === 'pendente' ? 'Aguardando aprovação do gestor'
-              : p.aprovacao === 'aprovada' ? 'Desconto aprovado' : 'Desconto recusado'}
-          </p>
+          <p className="text-zinc-100 font-medium">{aprovada ? 'Desconto aprovado pelo Diretor' : 'Desconto acima do limite'}</p>
           <p className="text-zinc-400">
             Desconto de <b className="text-zinc-200 tabular-nums">{desc}</b> sobre a tabela; o limite do empreendimento é <span className="tabular-nums">{lim}</span>.
-            {p.aprovacao === 'pendente' && ' A proposta não avança de etapa até a decisão.'}
-            {p.aprovacao === 'recusada' && ' A proposta fica parada em "Propostas realizadas".'}
+            {!aprovada && ' O Diretor avalia junto com a proposta.'}
           </p>
-          {p.aprovacao !== 'pendente' && p.aprovacaoEm && (
+          {aprovada && p.aprovacaoEm && (
             <p className="text-zinc-500 mt-0.5">
               {p.aprovacaoPorNome ? `${p.aprovacaoPorNome} · ` : ''}{dataHoraBr(p.aprovacaoEm)}
               {p.aprovacaoObs && <span className="block text-zinc-400 whitespace-pre-wrap break-words">“{p.aprovacaoObs}”</span>}
@@ -185,26 +197,6 @@ function PainelAprovacao({ p, gestor, onDecidir }: {
           )}
         </div>
       </div>
-
-      {gestor && p.aprovacao !== 'aprovada' && (
-        <div className="flex flex-col sm:flex-row gap-2 pt-1">
-          <input
-            className="flex-1 h-8 px-2.5 text-[12px] rounded-md bg-zinc-950/70 border border-zinc-800 text-zinc-100 outline-none focus:border-blue-500/60"
-            placeholder="Observação (opcional)"
-            value={obs} onChange={e => setObs(e.target.value)}
-          />
-          <div className="flex gap-2 shrink-0">
-            {p.aprovacao === 'pendente' && (
-              <CrmButton variant="danger" disabled={!!enviando} onClick={() => decidir('recusada')}>
-                <X size={12} /> {enviando === 'recusada' ? 'Recusando…' : 'Recusar'}
-              </CrmButton>
-            )}
-            <CrmButton variant="primary" disabled={!!enviando} onClick={() => decidir('aprovada')}>
-              <Check size={12} /> {enviando === 'aprovada' ? 'Aprovando…' : 'Aprovar desconto'}
-            </CrmButton>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -220,6 +212,8 @@ interface Props {
 export default function PropostasKanban({ projects, projectDisplays, unidades, versoes, colunas }: Props) {
   const queryClient = useQueryClient();
   const [novaAberta, setNovaAberta] = useState(false);
+  // Proposta aberta no formulário em modo edição.
+  const [editando, setEditando] = useState<string | null>(null);
   const propostas = useQuery({ queryKey: ['comercialPropostas'], queryFn: fetchComercialPropostas, staleTime: 30_000 }).data ?? [];
   const [dragOver, setDragOver] = useState<PropostaEtapa | null>(null);
   const [arrastando, setArrastando] = useState<string | null>(null);
@@ -235,11 +229,12 @@ export default function PropostasKanban({ projects, projectDisplays, unidades, v
   }, []);
   // Esc fecha o painel da proposta, como na task.
   useEffect(() => {
-    if (!aberta) return;
+    // Com o formulário de edição aberto, Esc não fecha o painel por baixo.
+    if (!aberta || editando) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setAberta(null); };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [aberta]);
+  }, [aberta, editando]);
   // Mesmo padrão do Dashboard do Comercial: este ano, comparado ao ano anterior.
   const [filtro, setFiltro] = useState<FiltroPropostas>(() => ({
     projetos: null, imobiliaria: null, corretor: null,
@@ -260,32 +255,54 @@ export default function PropostasKanban({ projects, projectDisplays, unidades, v
     return m;
   }, [mensagens]);
   const nomeProjeto = (id: string) => projects.find(p => p.id === id)?.name || '—';
+
+  // Características da unidade: as colunas descritivas da Tabela de Vendas (área,
+  // tipo, vagas, andar...), na ordem e com o rótulo que o empreendimento usa.
+  // Valores em moeda ficam de fora: são internos (adesão, custo), não da unidade.
+  const caracteristicas = (p: ComercialProposta): { rotulo: string; valor: string }[] => {
+    const u = p.unidadeId ? unidades.find(x => x.id === p.unidadeId) : undefined;
+    if (!u) return [];
+    const itens: { rotulo: string; valor: string }[] = [];
+    if (u.imovel) itens.push({ rotulo: 'Imóvel', valor: u.imovel });
+    colunas
+      .filter(c => c.versaoId === u.versaoId && c.tipo !== 'moeda')
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .forEach(c => {
+        const bruto = u.camposExtra?.[c.key];
+        if (bruto === undefined || bruto === null || String(bruto).trim() === '') return;
+        const n = typeof bruto === 'number' ? bruto : Number(String(bruto).replace(',', '.'));
+        if (c.tipo === 'area' || /^m²$/i.test(c.label.trim())) {
+          if (Number.isFinite(n) && n > 0) itens.push({ rotulo: 'Área', valor: `${numeroBr(n)} m²` });
+        } else if (/vaga/i.test(c.label) && Number.isFinite(n)) {
+          itens.push({ rotulo: 'Vagas', valor: n.toLocaleString('pt-BR') });
+        } else {
+          itens.push({ rotulo: c.label, valor: c.tipo === 'numero' && Number.isFinite(n) ? n.toLocaleString('pt-BR') : String(bruto) });
+        }
+      });
+    if (u.descricao) itens.push({ rotulo: 'Descrição', valor: u.descricao });
+    return itens;
+  };
   const proposta = propostas.find(p => p.id === aberta) ?? null;
+  const editada = editando ? propostas.find(p => p.id === editando) ?? null : null;
   const etapaAtual = proposta ? PROPOSTA_ETAPAS.find(e => e.id === proposta.etapa) : undefined;
-  const aguardando = propostas.filter(p => p.aprovacao === 'pendente').length;
+  const aguardando = propostas.filter(p => p.etapa === 'em_analise').length;
 
   const mover = async (id: string, etapa: PropostaEtapa) => {
     const atual = propostas.find(p => p.id === id);
     if (!atual || atual.etapa === etapa) return;
     setErro(null);
-    if (travada(atual) && !ETAPAS_SEM_APROVACAO.includes(etapa)) {
-      setErro(atual.aprovacao === 'pendente'
-        ? `A proposta de ${atual.cliente} tem desconto acima do limite e aguarda a aprovação do gestor.`
-        : `O desconto da proposta de ${atual.cliente} foi recusado: ela não avança de etapa.`);
-      return;
-    }
-    if (!isMaster && exigeGestor(atual.etapa, etapa)) {
-      setErro(etapa === 'venda'
-        ? 'Só o gestor aprova a proposta e a leva para Venda.'
-        : 'Proposta em análise: só o gestor aprova, faz contra proposta ou recusa.');
+    const bloqueio = bloqueioEtapa(atual, etapa, isMaster, currentUser?.id);
+    if (bloqueio) {
+      setErro(bloqueio);
       return;
     }
     // Otimista: o card muda de coluna na hora; se falhar, a consulta devolve o estado real.
     queryClient.setQueryData<ComercialProposta[]>(['comercialPropostas'], old =>
       (old ?? []).map(p => (p.id !== id ? p
         // Mesmas regras do trigger comercial_propostas_marcos, para o resumo reagir já.
-        : etapa === 'visita' ? { ...p, etapa, visitaEm: hoje, propostaEm: null }
-        : { ...p, etapa, propostaEm: p.propostaEm ?? hoje })));
+        // e do comercial_propostas_encerramento (relógio para em Venda/Perdido).
+        : etapa === 'visita' ? { ...p, etapa, visitaEm: hoje, propostaEm: null, encerradaEm: null }
+        : { ...p, etapa, propostaEm: p.propostaEm ?? hoje, encerradaEm: etapa === 'venda' || etapa === 'perdido' ? new Date().toISOString() : null })));
     try {
       await moverProposta(id, etapa);
     } catch (e: any) {
@@ -306,17 +323,6 @@ export default function PropostasKanban({ projects, projectDisplays, unidades, v
     } finally {
       queryClient.invalidateQueries({ queryKey: ['comercialPropostas'] });
       queryClient.invalidateQueries({ queryKey: ['comercialPropostaMensagens'] });
-    }
-  };
-
-  const decidir = async (p: ComercialProposta, decisao: 'aprovada' | 'recusada', obs: string) => {
-    setErro(null);
-    try {
-      await decidirAprovacaoProposta(p.id, decisao, obs);
-    } catch (e: any) {
-      setErro(e?.message || 'Não foi possível registrar a decisão.');
-    } finally {
-      await queryClient.invalidateQueries({ queryKey: ['comercialPropostas'] });
     }
   };
 
@@ -344,7 +350,7 @@ export default function PropostasKanban({ projects, projectDisplays, unidades, v
         {aguardando > 0 && (
           <span
             className="inline-flex items-center gap-1 rounded-md border border-amber-500/25 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-300"
-            title={isMaster ? 'Abra o card para aprovar ou recusar o desconto.' : 'Desconto acima do limite: depende do gestor.'}
+            title={isMaster ? 'Propostas em análise esperando sua decisão.' : 'Propostas em análise esperando a decisão do Diretor.'}
           >
             <ShieldAlert size={11} /> {aguardando} aguardando aprovação
           </span>
@@ -419,12 +425,12 @@ export default function PropostasKanban({ projects, projectDisplays, unidades, v
                       {(p.numero !== null || p.unidade) && (
                         <div className="flex items-baseline justify-between gap-2 mb-0.5 text-[10px] leading-4">
                           {p.numero !== null
-                            ? <span className={`font-mono font-bold tracking-wide ${coluna.texto}`}>{codigoProposta(p.numero)}</span>
+                            ? <span className="font-mono font-medium tracking-wide text-zinc-500">{codigoProposta(p.numero)}</span>
                             : <span />}
                           {p.unidade && <span className="shrink-0 font-medium text-zinc-300 tabular-nums">Un. {p.unidade}</span>}
                         </div>
                       )}
-                      <p className="text-xs font-semibold text-blue-400 leading-snug break-words">{nomeProjeto(p.projectId)}</p>
+                      <p className="text-[15px] font-semibold text-blue-400 leading-tight tracking-tight break-words">{nomeProjeto(p.projectId)}</p>
                       <p
                         className={`mt-1 text-[14px] font-bold tabular-nums ${vgvDe(p) > 0 ? 'text-zinc-50' : 'text-[12px] font-medium text-zinc-600'}`}
                         title={p.autorizacao ? 'VGV: valor contratado na ficha' : 'VGV: valor da unidade na Tabela de Vendas'}
@@ -435,13 +441,16 @@ export default function PropostasKanban({ projects, projectDisplays, unidades, v
                         <span className="text-zinc-200 font-medium">{primeiroNome(p.corretor)}</span>
                         {p.imobiliaria && <span className="text-zinc-500"> · {p.imobiliaria}</span>}
                       </p>
-                      <SeloAprovacao p={p} />
+                      <SeloDesconto p={p} />
                       <div className="flex items-center justify-between mt-2 pt-1.5 border-t border-zinc-800/60 text-[10px] text-zinc-400">
                         <span
                           className="inline-flex items-center gap-1 tabular-nums"
-                          title={`Criada em ${dataHoraBr(p.createdAt)} · enviada em ${dataBr(p.enviadaEm)}`}
+                          title={p.encerradaEm
+                            ? `Negociação encerrada em ${dataHoraBr(p.encerradaEm)}, ${tempoDecorrido(p.createdAt, new Date(p.encerradaEm).getTime())} após o cadastro`
+                            : `Cadastrada em ${dataHoraBr(p.createdAt)} · enviada em ${dataBr(p.enviadaEm)}`}
                         >
-                          <Clock3 size={10} className={coluna.texto} /> {tempoDecorrido(p.createdAt, agora)}
+                          {p.encerradaEm ? <Flag size={10} className={coluna.texto} /> : <Clock3 size={10} className={coluna.texto} />}
+                          {tempoDaProposta(p, agora)}
                         </span>
                         <span className="inline-flex items-center gap-2">
                           {p.anexos.length > 0 && (
@@ -503,51 +512,33 @@ export default function PropostasKanban({ projects, projectDisplays, unidades, v
               role="dialog" aria-modal="true" aria-label={`Proposta ${codigoProposta(proposta.numero) ?? ''}`}
               className={`fixed top-0 right-0 bottom-0 z-50 flex flex-col bg-[#0c0c0e] border-l border-zinc-800/80 shadow-2xl animate-slide-in text-zinc-200 w-full ${proposta.autorizacao ? 'md:w-[94vw] xl:w-[86vw] max-w-[1600px]' : 'md:w-[94vw] lg:w-[960px]'}`}
             >
-              <header className="flex items-start justify-between gap-4 px-6 pt-5 pb-4 border-b border-zinc-800/60 shrink-0">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2.5 flex-wrap">
-                    {proposta.numero !== null && (
-                      <span className={`font-mono text-[12px] font-bold tracking-wide ${etapaAtual?.texto ?? 'text-zinc-400'}`}>{codigoProposta(proposta.numero)}</span>
-                    )}
-                    <h2 className="text-lg font-semibold text-blue-400 truncate">{nomeProjeto(proposta.projectId)}</h2>
-                    {proposta.unidade && (
-                      <span className="rounded-md bg-zinc-800/80 px-1.5 py-0.5 text-[11px] font-medium text-zinc-300 tabular-nums">Unid. {proposta.unidade}</span>
-                    )}
-                  </div>
-                  <p className="mt-1.5 flex items-center gap-1.5 text-[12px] text-zinc-500 flex-wrap">
-                    <span className={`w-1.5 h-1.5 rounded-full ${etapaAtual?.dot ?? 'bg-zinc-500'}`} />
-                    <span className="text-zinc-300">{etapaAtual?.label}</span>
-                    <span>· enviada em {dataBr(proposta.enviadaEm)}</span>
-                    <span className="inline-flex items-center gap-1" title={`Criada em ${dataHoraBr(proposta.createdAt)}`}>
-                      · <Clock3 size={11} /> {tempoDecorrido(proposta.createdAt, agora)}
-                    </span>
-                  </p>
+              {/* Topo: só a identificação da proposta e as ações de janela. */}
+              <header className="flex items-center justify-between gap-4 px-6 h-12 border-b border-zinc-800/60 shrink-0">
+                <div className="flex items-center gap-2 min-w-0 text-[12px]">
+                  <span className="text-zinc-500">Proposta</span>
+                  {proposta.numero !== null && (
+                    <span className="font-mono font-medium tracking-wide text-zinc-400">{codigoProposta(proposta.numero)}</span>
+                  )}
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <SeletorResponsavel
-                    usuarios={allUsers} valor={proposta.responsavelId} desabilitado={!podeEditar}
-                    onChange={id => trocarResponsavel(proposta, id)}
-                  />
-                  <label className="hidden sm:flex items-center gap-2">
-                    <span className="text-[12px] text-zinc-500">Mover para</span>
-                    <span className="block w-[200px]">
-                      <select
-                        className={selectCls} value={proposta.etapa}
-                        onChange={e => mover(proposta.id, e.target.value as PropostaEtapa)}
+                <div className="flex items-center gap-1 shrink-0">
+                  {(() => {
+                    const { pode, motivo } = podeEditarProposta(proposta, currentUser?.id, isMaster);
+                    return (
+                      <button
+                        type="button" disabled={!pode} onClick={() => setEditando(proposta.id)}
+                        title={motivo ?? 'Editar fluxo de pagamento e dados da proposta'}
+                        className="inline-flex items-center gap-1.5 h-8 px-3 mr-1 rounded-md border text-[12px] font-semibold transition-colors text-blue-400 bg-blue-500/10 border-blue-500/15 hover:bg-blue-500/20 disabled:text-zinc-500 disabled:bg-zinc-900/60 disabled:border-zinc-800 disabled:cursor-not-allowed"
                       >
-                        {PROPOSTA_ETAPAS.map(et => (
-                          <option key={et.id} value={et.id} disabled={travada(proposta) && !ETAPAS_SEM_APROVACAO.includes(et.id)}>{et.label}</option>
-                        ))}
-                      </select>
-                    </span>
-                  </label>
+                        {pode ? <Pencil size={13} /> : <Lock size={13} />} Editar
+                      </button>
+                    );
+                  })()}
                   <button
                     type="button" onClick={() => excluir(proposta)} title="Excluir proposta"
                     className="p-2 rounded-md text-zinc-500 hover:text-rose-300 hover:bg-rose-500/10 transition-colors"
                   >
                     <Trash2 size={15} />
                   </button>
-                  <span className="w-px h-5 bg-zinc-800" aria-hidden />
                   <button onClick={() => setAberta(null)} className="p-2 rounded-md text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800/60" title="Fechar (Esc)">
                     <X size={16} />
                   </button>
@@ -560,22 +551,96 @@ export default function PropostasKanban({ projects, projectDisplays, unidades, v
                 {erro && (
                   <p className="text-[12px] text-rose-300 bg-rose-500/[0.06] border border-rose-500/20 rounded-lg px-3 py-2">{erro}</p>
                 )}
-                <BarraDecisao key={`${proposta.id}-${proposta.etapa}`} p={proposta} gestor={isMaster} onMover={para => mover(proposta.id, para)} />
 
-                {/* No celular o seletor de etapa não cabe no cabeçalho. */}
-                <label className="sm:hidden flex flex-col gap-1.5">
-                  <span className="text-[11px] text-zinc-500">Mover para</span>
-                  <select
-                    className={selectCls} value={proposta.etapa}
-                    onChange={e => mover(proposta.id, e.target.value as PropostaEtapa)}
-                  >
-                    {PROPOSTA_ETAPAS.map(et => (
-                      <option key={et.id} value={et.id} disabled={travada(proposta) && !ETAPAS_SEM_APROVACAO.includes(et.id)}>{et.label}</option>
-                    ))}
-                  </select>
-                </label>
+                {/* Propriedades, como na task: todas as etapas à vista e os campos de controle. */}
+                <section className="rounded-xl border border-zinc-800/80 bg-zinc-900/30 p-5 space-y-5">
+                  {/* Empreendimento: a primeira coisa que se precisa saber da proposta. */}
+                  {/* Ficha da unidade: identificação à esquerda, características à direita. */}
+                  <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
+                    <div className="min-w-0">
+                      <h2 className="text-3xl font-semibold tracking-tight text-blue-400 leading-none break-words">{nomeProjeto(proposta.projectId)}</h2>
+                      {proposta.unidade && (
+                        <p className="mt-2 text-[14px] text-zinc-400">
+                          Unidade <span className="font-semibold text-zinc-100 tabular-nums">{proposta.unidade}</span>
+                        </p>
+                      )}
+                    </div>
+                    {(() => {
+                      const itens = caracteristicas(proposta);
+                      if (itens.length === 0) return null;
+                      return (
+                        <dl className="flex flex-wrap items-stretch gap-y-3 md:justify-end">
+                          {itens.map((i, idx) => (
+                            <div
+                              key={i.rotulo}
+                              className={`min-w-0 px-5 first:pl-0 md:first:pl-5 ${idx > 0 ? 'border-l border-zinc-800/80' : ''} md:border-l md:border-zinc-800/80`}
+                            >
+                              <dt className="text-[11px] text-zinc-500">{i.rotulo}</dt>
+                              <dd className="mt-0.5 text-[16px] font-semibold text-zinc-100 tabular-nums truncate max-w-[240px]" title={i.valor}>{i.valor}</dd>
+                            </div>
+                          ))}
+                        </dl>
+                      );
+                    })()}
+                  </div>
 
-                <PainelAprovacao key={proposta.id} p={proposta} gestor={isMaster} onDecidir={(d, obs) => decidir(proposta, d, obs)} />
+                  <div className="space-y-2">
+                    <span className="block text-[11px] font-medium text-zinc-500">Etapa</span>
+                    <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Etapa da proposta">
+                      {PROPOSTA_ETAPAS.map(et => {
+                        const ativa = proposta.etapa === et.id;
+                        const motivo = ativa ? null : bloqueioEtapa(proposta, et.id, isMaster, currentUser?.id);
+                        return (
+                          <button
+                            key={et.id} type="button" role="radio" aria-checked={ativa}
+                            disabled={!!motivo || !podeEditar}
+                            title={motivo ?? (podeEditar ? undefined : 'Sem permissão para mover')}
+                            onClick={() => !ativa && mover(proposta.id, et.id)}
+                            className={`inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md border text-[12px] font-medium transition-colors ${
+                              ativa
+                                ? `bg-zinc-800/80 ${et.accentBorder} ${et.texto}`
+                                : 'bg-zinc-950/60 border-transparent text-zinc-500 hover:bg-zinc-900 hover:text-zinc-300 disabled:opacity-35 disabled:hover:bg-zinc-950/60 disabled:hover:text-zinc-500 disabled:cursor-not-allowed'
+                            }`}
+                          >
+                            <span className={`w-1.5 h-1.5 rounded-full ${ativa ? et.dot : 'bg-zinc-700'}`} />
+                            {et.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-end gap-x-8 gap-y-3 pt-3 border-t border-zinc-800/60">
+                    <div className="flex flex-col gap-1.5">
+                      <span className={`flex items-center gap-1.5 text-[11px] font-medium ${proposta.responsavelId ? 'text-zinc-500' : 'text-amber-200/80'}`}>
+                        <UserRound size={12} className="opacity-70" /> Responsável
+                      </span>
+                      <SeletorResponsavel
+                        usuarios={allUsers} valor={proposta.responsavelId} desabilitado={!podeEditar}
+                        onChange={id => trocarResponsavel(proposta, id)}
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <span className="flex items-center gap-1.5 text-[11px] font-medium text-zinc-500"><CalendarDays size={12} className="opacity-70" /> Enviada em</span>
+                      <span className="h-8 flex items-center text-[13px] text-zinc-200 tabular-nums">{dataBr(proposta.enviadaEm)}</span>
+                    </div>
+                    {proposta.encerradaEm ? (
+                      <div className="flex flex-col gap-1.5" title={`Cadastrada em ${dataHoraBr(proposta.createdAt)} · encerrada em ${dataHoraBr(proposta.encerradaEm)}`}>
+                        <span className="flex items-center gap-1.5 text-[11px] font-medium text-zinc-500"><Flag size={12} className="opacity-70" /> Negociação levou</span>
+                        <span className="h-8 flex items-center text-[13px] text-zinc-200 tabular-nums">{tempoDaProposta(proposta, agora)}</span>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col gap-1.5" title={`Cadastrada em ${dataHoraBr(proposta.createdAt)}`}>
+                        <span className="flex items-center gap-1.5 text-[11px] font-medium text-zinc-500"><Clock3 size={12} className="opacity-70" /> Cadastrada há</span>
+                        <span className="h-8 flex items-center text-[13px] text-zinc-200 tabular-nums">{tempoDaProposta(proposta, agora)}</span>
+                      </div>
+                    )}
+                  </div>
+                </section>
+
+                <BarraDecisao key={`${proposta.id}-${proposta.etapa}`} p={proposta} gestor={isMaster} usuarioId={currentUser?.id} onMover={para => mover(proposta.id, para)} />
+
+                <PainelAprovacao key={proposta.id} p={proposta} />
 
                 {proposta.autorizacao ? (
                   <AutorizacaoResumo autorizacao={proposta.autorizacao} cliente={proposta.cliente} corretor={corretor} lateral={anexos} />
@@ -612,15 +677,17 @@ export default function PropostasKanban({ projects, projectDisplays, unidades, v
         );
       })()}
 
-      {novaAberta && (
+      {(novaAberta || editada) && (
         <NovaPropostaModal
+          key={editada?.id ?? 'nova'}
           projects={projects}
           projectDisplays={projectDisplays}
           unidades={unidades}
           versoes={versoes}
           colunas={colunas}
           propostas={propostas}
-          onClose={() => setNovaAberta(false)}
+          proposta={editada}
+          onClose={() => { setNovaAberta(false); setEditando(null); }}
         />
       )}
     </section>

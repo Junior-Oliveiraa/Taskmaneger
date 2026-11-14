@@ -1,0 +1,12 @@
+vps73947.publiccloud.com.br {
+	encode gzip
+
+	# Gerador de cards do Orbit (autenticação por token no próprio serviço)
+	handle /render/* {
+		reverse_proxy orbit-render:3000
+	}
+
+	handle {
+		reverse_proxy evolution:8080
+	}
+}

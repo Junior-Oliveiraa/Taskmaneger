@@ -6,7 +6,7 @@ import { PropostaMensagem, apagarPropostaMensagem, enviarPropostaMensagem } from
 
 // ── Avatar ──────────────────────────────────────────────────────────────────
 
-const CORES_AVATAR = ['bg-blue-500/25 text-blue-200', 'bg-violet-500/25 text-violet-200', 'bg-emerald-500/25 text-emerald-200', 'bg-amber-500/25 text-amber-200', 'bg-rose-500/25 text-rose-200', 'bg-cyan-500/25 text-cyan-200'];
+const CORES_AVATAR = ['bg-blue-500/25 text-blue-200', 'bg-indigo-500/25 text-indigo-200', 'bg-sky-500/20 text-sky-200', 'bg-teal-500/20 text-teal-200', 'bg-slate-500/25 text-slate-200'];
 const corDe = (id: string) => CORES_AVATAR[[...id].reduce((s, c) => s + c.charCodeAt(0), 0) % CORES_AVATAR.length];
 const iniciais = (nome: string) => nome.trim().split(/\s+/).map(p => p[0]).join('').slice(0, 2).toUpperCase() || '?';
 
@@ -51,21 +51,18 @@ export function SeletorResponsavel({ usuarios, valor, onChange, desabilitado }: 
       <button
         type="button" disabled={desabilitado}
         onClick={() => { setAberto(a => !a); setBusca(''); }}
-        className="inline-flex items-center gap-2 h-8 pl-1 pr-2 rounded-full border border-zinc-800 bg-zinc-900/60 hover:bg-zinc-800/70 hover:border-zinc-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+        className="inline-flex items-center gap-2 h-8 min-w-[180px] pl-1.5 pr-2 rounded-md border border-zinc-800 bg-zinc-900/60 hover:bg-zinc-800/70 hover:border-zinc-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
         title={desabilitado ? 'Sem permissão para trocar o responsável' : 'Trocar responsável'}
       >
         {atual
-          ? <AvatarUsuario id={atual.id} nome={atual.name} url={atual.avatarUrl} tamanho={24} />
-          : <span className="w-6 h-6 rounded-full border border-dashed border-zinc-600 grid place-items-center text-zinc-500"><UserRound size={12} /></span>}
-        <span className="text-left leading-tight">
-          <span className="block text-[9px] uppercase tracking-wider text-zinc-500">Responsável</span>
-          <span className={`block text-[12px] font-medium max-w-[140px] truncate ${atual ? 'text-zinc-100' : 'text-zinc-500'}`}>{atual?.name ?? 'Sem responsável'}</span>
-        </span>
+          ? <AvatarUsuario id={atual.id} nome={atual.name} url={atual.avatarUrl} tamanho={22} />
+          : <span className="w-[22px] h-[22px] rounded-full border border-dashed border-zinc-600 grid place-items-center text-zinc-500"><UserRound size={11} /></span>}
+        <span className={`flex-1 text-left text-[13px] font-medium max-w-[180px] truncate ${atual ? 'text-zinc-100' : 'text-zinc-500'}`}>{atual?.name ?? 'Definir responsável'}</span>
         {!desabilitado && <ChevronDown size={13} className="text-zinc-500" />}
       </button>
 
       {aberto && (
-        <div className="absolute right-0 top-full mt-2 z-50 w-64 py-1 bg-[#141417] border border-zinc-800 rounded-xl shadow-xl shadow-black/60">
+        <div className="absolute left-0 top-full mt-2 z-50 w-64 py-1 bg-[#141417] border border-zinc-800 rounded-xl shadow-xl shadow-black/60">
           <div className="px-2 pb-1">
             <input
               autoFocus value={busca} onChange={e => setBusca(e.target.value)} placeholder="Buscar usuário…"

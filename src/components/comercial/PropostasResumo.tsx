@@ -269,12 +269,12 @@ export function ResumoPropostas({ propostas, unidades, filtro }: {
   return (
     <div className="grid grid-cols-2 xl:grid-cols-[1fr_auto_1fr_1fr_auto_1fr] gap-2 xl:gap-3 items-stretch">
       <Cartao
-        rotulo="Visitas" dot="bg-sky-400" grupo={atual.visitas} anterior={anterior?.visitas} rotuloComp={rc}
+        rotulo="Visitas" dot="bg-slate-400" grupo={atual.visitas} anterior={anterior?.visitas} rotuloComp={rc}
         dica="Cards que entraram em Visitas no período. VGV pelo valor da unidade na tabela."
       />
       <Seta />
       <Cartao
-        rotulo="Visitas → propostas" dot="bg-violet-400" grupo={atual.visitasConvertidas} anterior={anterior?.visitasConvertidas} rotuloComp={rc}
+        rotulo="Visitas → propostas" dot="bg-indigo-400" grupo={atual.visitasConvertidas} anterior={anterior?.visitasConvertidas} rotuloComp={rc}
         base={atual.visitas} rotuloBase="visitas"
         dica="Das visitas do período, quantas já avançaram para proposta."
       />
@@ -284,7 +284,7 @@ export function ResumoPropostas({ propostas, unidades, filtro }: {
       />
       <Seta />
       <Cartao
-        rotulo="Propostas → vendas" dot="bg-emerald-400" grupo={atual.vendas} anterior={anterior?.vendas} rotuloComp={rc}
+        rotulo="Propostas → vendas" dot="bg-emerald-400/80" grupo={atual.vendas} anterior={anterior?.vendas} rotuloComp={rc}
         base={atual.propostas} rotuloBase="propostas"
         dica="Das propostas do período, quantas estão na etapa Venda."
       />

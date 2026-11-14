@@ -91,16 +91,17 @@ export async function registrarMovimentoComercial(params: {
 // ─── Propostas ────────────────────────────────────────────────────────────
 // Acompanhamento da negociação. Não mexe na situação da unidade: é CRUD simples.
 
-export type PropostaEtapa = 'visita' | 'realizada' | 'em_analise' | 'contra_proposta' | 'analise_final' | 'venda' | 'perdido';
+export type PropostaEtapa = 'visita' | 'realizada' | 'em_analise' | 'contra_proposta' | 'venda' | 'perdido';
 
 export const PROPOSTA_ETAPAS: { id: PropostaEtapa; label: string; dot: string; accentBg: string; accentBorder: string; texto: string; borda: string }[] = [
-  { id: 'visita',          label: 'Visitas',              dot: 'bg-sky-400',     accentBg: 'bg-sky-500/[0.04]',     accentBorder: 'border-sky-500/30',     texto: 'text-sky-300',     borda: 'border-l-sky-400' },
-  { id: 'realizada',       label: 'Propostas realizadas', dot: 'bg-violet-400',  accentBg: 'bg-violet-500/[0.04]',  accentBorder: 'border-violet-500/30',  texto: 'text-violet-300',  borda: 'border-l-violet-400' },
-  { id: 'em_analise',      label: 'Propostas em análise', dot: 'bg-blue-400',    accentBg: 'bg-blue-500/[0.04]',    accentBorder: 'border-blue-500/30',    texto: 'text-blue-300',    borda: 'border-l-blue-400' },
-  { id: 'contra_proposta', label: 'Contra proposta',      dot: 'bg-amber-400',   accentBg: 'bg-amber-500/[0.04]',   accentBorder: 'border-amber-500/30',   texto: 'text-amber-300',   borda: 'border-l-amber-400' },
-  { id: 'analise_final',   label: 'Análise final',        dot: 'bg-orange-400',  accentBg: 'bg-orange-500/[0.04]',  accentBorder: 'border-orange-500/30',  texto: 'text-orange-300',  borda: 'border-l-orange-400' },
-  { id: 'venda',           label: 'Venda',                dot: 'bg-emerald-400', accentBg: 'bg-emerald-500/[0.04]', accentBorder: 'border-emerald-500/30', texto: 'text-emerald-300', borda: 'border-l-emerald-400' },
-  { id: 'perdido',         label: 'Perdido/cancelado',    dot: 'bg-rose-400',    accentBg: 'bg-rose-500/[0.04]',    accentBorder: 'border-rose-500/30',    texto: 'text-rose-300',    borda: 'border-l-rose-400' },
+  // Paleta: o funil anda em tons de azul (base da marca); verde, âmbar e vermelho,
+  // suavizados, só onde a etapa tem significado (ganho, atenção, perda).
+  { id: 'visita',          label: 'Visitas',              dot: 'bg-slate-400',      accentBg: 'bg-slate-500/[0.04]',   accentBorder: 'border-slate-500/30',   texto: 'text-slate-300',      borda: 'border-l-slate-400/60' },
+  { id: 'realizada',       label: 'Propostas', dot: 'bg-indigo-400',     accentBg: 'bg-indigo-500/[0.04]',  accentBorder: 'border-indigo-500/30',  texto: 'text-indigo-300',     borda: 'border-l-indigo-400/70' },
+  { id: 'em_analise',      label: 'Propostas em análise', dot: 'bg-blue-400',       accentBg: 'bg-blue-500/[0.04]',    accentBorder: 'border-blue-500/30',    texto: 'text-blue-300',       borda: 'border-l-blue-400/70' },
+  { id: 'contra_proposta', label: 'Contra proposta',      dot: 'bg-amber-300/80',   accentBg: 'bg-amber-500/[0.03]',   accentBorder: 'border-amber-400/25',   texto: 'text-amber-200/90',   borda: 'border-l-amber-300/50' },
+  { id: 'venda',           label: 'Venda',                dot: 'bg-emerald-400/80', accentBg: 'bg-emerald-500/[0.03]', accentBorder: 'border-emerald-400/25', texto: 'text-emerald-300/90', borda: 'border-l-emerald-400/50' },
+  { id: 'perdido',         label: 'Perdido/cancelado',    dot: 'bg-rose-400/70',    accentBg: 'bg-rose-500/[0.03]',    accentBorder: 'border-rose-400/25',    texto: 'text-rose-300/80',    borda: 'border-l-rose-400/40' },
 ];
 
 export interface PropostaAnexo {
@@ -187,6 +188,8 @@ export interface ComercialProposta {
   propostaEm: string | null;
   /** Quem conduz a proposta (users_profile.id). */
   responsavelId: string | null;
+  /** Quando chegou a Venda ou Perdido (trigger); nulo enquanto está em aberto. */
+  encerradaEm: string | null;
   /** Calculados pelo banco na gravação. Nulos nas propostas sem ficha. */
   descontoPct: number | null;
   descontoLimitePct: number | null;
@@ -194,6 +197,8 @@ export interface ComercialProposta {
   aprovacaoPorNome: string | null;
   aprovacaoEm: string | null;
   aprovacaoObs: string | null;
+  /** O responsável editou a proposta depois da contra proposta: precisa reenviar ao Diretor. */
+  contraEditada: boolean;
 }
 
 /** "P0001": o número de registro como aparece na tela. */
@@ -219,12 +224,14 @@ function toProposta(r: any): ComercialProposta {
     visitaEm: r.visita_em ?? (r.etapa === 'visita' ? r.enviada_em : null),
     propostaEm: r.proposta_em ?? (r.etapa !== 'visita' ? r.enviada_em : null),
     responsavelId: r.responsavel_id ?? null,
+    encerradaEm: r.encerrada_em ?? null,
     descontoPct: r.desconto_pct == null ? null : Number(r.desconto_pct),
     descontoLimitePct: r.desconto_limite_pct == null ? null : Number(r.desconto_limite_pct),
     aprovacao: r.aprovacao ?? 'dispensada',
     aprovacaoPorNome: r.aprovacao_por_nome ?? null,
     aprovacaoEm: r.aprovacao_em ?? null,
     aprovacaoObs: r.aprovacao_obs ?? null,
+    contraEditada: !!r.contra_editada,
   };
 }
 
@@ -293,6 +300,60 @@ export async function decidirAprovacaoProposta(id: string, decisao: 'aprovada' |
     .update({ aprovacao: decisao, aprovacao_obs: obs?.trim() || null })
     .eq('id', id);
   if (error) throw error;
+}
+
+/**
+ * Edição da proposta. O banco decide quem pode: o responsável nas etapas em
+ * aberto (visita, realizada, contra proposta) e o Diretor (master/admin) em qualquer uma.
+ */
+export async function atualizarProposta(id: string, params: {
+  projectId: string;
+  unidadeId: string | null;
+  unidade: string | null;
+  cliente: string;
+  corretor: string;
+  imobiliaria: string | null;
+  autorizacao: PropostaAutorizacao;
+  /** Anexos já salvos que continuam na proposta. */
+  anexosMantidos: PropostaAnexo[];
+  /** Arquivos novos, enviados para a pasta da proposta. */
+  arquivos: File[];
+}): Promise<void> {
+  const anexos: PropostaAnexo[] = [...params.anexosMantidos];
+  for (const file of params.arquivos) {
+    const url = await uploadToStorage(
+      'attachments',
+      `comercial/propostas/${id}/${Date.now()}-${sanitizeFileName(file.name)}`,
+      file,
+      UPLOAD_LIMITS.task,
+    );
+    anexos.push({ name: file.name, url });
+  }
+  const { error } = await supabase.from('comercial_propostas').update({
+    project_id: params.projectId,
+    unidade_id: params.unidadeId,
+    unidade: params.unidade,
+    cliente: params.cliente,
+    corretor: params.corretor,
+    imobiliaria: params.imobiliaria,
+    autorizacao: params.autorizacao,
+    anexos,
+  }).eq('id', id);
+  if (error) throw error;
+}
+
+/** Quem pode editar a proposta nesta etapa (mesma regra do trigger comercial_propostas_edicao). */
+export const ETAPAS_EDITAVEIS_PELO_RESPONSAVEL: PropostaEtapa[] = ['visita', 'realizada', 'contra_proposta'];
+export function podeEditarProposta(p: ComercialProposta, usuarioId: string | null | undefined, diretor: boolean): { pode: boolean; motivo: string | null } {
+  if (diretor) return { pode: true, motivo: null };
+  const etapa = PROPOSTA_ETAPAS.find(e => e.id === p.etapa)?.label ?? p.etapa;
+  if (!ETAPAS_EDITAVEIS_PELO_RESPONSAVEL.includes(p.etapa)) {
+    return { pode: false, motivo: `Em "${etapa}" só o Diretor edita a proposta.` };
+  }
+  if (!usuarioId || p.responsavelId !== usuarioId) {
+    return { pode: false, motivo: p.responsavelId ? 'Só o responsável pela proposta (ou o Diretor) pode editar.' : 'Defina um responsável: só ele (ou o Diretor) edita a proposta.' };
+  }
+  return { pode: true, motivo: null };
 }
 
 export async function definirResponsavelProposta(id: string, responsavelId: string | null): Promise<void> {

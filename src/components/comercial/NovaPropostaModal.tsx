@@ -10,7 +10,7 @@ import { SITUACAO_LABELS } from '../../lib/siengeVendasTabela';
 import { fetchCrmLeads } from '../../lib/crmApi';
 import { fetchCvComercial, nomeProprio } from '../../lib/cvComercial';
 import {
-  ComercialProposta, PropostaAutorizacao, calcularAutorizacao, criarProposta, fetchComercialMovimentos,
+  ComercialProposta, PropostaAutorizacao, atualizarProposta, calcularAutorizacao, codigoProposta, criarProposta, fetchComercialMovimentos,
 } from '../../lib/comercialApi';
 import { CrmButton } from '../crm/CrmShared';
 import { AutoCompletar, SelectLista } from './CampoLista';
@@ -91,9 +91,13 @@ interface Props {
   colunas: SiengeTabelaVendaColuna[];
   propostas: ComercialProposta[];
   onClose: () => void;
+  /** Com proposta: modo edição, o formulário abre preenchido e salva por cima. */
+  proposta?: ComercialProposta | null;
 }
 
-export default function NovaPropostaModal({ projects, projectDisplays, unidades, versoes, colunas, propostas, onClose }: Props) {
+export default function NovaPropostaModal({ projects, projectDisplays, unidades, versoes, colunas, propostas, onClose, proposta = null }: Props) {
+  const editando = !!proposta;
+  const ini = proposta?.autorizacao ?? null;
   const queryClient = useQueryClient();
   const movimentos = useQuery({ queryKey: ['comercialMovimentos'], queryFn: fetchComercialMovimentos, staleTime: 30_000 }).data ?? [];
   const leads = useQuery({ queryKey: ['crmLeads'], queryFn: fetchCrmLeads, staleTime: 30_000 }).data ?? [];
@@ -105,26 +109,48 @@ export default function NovaPropostaModal({ projects, projectDisplays, unidades,
   const limites = useQuery({ queryKey: ['comercialDescontos'], queryFn: fetchLimitesDesconto, staleTime: 60_000 }).data;
   const { isMaster } = usePermissoes();
 
-  const [projectId, setProjectId] = useState('');
-  const [torre, setTorre] = useState('Única');
-  const [unidadeId, setUnidadeId] = useState('');
-  const [dataContrato, setDataContrato] = useState(hoje);
-  const [cliente, setCliente] = useState('');
-  const [corretor, setCorretor] = useState('');
-  const [imobiliaria, setImobiliaria] = useState('');
-  const [emails, setEmails] = useState('');
-  const [telefone, setTelefone] = useState('');
-  const [vigenciaTabela, setVigenciaTabela] = useState('');
-  const [areaPrivativa, setAreaPrivativa] = useState<number | null>(null);
-  const [valorTabela, setValorTabela] = useState<number | null>(null);
-  const [formaSinal, setFormaSinal] = useState('');
-  const [linhas, setLinhas] = useState<LinhaFluxo[]>(() => linhasGenericas(hoje()));
+  // Na edição, tudo parte do que foi salvo na proposta.
+  const [projectId, setProjectId] = useState(proposta?.projectId ?? '');
+  const [torre, setTorre] = useState(ini?.torre || 'Única');
+  const [unidadeId, setUnidadeId] = useState(proposta?.unidadeId ?? '');
+  const [dataContrato, setDataContrato] = useState(() => (ini?.dataContrato?.length === 10 ? ini.dataContrato : hoje()));
+  const [cliente, setCliente] = useState(proposta?.cliente ?? '');
+  const [corretor, setCorretor] = useState(proposta?.corretor ?? '');
+  const [imobiliaria, setImobiliaria] = useState(proposta?.imobiliaria ?? '');
+  const [emails, setEmails] = useState(ini?.emails ?? '');
+  const [telefone, setTelefone] = useState(ini?.telefone ?? '');
+  const [vigenciaTabela, setVigenciaTabela] = useState(ini?.vigenciaTabela ?? '');
+  const [areaPrivativa, setAreaPrivativa] = useState<number | null>(ini?.areaPrivativa ?? null);
+  const [valorTabela, setValorTabela] = useState<number | null>(() => {
+    if (ini?.valorTabela) return ini.valorTabela;
+    const u = proposta?.unidadeId ? unidades.find(x => x.id === proposta.unidadeId) : undefined;
+    return u ? Math.round(u.valorTabela * 100) / 100 : null;
+  });
+  const [formaSinal, setFormaSinal] = useState(ini?.formaPagamentoSinal ?? '');
+  const [linhas, setLinhas] = useState<LinhaFluxo[]>(() => (ini?.parcelas.length
+    ? ini.parcelas.map(p => novaLinha({
+      descricao: p.descricao,
+      quantidade: p.quantidade,
+      valorUnitario: p.valorUnitario,
+      primeiroVencimento: p.primeiroVencimento,
+      atualizacao: p.atualizacao,
+      // Fichas antigas não guardavam a periodicidade: série com mais de uma parcela vira mensal.
+      periodicidade: p.periodicidade ?? (p.quantidade > 1 ? 1 : 0),
+    }))
+    : linhasGenericas(hoje())));
   // Depois que o fluxo é mexido, trocar unidade ou data não o sobrescreve mais.
-  const [fluxoEditado, setFluxoEditado] = useState(false);
+  // Na edição o fluxo salvo já é o personalizado: não volta para o da tabela sozinho.
+  const [fluxoEditado, setFluxoEditado] = useState(!!ini?.parcelas.length);
   // Valor que o fluxo precisa somar; null = segue o valor de tabela.
-  const [alvoManual, setAlvoManual] = useState<number | null>(null);
-  const [observacoes, setObservacoes] = useState('');
+  const [alvoManual, setAlvoManual] = useState<number | null>(() => {
+    if (!ini) return null;
+    const contratado = calcularAutorizacao(ini).contratado;
+    return Math.abs(contratado - ini.valorTabela) >= 0.01 ? contratado : null;
+  });
+  const [observacoes, setObservacoes] = useState(ini?.observacoes ?? '');
   const [arquivos, setArquivos] = useState<File[]>([]);
+  // Anexos já salvos: ficam, a não ser que sejam removidos aqui.
+  const [anexosSalvos, setAnexosSalvos] = useState(proposta?.anexos ?? []);
   const [arrastando, setArrastando] = useState(false);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
@@ -141,17 +167,45 @@ export default function NovaPropostaModal({ projects, projectDisplays, unidades,
     return projects.filter(p => ids.has(p.id));
   }, [projects, unidadesPrincipais]);
 
-  const unidadesElegiveis = useMemo(
-    () => unidadesPrincipais
-      .filter(u => u.projectId === projectId && SITUACOES_PROPOSTA.includes(u.situacao))
-      .sort((a, b) => a.unidade.localeCompare(b.unidade, 'pt-BR', { numeric: true })),
-    [unidadesPrincipais, projectId]
-  );
+  const unidadesElegiveis = useMemo(() => {
+    const lista = unidadesPrincipais.filter(u => u.projectId === projectId && SITUACOES_PROPOSTA.includes(u.situacao));
+    // Na edição, a unidade da própria proposta continua na lista mesmo reservada/vendida por ela.
+    const propria = proposta?.unidadeId ? unidades.find(u => u.id === proposta.unidadeId) : undefined;
+    if (propria && propria.projectId === projectId && !lista.some(u => u.id === propria.id)) lista.push(propria);
+    return lista.sort((a, b) => a.unidade.localeCompare(b.unidade, 'pt-BR', { numeric: true }));
+  }, [unidadesPrincipais, unidades, projectId, proposta?.unidadeId]);
 
   const unidadeSel = unidadesElegiveis.find(u => u.id === unidadeId);
 
+  // Todas as linhas entram no cálculo (as vazias valem zero) para o índice bater com a tabela.
+  const calculo = calcularAutorizacao({
+    areaPrivativa,
+    valorTabela: valorTabela ?? 0,
+    parcelas: linhas.map(l => ({
+      descricao: l.descricao,
+      quantidade: l.quantidade ?? 0,
+      valorUnitario: l.valorUnitario ?? 0,
+      primeiroVencimento: l.primeiroVencimento,
+      atualizacao: l.atualizacao,
+    })),
+  });
+
+  // Desconto medido como o banco mede: contratado sobre o valor da unidade na Tabela de Vendas.
+  const referenciaDesconto = unidadeSel?.valorTabela ? Math.round(unidadeSel.valorTabela * 100) / 100 : valorTabela;
+  const limiteDesconto = limiteDoProjeto(limites, projectId);
+
   // Valor que o fluxo precisa somar: o de tabela ou o definido no fluxo (desconto/ágio).
-  const alvo = alvoManual ?? valorTabela ?? 0;
+  // Seguindo a tabela, um fluxo personalizado que soma menos vira desconto
+  // automático até o limite do empreendimento; o que passar dele continua como
+  // saldo a fechar. Arredonda o piso para cima para não estourar o limite nos centavos.
+  const valorBase = valorTabela ?? 0;
+  const pisoDesconto = referenciaDesconto
+    ? Math.ceil(referenciaDesconto * (1 - limiteDesconto / 100) * 100 - 1e-6) / 100
+    : valorBase;
+  const descontoAutomatico = alvoManual === null && fluxoEditado && valorBase > 0
+    && calculo.contratado > 0 && calculo.contratado < valorBase - 0.005;
+  const alvo = alvoManual
+    ?? (descontoAutomatico ? Math.min(valorBase, Math.max(calculo.contratado, pisoDesconto)) : valorBase);
 
   // Fluxo padrão da unidade na Tabela de Vendas; vencimentos a partir da data do
   // contrato. Com desconto, as séries são recalculadas sobre o novo valor da
@@ -251,27 +305,11 @@ export default function NovaPropostaModal({ projects, projectDisplays, unidades,
     if (novos.length) setArquivos(a => [...a, ...novos]);
   };
 
-  // Todas as linhas entram no cálculo (as vazias valem zero) para o índice bater com a tabela.
-  const calculo = calcularAutorizacao({
-    areaPrivativa,
-    valorTabela: valorTabela ?? 0,
-    parcelas: linhas.map(l => ({
-      descricao: l.descricao,
-      quantidade: l.quantidade ?? 0,
-      valorUnitario: l.valorUnitario ?? 0,
-      primeiroVencimento: l.primeiroVencimento,
-      atualizacao: l.atualizacao,
-    })),
-  });
-
   const usadas = linhas.filter(linhaUsada);
   const parcelasCompletas = usadas.length > 0 && !usadas.some(l => !l.descricao.trim() || !l.quantidade || !l.primeiroVencimento);
   const telefoneValido = telefone.replace(/\D/g, '').length >= 10;
   const saldo = Math.round((alvo - calculo.contratado) * 100) / 100;
   const temSaldo = Math.abs(saldo) >= 0.01;
-  // Desconto medido como o banco mede: contratado sobre o valor da unidade na Tabela de Vendas.
-  const referenciaDesconto = unidadeSel?.valorTabela ? Math.round(unidadeSel.valorTabela * 100) / 100 : valorTabela;
-  const limiteDesconto = limiteDoProjeto(limites, projectId);
   const desconto = descontoPct(calculo.contratado, referenciaDesconto);
   const precisaAprovacao = calculo.contratado > 0 && acimaDoLimite(desconto, limiteDesconto);
   const pendencia = !projectId ? 'Escolha o empreendimento.'
@@ -327,19 +365,23 @@ export default function NovaPropostaModal({ projects, projectDisplays, unidades,
     setSalvando(true);
     setErro(null);
     try {
-      await criarProposta({
+      const dados = {
         projectId,
         unidadeId,
         unidade: unidadeSel?.unidade ?? null,
         cliente: cliente.trim(),
         corretor: corretor.trim(),
         imobiliaria: imobiliaria.trim() || null,
-        fluxoPagamento: '',
-        enviadaEm: hoje(),
         arquivos,
         autorizacao,
-      });
+      };
+      if (proposta) {
+        await atualizarProposta(proposta.id, { ...dados, anexosMantidos: anexosSalvos });
+      } else {
+        await criarProposta({ ...dados, fluxoPagamento: '', enviadaEm: hoje() });
+      }
       queryClient.invalidateQueries({ queryKey: ['comercialPropostas'] });
+      queryClient.invalidateQueries({ queryKey: ['comercialPropostaMensagens'] });
       onClose();
     } catch (err: any) {
       setErro(err?.message || 'Não foi possível salvar a proposta.');
@@ -360,7 +402,9 @@ export default function NovaPropostaModal({ projects, projectDisplays, unidades,
               <FileText size={16} />
             </span>
             <div className="min-w-0">
-              <h2 className="text-[15px] font-semibold text-zinc-50 leading-5">Nova proposta</h2>
+              <h2 className="text-[15px] font-semibold text-zinc-50 leading-5">
+                {editando ? `Editar proposta${proposta?.numero != null ? ` ${codigoProposta(proposta.numero)}` : ''}` : 'Nova proposta'}
+              </h2>
               <p className="text-[12px] text-zinc-500 truncate">Autorização de proposta de compra e venda · Diretoria Comercial</p>
             </div>
           </div>
@@ -501,12 +545,13 @@ export default function NovaPropostaModal({ projects, projectDisplays, unidades,
                 dataContrato={dataContrato}
                 origem={modelo?.length && unidadeSel
                   ? `${projetoNome ?? ''} · unidade ${unidadeSel.unidade}${
-                    alvo > 0 && Math.abs(alvo - unidadeSel.valorTabela) >= 0.01 ? ` · recalculado sobre ${moedaBr(alvo)}` : ''}`
+                    alvoManual !== null && alvo > 0 && Math.abs(alvo - unidadeSel.valorTabela) >= 0.01 ? ` · recalculado sobre ${moedaBr(alvo)}` : ''}`
                   : null}
                 modificado={fluxoEditado}
                 onRestaurar={aplicarModelo}
                 referenciaDesconto={unidadeSel ? referenciaDesconto : null}
                 limiteDesconto={limiteDesconto}
+                descontoAutomatico={descontoAutomatico}
               />
             </Secao>
 
@@ -542,6 +587,23 @@ export default function NovaPropostaModal({ projects, projectDisplays, unidades,
                       onChange={e => { anexar(e.target.files); e.target.value = ''; }}
                     />
                   </label>
+                  {anexosSalvos.length > 0 && (
+                    <ul className="space-y-1.5 pt-1">
+                      {anexosSalvos.map(a => (
+                        <li key={a.url} className="flex items-center gap-2 text-[12px] text-zinc-300 bg-zinc-900/60 border border-zinc-800/80 rounded-lg pl-2.5 pr-1 h-8">
+                          <Paperclip size={12} className="shrink-0 text-zinc-500" />
+                          <a href={a.url} target="_blank" rel="noreferrer" className="truncate flex-1 hover:text-blue-300">{a.name}</a>
+                          <span className="shrink-0 text-[11px] text-zinc-600">salvo</span>
+                          <button
+                            type="button" onClick={() => setAnexosSalvos(xs => xs.filter(x => x.url !== a.url))} title="Remover da proposta"
+                            className="w-6 h-6 grid place-items-center rounded-md text-zinc-500 hover:text-zinc-100 hover:bg-zinc-800"
+                          >
+                            <X size={12} />
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                   {arquivos.length > 0 && (
                     <ul className="space-y-1.5 pt-1">
                       {arquivos.map((f, i) => (
@@ -672,10 +734,10 @@ export default function NovaPropostaModal({ projects, projectDisplays, unidades,
             <span className="truncate">
               {pendencia
                 ?? (precisaAprovacao && !isMaster
-                  ? `Desconto de ${percentualBr(desconto)} passa do limite de ${percentualBr(limiteDesconto)}: a proposta vai para aprovação do gestor.`
+                  ? `Desconto de ${percentualBr(desconto)} passa do limite de ${percentualBr(limiteDesconto)}: o Diretor avalia quando você enviar para aprovação.`
                   : precisaAprovacao
-                    ? `Desconto de ${percentualBr(desconto)} acima do limite: como gestor, a proposta já entra aprovada.`
-                    : 'Pronta. A proposta entra em "Propostas realizadas".')}
+                    ? `Desconto de ${percentualBr(desconto)} acima do limite: como Diretor, o desconto já entra aprovado.`
+                    : 'Pronta. A proposta entra em "Propostas"; confira e envie para aprovação.')}
             </span>
           </span>
           <div className="flex items-center gap-2 shrink-0">
@@ -686,7 +748,7 @@ export default function NovaPropostaModal({ projects, projectDisplays, unidades,
             </span>
             <CrmButton onClick={onClose}>Cancelar</CrmButton>
             <CrmButton type="submit" variant="primary" disabled={!!pendencia || salvando}>
-              <Check size={12} /> {salvando ? 'Salvando…' : precisaAprovacao && !isMaster ? 'Enviar para aprovação' : 'Salvar proposta'}
+              <Check size={12} /> {salvando ? 'Salvando…' : precisaAprovacao && !isMaster ? 'Enviar para aprovação' : editando ? 'Salvar alterações' : 'Salvar proposta'}
             </CrmButton>
           </div>
         </footer>
@@ -799,23 +861,11 @@ export function AutorizacaoResumo({ autorizacao: a, cliente, corretor, lateral }
           <TituloBloco extra={<span className="text-[12px] text-zinc-500 tabular-nums">{a.parcelas.length} {a.parcelas.length === 1 ? 'série' : 'séries'}</span>}>
             Fluxo de pagamento
           </TituloBloco>
-          {c.contratado > 0 && (
-            <div className="flex h-2 rounded-full overflow-hidden bg-zinc-800 gap-px mb-3">
-              {a.parcelas.map((p, i) => (
-                <div
-                  key={i} className={CORES_FLUXO[i % CORES_FLUXO.length]}
-                  style={{ width: `${c.linhas[i].percentual}%` }}
-                  title={`${p.descricao} · ${percentualBr(c.linhas[i].percentual)}`}
-                />
-              ))}
-            </div>
-          )}
-
           <div className="rounded-xl border border-zinc-800/80 overflow-hidden">
             {/* Grade larga */}
             <div className="hidden @2xl:block">
               <div className={`${GRADE_LEITURA} px-3 h-9 bg-zinc-900/50 border-b border-zinc-800/80 text-[10px] font-semibold uppercase tracking-wider text-zinc-500`}>
-                <span className="pl-3">Descrição</span>
+                <span className="pl-1">Descrição</span>
                 <span className="text-right">Qtd.</span>
                 <span className="text-right">Parcela</span>
                 <span className="text-right">% unidade</span>
@@ -829,9 +879,8 @@ export function AutorizacaoResumo({ autorizacao: a, cliente, corretor, lateral }
                   const fim = p.quantidade > 1 && p.periodicidade !== undefined ? ultimoVencimento({ ...p, periodicidade: p.periodicidade }) : '';
                   return (
                     <div key={i} className={`${GRADE_LEITURA} px-3 py-2.5 text-[13px] tabular-nums`}>
-                      <div className="flex items-stretch gap-2 min-w-0">
-                        <span className={`w-1 self-stretch min-h-[24px] shrink-0 rounded-full ${CORES_FLUXO[i % CORES_FLUXO.length]}`} />
-                        <div className="min-w-0 flex flex-col justify-center">
+                      <div className="min-w-0 pl-1">
+                        <div className="min-w-0 flex flex-col justify-center min-h-[24px]">
                           <span className="flex items-center gap-1.5 min-w-0">
                             <span className="font-medium text-zinc-100 truncate">{p.descricao || 'Sem descrição'}</span>
                             {p.atualizacao === 'INCC' && (
@@ -857,7 +906,6 @@ export function AutorizacaoResumo({ autorizacao: a, cliente, corretor, lateral }
             <ul className="@2xl:hidden divide-y divide-zinc-800/70">
               {a.parcelas.map((p, i) => (
                 <li key={i} className="flex items-center gap-3 px-4 py-3">
-                  <span className={`w-1 self-stretch rounded-full shrink-0 ${CORES_FLUXO[i % CORES_FLUXO.length]}`} />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <span className="text-[13px] font-medium text-zinc-100 truncate">{p.descricao || 'Sem descrição'}</span>

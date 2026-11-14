@@ -49,7 +49,8 @@ export const linhasGenericas = (dataContrato: string) => [
 // Linha sem valor é modelo não usado (nem toda proposta tem semestral) e fica de fora.
 export const linhaUsada = (l: LinhaFluxo) => !!l.valorUnitario;
 
-export const CORES_FLUXO = ['bg-blue-500', 'bg-violet-500', 'bg-cyan-500', 'bg-amber-500', 'bg-emerald-500', 'bg-rose-500', 'bg-fuchsia-500', 'bg-lime-500'];
+// Série do fluxo: rampa da família azul da marca (índigo → azul → celeste → teal), sem arco-íris.
+export const CORES_FLUXO = ['bg-blue-500', 'bg-indigo-400', 'bg-sky-400', 'bg-teal-400/80', 'bg-blue-300', 'bg-indigo-300', 'bg-sky-300', 'bg-slate-400'];
 
 const totalLinha = (l: LinhaFluxo) => centavos((l.quantidade ?? 0) * (l.valorUnitario ?? 0));
 const paraParcela = (l: LinhaFluxo): ParcelaFluxo => ({
@@ -334,13 +335,15 @@ interface Props {
   onRestaurar: () => void;
   /** Valor da unidade na Tabela de Vendas: base do desconto. Null sem unidade. */
   referenciaDesconto: number | null;
-  /** Desconto (%) que o operador dá sem aprovação do gestor. */
+  /** Desconto (%) que o operador dá sem que o Diretor precise avaliar o desconto. */
   limiteDesconto: number;
+  /** O fluxo somou menos que a tabela e o desconto foi aplicado sozinho (até o limite). */
+  descontoAutomatico?: boolean;
 }
 
 export default function FluxoPagamentoEditor({
   linhas, onChange, contratado, alvo, alvoManual, onAlvo, valorTabela, dataContrato, origem, modificado, onRestaurar,
-  referenciaDesconto, limiteDesconto,
+  referenciaDesconto, limiteDesconto, descontoAutomatico = false,
 }: Props) {
   const [assistente, setAssistente] = useState<{ id: string; tipo: TipoAssistente } | null>(null);
   // Total da linha no momento em que a quantidade começou a ser digitada: assim
@@ -492,7 +495,12 @@ export default function FluxoPagamentoEditor({
               : acimaLimite ? (
                 <span className="inline-flex items-center gap-1.5 rounded-md bg-amber-500/10 px-2 py-1 text-amber-200">
                   <ShieldAlert size={13} className="shrink-0" />
-                  Acima de {percentualBr(limiteDesconto)}: vai para aprovação do gestor
+                  Acima de {percentualBr(limiteDesconto)}: o Diretor avalia na aprovação
+                </span>
+              )
+              : descontoAutomatico ? (
+                <span className="text-zinc-400" title="O fluxo somou menos que a tabela: a diferença vira desconto até o limite do empreendimento.">
+                  Desconto automático · limite de {percentualBr(limiteDesconto)}
                 </span>
               )
               : <span className="text-zinc-400">Dentro do limite de {percentualBr(limiteDesconto)}</span>}
@@ -532,7 +540,9 @@ export default function FluxoPagamentoEditor({
         {temSaldo && (
           <div className="mt-3 pt-3 border-t border-zinc-800/70 flex flex-wrap items-center gap-2">
             <span className="text-[12px] text-zinc-400 mr-1">
-              {saldo > 0 ? `Faltam ${moedaBr(saldo)} para fechar 100%.` : `O fluxo passou ${moedaBr(-saldo)} do valor da unidade.`}
+              {saldo > 0
+                ? `Faltam ${moedaBr(saldo)} para fechar 100%${descontoAutomatico ? ` (desconto já no limite de ${percentualBr(limiteDesconto)})` : ''}.`
+                : `O fluxo passou ${moedaBr(-saldo)} do valor da unidade.`}
             </span>
             {saldo > 0 && (
               <AcaoSaldo onClick={parcelaFinalDoSaldo}>Criar parcela final{ultimoDoFluxo && ` (${mesCurto(somarMeses(ultimoDoFluxo, 1))})`}</AcaoSaldo>
