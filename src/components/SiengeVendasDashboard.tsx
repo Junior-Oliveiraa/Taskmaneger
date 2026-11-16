@@ -66,22 +66,26 @@ function VariacaoCartao({ atual, anterior }: { atual: Bucket; anterior?: Bucket 
   );
 }
 
-/** Variação compacta embaixo do valor na tabela; nada quando não mudou. */
-function VariacaoCelula({ atual, anterior, dinheiro }: { atual: number; anterior?: number; dinheiro?: boolean }) {
-  if (anterior === undefined) return null;
-  const d = atual - anterior;
-  if (Math.abs(d) < ZERO) return null;
+/** Variação da semana embaixo do valor na tabela ("−R$ 1,2 mi · −1 un."); nada quando não mudou. */
+function VariacaoCelula({ atual, anterior }: { atual: Bucket; anterior?: Bucket }) {
+  if (!anterior) return null;
+  const dv = atual.vgv - anterior.vgv;
+  const du = atual.unidades - anterior.unidades;
+  if (Math.abs(dv) < ZERO && du === 0) return null;
+  const sobe = dv > ZERO || (Math.abs(dv) < ZERO && du > 0);
+  const partes = [
+    Math.abs(dv) >= ZERO ? moedaDelta(dv) : null,
+    du !== 0 ? `${du > 0 ? '+' : '−'}${fmtInt(Math.abs(du))} un.` : null,
+  ].filter(Boolean);
   return (
-    <div className={`text-[10px] font-semibold ${d > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-      {dinheiro
-        ? `${moedaDelta(d)}${anterior > 0 ? ` (${d > 0 ? '+' : '−'}${fmtPct(Math.abs(d / anterior) * 100)})` : ''}`
-        : `${d > 0 ? '+' : '−'}${fmtInt(Math.abs(d))}`}
+    <div className={`text-[10px] font-semibold mt-0.5 ${sobe ? 'text-emerald-400/90' : 'text-red-400/90'}`}>
+      {partes.join(' · ')}
     </div>
   );
 }
 
-// Ordem de leitura do resumo: do que ainda está travado ao que já virou receita.
-const SITUACOES: SiengeVendaSituacao[] = ['bloqueada', 'permuta', 'reservado', 'disponivel', 'vendida'];
+// Ordem de leitura: o que não está à venda, depois o funil disponível → reservada → vendida.
+const SITUACOES: SiengeVendaSituacao[] = ['bloqueada', 'permuta', 'disponivel', 'reservado', 'vendida'];
 
 const SITUACAO_LABEL: Record<SiengeVendaSituacao, string> = {
   bloqueada: 'Bloqueadas',
@@ -91,36 +95,48 @@ const SITUACAO_LABEL: Record<SiengeVendaSituacao, string> = {
   vendida: 'Vendidas',
 };
 
-// Mesmas cores da Tabela de Vendas, para a situação ser reconhecida de relance.
-const SITUACAO_TEXT: Record<SiengeVendaSituacao, string> = {
-  bloqueada: 'text-zinc-300',
-  permuta: 'text-violet-400',
-  reservado: 'text-amber-400',
-  disponivel: 'text-blue-400',
-  vendida: 'text-emerald-400',
-};
-
-const SITUACAO_DOT: Record<SiengeVendaSituacao, string> = {
-  bloqueada: 'bg-zinc-500',
-  permuta: 'bg-violet-400',
-  reservado: 'bg-amber-400',
-  disponivel: 'bg-blue-400',
-  vendida: 'bg-emerald-400',
-};
-
-const SITUACAO_PILL: Record<SiengeVendaSituacao, string> = {
-  bloqueada: 'bg-zinc-500/15 text-zinc-300 border-zinc-500/30',
-  permuta: 'bg-violet-500/15 text-violet-400 border-violet-500/30',
-  reservado: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
-  disponivel: 'bg-blue-500/15 text-blue-400 border-blue-500/30',
-  vendida: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
+// Paleta reduzida: cinzas para o que está fora da venda e uma única família de
+// azul, que fica mais intensa conforme a unidade avança no funil. A cor fica só
+// nos marcadores e barras; os números seguem em tons neutros.
+const SITUACAO_COR: Record<SiengeVendaSituacao, string> = {
+  bloqueada: 'bg-zinc-600',
+  permuta: 'bg-zinc-400',
+  disponivel: 'bg-sky-300',
+  reservado: 'bg-blue-400',
+  vendida: 'bg-indigo-500',
 };
 
 const CTL_H = 'h-9';
 const PRESS = 'transition-all duration-150 active:scale-[0.97]';
 const SEG_BTN = `px-2.5 py-1 text-[11px] font-semibold rounded-md border border-transparent ${PRESS}`;
-const SEG_ON = 'bg-blue-500/15 text-blue-400 border-blue-500/30';
+const SEG_ON = 'bg-zinc-800 text-zinc-100 border-zinc-700';
 const SEG_OFF = 'text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800/60';
+
+/** Marcador da situação (bolinha). */
+const Dot = ({ s, apagado }: { s: SiengeVendaSituacao; apagado?: boolean }) => (
+  <span className={`w-2 h-2 rounded-full shrink-0 transition-opacity ${SITUACAO_COR[s]} ${apagado ? 'opacity-30' : ''}`} />
+);
+
+/** Barra empilhada com a composição do VGV por situação. */
+function BarraComposicao({ porSituacao, total, alta }: { porSituacao: Record<SiengeVendaSituacao, Bucket>; total: number; alta?: boolean }) {
+  if (total <= 0) return null;
+  return (
+    <div className={`flex w-full rounded-full overflow-hidden bg-zinc-900 gap-px ${alta ? 'h-2.5' : 'h-1'}`}>
+      {SITUACOES.map(s => {
+        const pct = (porSituacao[s].vgv / total) * 100;
+        if (pct <= 0) return null;
+        return (
+          <div
+            key={s}
+            className={`${SITUACAO_COR[s]} h-full`}
+            style={{ width: `${pct}%` }}
+            title={`${SITUACAO_LABEL[s]}: ${formatMoeda(porSituacao[s].vgv)} (${fmtPct(pct)})`}
+          />
+        );
+      })}
+    </div>
+  );
+}
 
 interface Bucket {
   unidades: number;
@@ -328,7 +344,11 @@ export default function SiengeVendasDashboard({ projects: todosProjects, unidade
           </div>
           <div>
             <h2 className="text-sm font-bold text-zinc-100">Dashboard de Vendas</h2>
-            <p className="text-[11px] text-zinc-600">Unidades e VGV por situação</p>
+            <p className="flex items-center gap-1.5 text-[11px] text-zinc-500">
+              <CalendarRange size={12} className="shrink-0 text-zinc-600" />
+              <span>Semana de {periodo}</span>
+              {referencia && <span className="text-zinc-600">· comparado a {dataCurta(referencia)}</span>}
+            </p>
           </div>
         </div>
         {isAdmin && (
@@ -422,9 +442,9 @@ export default function SiengeVendasDashboard({ projects: todosProjects, unidade
                   type="button"
                   onClick={() => toggleSituacao(s)}
                   title={on ? 'Ocultar coluna' : 'Mostrar coluna'}
-                  className={`${SEG_BTN} flex items-center gap-1.5 ${on ? SITUACAO_PILL[s] : SEG_OFF}`}
+                  className={`${SEG_BTN} flex items-center gap-1.5 ${on ? SEG_ON : SEG_OFF}`}
                 >
-                  <span className={`w-1.5 h-1.5 rounded-full transition-opacity ${SITUACAO_DOT[s]} ${on ? 'opacity-100' : 'opacity-40'}`} />
+                  <Dot s={s} apagado={!on} />
                   {SITUACAO_LABEL[s]}
                 </button>
               );
@@ -448,164 +468,134 @@ export default function SiengeVendasDashboard({ projects: todosProjects, unidade
           )}
         </div>
 
-        {/* Semana de referência da comparação */}
-        <div className="flex items-center gap-3 flex-wrap rounded-xl border border-blue-500/20 border-l-4 border-l-blue-500 bg-blue-500/[0.06] px-4 py-2.5">
-          <CalendarRange size={16} className="text-blue-400 shrink-0" />
-          <div className="flex items-baseline gap-x-3 gap-y-0.5 flex-wrap">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-blue-400">Semana</span>
-            <span className="text-sm font-bold text-zinc-100">{periodo}</span>
-            {referencia && (
-              <span className="text-[11px] text-zinc-500">Comparado a {dataCurta(referencia)}</span>
-            )}
+        {/* Consolidado — total em destaque e a composição logo abaixo */}
+        <section className="rounded-xl border border-zinc-800/80 bg-zinc-900/30 card-pad flex flex-col gap-4">
+          <div className="flex items-end justify-between gap-4 flex-wrap">
+            <div>
+              <p className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wide">VGV total</p>
+              <p className="text-2xl font-bold text-zinc-50 tabular-nums leading-tight mt-0.5">{formatMoeda(consolidado.total.vgv)}</p>
+              <p className="text-[11px] text-zinc-500 tabular-nums">{fmtInt(consolidado.total.unidades)} unidades</p>
+            </div>
+            <div className="min-w-0"><VariacaoCartao atual={consolidado.total} anterior={consolidadoAnterior?.total} /></div>
           </div>
-        </div>
 
-        {/* Consolidado — VGV somado de todos os produtos filtrados, por situação */}
-        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2">
-          <div className="card-pad rounded-xl bg-zinc-900/60 border border-zinc-800">
-            <p className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wide">Total</p>
-            <p className="text-lg font-bold text-zinc-100 tabular-nums mt-1">{formatMoeda(consolidado.total.vgv)}</p>
-            <p className="text-[11px] text-zinc-500 tabular-nums">{fmtInt(consolidado.total.unidades)} unidades</p>
-            <VariacaoCartao atual={consolidado.total} anterior={consolidadoAnterior?.total} />
-          </div>
-          {situacoesOrdenadas.map(s => {
-            const b = consolidado.porSituacao[s];
-            return (
-              <div key={s} className="card-pad rounded-xl bg-zinc-900/40 border border-zinc-800/80">
-                <p className={`flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide ${SITUACAO_TEXT[s]}`}>
-                  <span className={`w-1.5 h-1.5 rounded-full ${SITUACAO_DOT[s]}`} /> {SITUACAO_LABEL[s]}
-                </p>
-                <p className="text-lg font-bold text-zinc-100 tabular-nums mt-1">{formatMoeda(b.vgv)}</p>
-                <p className="text-[11px] text-zinc-500 tabular-nums">
-                  {fmtInt(b.unidades)} un. · {fmtPct(pctVgv(b.vgv))} do VGV
-                </p>
-                <VariacaoCartao atual={b} anterior={consolidadoAnterior?.porSituacao[s]} />
-              </div>
-            );
-          })}
-        </div>
+          <BarraComposicao porSituacao={consolidado.porSituacao} total={consolidado.total.vgv} alta />
 
-        {/* Composição do VGV consolidado */}
-        {consolidado.total.vgv > 0 && (
-          <div className="flex h-2 w-full rounded-full overflow-hidden bg-zinc-900 gap-px">
-            {SITUACOES.map(s => {
-              const pct = pctVgv(consolidado.porSituacao[s].vgv);
-              if (pct <= 0) return null;
+          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-x-4 gap-y-3">
+            {situacoesOrdenadas.map(s => {
+              const b = consolidado.porSituacao[s];
+              const pctUn = consolidado.total.unidades > 0 ? (b.unidades / consolidado.total.unidades) * 100 : 0;
               return (
-                <div
-                  key={s}
-                  className={`${SITUACAO_DOT[s]} h-full`}
-                  style={{ width: `${pct}%` }}
-                  title={`${SITUACAO_LABEL[s]}: ${formatMoeda(consolidado.porSituacao[s].vgv)} (${fmtPct(pct)})`}
-                />
+                <div key={s} className="min-w-0 pl-3 border-l border-zinc-800">
+                  <p className="flex items-center gap-1.5 text-[11px] font-semibold text-zinc-400">
+                    <Dot s={s} /> {SITUACAO_LABEL[s]}
+                  </p>
+                  <div className="flex items-baseline gap-2 mt-1">
+                    <p className="text-base font-bold text-zinc-100 tabular-nums">{formatMoeda(b.vgv)}</p>
+                    <p className="text-[11px] font-semibold text-zinc-400 tabular-nums">{fmtPct(pctVgv(b.vgv))}</p>
+                  </div>
+                  <p className="text-[11px] text-zinc-500 tabular-nums">
+                    {fmtInt(b.unidades)} un. · {fmtPct(pctUn)} das unidades
+                  </p>
+                  <VariacaoCartao atual={b} anterior={consolidadoAnterior?.porSituacao[s]} />
+                </div>
               );
             })}
           </div>
-        )}
+        </section>
 
         {/* Detalhe por empreendimento */}
-        <div className="rounded-xl border border-zinc-800/80 overflow-x-auto custom-scrollbar">
-          <table className="w-full text-xs border-collapse">
-            <thead>
-              <tr className="bg-zinc-900/80 text-zinc-500">
-                <th rowSpan={2} className="text-left font-semibold px-3 py-2 border-b border-zinc-800 sticky left-0 bg-[#111113] min-w-[180px]">
-                  <button type="button" onClick={() => onSort('nome')} className="hover:text-zinc-200">
-                    Empreendimento <SortIcon k="nome" />
-                  </button>
-                </th>
-                <th colSpan={2} className="text-center font-semibold px-3 py-1.5 border-b border-l border-zinc-800 text-zinc-300">
-                  <button type="button" onClick={() => onSort('total')} className="hover:text-zinc-100">
-                    Total <SortIcon k="total" />
-                  </button>
-                </th>
-                {situacoesOrdenadas.map(s => (
-                  <th key={s} colSpan={2} className={`text-center font-semibold px-3 py-1.5 border-b border-l border-zinc-800 ${SITUACAO_TEXT[s]}`}>
-                    <button type="button" onClick={() => onSort(s)} className="inline-flex items-center gap-1.5 hover:opacity-80">
-                      <span className={`w-1.5 h-1.5 rounded-full ${SITUACAO_DOT[s]}`} /> {SITUACAO_LABEL[s]} <SortIcon k={s} />
+        <section className="flex flex-col gap-2">
+          <div className="flex items-baseline justify-between gap-3 flex-wrap">
+            <h3 className="text-xs font-bold text-zinc-200">Por empreendimento</h3>
+            <p className="text-[11px] text-zinc-600">
+              % = participação no VGV do empreendimento · na coluna Total, no VGV geral
+            </p>
+          </div>
+          <div className="rounded-xl border border-zinc-800/80 overflow-x-auto custom-scrollbar">
+            <table className="w-full text-xs border-collapse">
+              <thead>
+                <tr className="bg-zinc-900/80 text-zinc-400">
+                  <th className="text-left font-semibold px-3 py-2.5 border-b border-zinc-800 sticky left-0 bg-[#111113] min-w-[200px]">
+                    <button type="button" onClick={() => onSort('nome')} className="hover:text-zinc-100">
+                      Empreendimento <SortIcon k="nome" />
                     </button>
                   </th>
-                ))}
-              </tr>
-              <tr className="bg-zinc-900/60 text-[10px] uppercase tracking-wide text-zinc-600">
-                {['total', ...situacoesOrdenadas].map(k => (
-                  <React.Fragment key={k}>
-                    <th className="text-right font-semibold px-3 py-1.5 border-b border-l border-zinc-800">Un.</th>
-                    <th className="text-right font-semibold px-3 py-1.5 border-b border-zinc-800">VGV</th>
-                  </React.Fragment>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {linhasFiltradas.length === 0 ? (
-                <tr>
-                  <td colSpan={3 + situacoesOrdenadas.length * 2} className="px-3 py-8 text-center text-zinc-600">
-                    Nenhum empreendimento com unidades na Tabela de Vendas para os filtros atuais.
-                  </td>
-                </tr>
-              ) : linhasFiltradas.map(l => {
-                const ant = anteriorPorProjeto.get(l.project.id);
-                return (
-                  <tr key={l.project.id} className="border-b border-zinc-900 hover:bg-zinc-900/40 transition-colors align-top">
-                    <td className="px-3 py-2 font-semibold text-zinc-200 sticky left-0 bg-[#08080a] whitespace-nowrap">{l.project.name}</td>
-                    <td className="px-3 py-2 text-right tabular-nums text-zinc-200 font-semibold border-l border-zinc-900">
-                      {fmtInt(l.total.unidades)}
-                      <VariacaoCelula atual={l.total.unidades} anterior={ant?.total.unidades} />
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums text-zinc-200 font-semibold whitespace-nowrap">
-                      {formatMoeda(l.total.vgv)}
-                      <VariacaoCelula atual={l.total.vgv} anterior={ant?.total.vgv} dinheiro />
-                    </td>
-                    {situacoesOrdenadas.map(s => {
-                      const b = l.porSituacao[s];
-                      const a = ant?.porSituacao[s];
-                      const vazio = b.unidades === 0;
-                      return (
-                        <React.Fragment key={s}>
-                          <td className={`px-3 py-2 text-right tabular-nums border-l border-zinc-900 ${vazio ? 'text-zinc-700' : 'text-zinc-300'}`}>
-                            {fmtInt(b.unidades)}
-                            <VariacaoCelula atual={b.unidades} anterior={a?.unidades} />
-                          </td>
-                          <td className={`px-3 py-2 text-right tabular-nums whitespace-nowrap ${vazio ? 'text-zinc-700' : 'text-zinc-300'}`}>
-                            {formatMoeda(b.vgv)}
-                            <VariacaoCelula atual={b.vgv} anterior={a?.vgv} dinheiro />
-                          </td>
-                        </React.Fragment>
-                      );
-                    })}
-                  </tr>
-                );
-              })}
-            </tbody>
-            {linhasFiltradas.length > 0 && (
-              <tfoot>
-                <tr className="bg-zinc-900/80 font-bold align-top">
-                  <td className="px-3 py-2.5 text-zinc-100 sticky left-0 bg-[#111113]">Total geral</td>
-                  <td className="px-3 py-2.5 text-right tabular-nums text-zinc-100 border-l border-zinc-800">
-                    {fmtInt(consolidado.total.unidades)}
-                    <VariacaoCelula atual={consolidado.total.unidades} anterior={consolidadoAnterior?.total.unidades} />
-                  </td>
-                  <td className="px-3 py-2.5 text-right tabular-nums text-zinc-100 whitespace-nowrap">
-                    {formatMoeda(consolidado.total.vgv)}
-                    <VariacaoCelula atual={consolidado.total.vgv} anterior={consolidadoAnterior?.total.vgv} dinheiro />
-                  </td>
+                  <th className="text-right font-semibold px-3 py-2.5 border-b border-l border-zinc-800 text-zinc-200">
+                    <button type="button" onClick={() => onSort('total')} className="hover:text-zinc-50">
+                      Total <SortIcon k="total" />
+                    </button>
+                  </th>
                   {situacoesOrdenadas.map(s => (
-                    <React.Fragment key={s}>
-                      <td className={`px-3 py-2.5 text-right tabular-nums border-l border-zinc-800 ${SITUACAO_TEXT[s]}`}>
-                        {fmtInt(consolidado.porSituacao[s].unidades)}
-                        <VariacaoCelula atual={consolidado.porSituacao[s].unidades} anterior={consolidadoAnterior?.porSituacao[s].unidades} />
-                      </td>
-                      <td className={`px-3 py-2.5 text-right tabular-nums whitespace-nowrap ${SITUACAO_TEXT[s]}`}>
-                        {formatMoeda(consolidado.porSituacao[s].vgv)}
-                        <VariacaoCelula atual={consolidado.porSituacao[s].vgv} anterior={consolidadoAnterior?.porSituacao[s].vgv} dinheiro />
-                      </td>
-                    </React.Fragment>
+                    <th key={s} className="text-right font-semibold px-3 py-2.5 border-b border-l border-zinc-800">
+                      <button type="button" onClick={() => onSort(s)} className="inline-flex items-center gap-1.5 hover:text-zinc-100">
+                        <Dot s={s} /> {SITUACAO_LABEL[s]} <SortIcon k={s} />
+                      </button>
+                    </th>
                   ))}
                 </tr>
-              </tfoot>
-            )}
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {linhasFiltradas.length === 0 ? (
+                  <tr>
+                    <td colSpan={2 + situacoesOrdenadas.length} className="px-3 py-8 text-center text-zinc-600">
+                      Nenhum empreendimento com unidades na Tabela de Vendas para os filtros atuais.
+                    </td>
+                  </tr>
+                ) : linhasFiltradas.map(l => {
+                  const ant = anteriorPorProjeto.get(l.project.id);
+                  return (
+                    <tr key={l.project.id} className="border-b border-zinc-900 hover:bg-zinc-900/40 transition-colors align-top">
+                      <td className="px-3 py-2.5 sticky left-0 bg-[#08080a]">
+                        <p className="font-semibold text-zinc-200 whitespace-nowrap">{l.project.name}</p>
+                        <div className="mt-1.5 max-w-[180px]">
+                          <BarraComposicao porSituacao={l.porSituacao} total={l.total.vgv} />
+                        </div>
+                      </td>
+                      <CelulaValor b={l.total} a={ant?.total} base={consolidado.total.vgv} forte />
+                      {situacoesOrdenadas.map(s => (
+                        <CelulaValor key={s} b={l.porSituacao[s]} a={ant?.porSituacao[s]} base={l.total.vgv} />
+                      ))}
+                    </tr>
+                  );
+                })}
+              </tbody>
+              {linhasFiltradas.length > 0 && (
+                <tfoot>
+                  <tr className="bg-zinc-900/80 align-top">
+                    <td className="px-3 py-2.5 font-bold text-zinc-100 sticky left-0 bg-[#111113]">Total geral</td>
+                    <CelulaValor b={consolidado.total} a={consolidadoAnterior?.total} base={consolidado.total.vgv} forte />
+                    {situacoesOrdenadas.map(s => (
+                      <CelulaValor key={s} b={consolidado.porSituacao[s]} a={consolidadoAnterior?.porSituacao[s]} base={consolidado.total.vgv} forte />
+                    ))}
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
+        </section>
       </div>
     </div>
+  );
+}
+
+/** Célula da tabela: VGV em cima; unidades e % do total de referência embaixo. */
+function CelulaValor({ b, a, base, forte }: { b: Bucket; a?: Bucket; base: number; forte?: boolean }) {
+  const vazio = b.unidades === 0 && b.vgv === 0;
+  const pct = base > 0 ? (b.vgv / base) * 100 : null;
+  return (
+    <td className="px-3 py-2.5 text-right tabular-nums whitespace-nowrap border-l border-zinc-900">
+      {vazio ? (
+        <span className="text-zinc-700">–</span>
+      ) : (
+        <>
+          <div className={forte ? 'font-bold text-zinc-100' : 'font-medium text-zinc-200'}>{formatMoeda(b.vgv)}</div>
+          <div className="text-[10px] text-zinc-500 mt-0.5">
+            {fmtInt(b.unidades)} un.{pct !== null && <> · <span className="text-zinc-400 font-semibold">{fmtPct(pct)}</span></>}
+          </div>
+        </>
+      )}
+      <VariacaoCelula atual={b} anterior={a} />
+    </td>
   );
 }
