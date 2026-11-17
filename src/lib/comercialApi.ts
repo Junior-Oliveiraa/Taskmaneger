@@ -165,12 +165,35 @@ export function calcularAutorizacao(a: Pick<PropostaAutorizacao, 'areaPrivativa'
 /** dispensada = desconto dentro do limite; as demais só existem acima dele. */
 export type PropostaAprovacao = 'dispensada' | 'pendente' | 'aprovada' | 'recusada';
 
+// ── Ficha da visita ─────────────────────────────────────────────────────────
+// Cliente que passou por um dos pontos de atendimento. Fica no card da coluna
+// "Visitas" e acompanha o card quando ele vira proposta.
+
+export const LOCAIS_VISITA = ['Casa Uchôa', 'Stand Gênova', 'Escritório Central'];
+export const ESTADOS_CIVIS = ['Solteiro(a)', 'Casado(a)', 'União estável', 'Divorciado(a)', 'Viúvo(a)'];
+
+export interface PropostaVisita {
+  local: string;
+  /** HH:MM */
+  hora: string;
+  /** especifico = um empreendimento (project_id); geral = veio conhecer todos. */
+  interesse: 'especifico' | 'geral';
+  profissao: string;
+  ondeMora: string;
+  idade: number | null;
+  estadoCivil: string;
+  observacao: string;
+}
+
 export interface ComercialProposta {
   id: string;
   /** Número de registro sequencial, atribuído pelo banco. Nulo antes da migration. */
   numero: number | null;
   autorizacao: PropostaAutorizacao | null;
-  projectId: string;
+  /** Ficha da visita; nula nas propostas lançadas direto e nas visitas antigas. */
+  visita: PropostaVisita | null;
+  /** Nulo só em visita generalista (o banco exige o empreendimento fora de Visitas). */
+  projectId: string | null;
   unidadeId: string | null;
   unidade: string | null;
   cliente: string;
@@ -209,7 +232,8 @@ function toProposta(r: any): ComercialProposta {
     id: r.id,
     numero: r.numero == null ? null : Number(r.numero),
     autorizacao: r.autorizacao ?? null,
-    projectId: r.project_id,
+    visita: r.visita ?? null,
+    projectId: r.project_id ?? null,
     unidadeId: r.unidade_id ?? null,
     unidade: r.unidade ?? null,
     cliente: r.cliente,
@@ -285,6 +309,39 @@ export async function criarProposta(params: {
     // Só envia a coluna quando há ficha.
     ...(params.autorizacao ? { autorizacao: params.autorizacao } : {}),
   });
+  if (error) throw error;
+}
+
+/** Dados do formulário de visita (cadastro e edição). */
+export interface VisitaParams {
+  /** Nulo = visita generalista. */
+  projectId: string | null;
+  cliente: string;
+  /** Quem atendeu; pode ficar em branco. */
+  corretor: string;
+  imobiliaria: string | null;
+  /** yyyy-mm-dd: dia da visita. */
+  data: string;
+  visita: PropostaVisita;
+}
+
+const linhaVisita = (v: VisitaParams) => ({
+  project_id: v.projectId,
+  cliente: v.cliente,
+  corretor: v.corretor,
+  imobiliaria: v.imobiliaria,
+  enviada_em: v.data,
+  visita: v.visita,
+});
+
+/** A visita nasce na coluna "Visitas"; quem cadastra vira o responsável (default do banco). */
+export async function criarVisita(v: VisitaParams): Promise<void> {
+  const { error } = await supabase.from('comercial_propostas').insert({ ...linhaVisita(v), etapa: 'visita' });
+  if (error) throw error;
+}
+
+export async function atualizarVisita(id: string, v: VisitaParams): Promise<void> {
+  const { error } = await supabase.from('comercial_propostas').update(linhaVisita(v)).eq('id', id);
   if (error) throw error;
 }
 

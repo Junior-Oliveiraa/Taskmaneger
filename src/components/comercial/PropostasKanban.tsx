@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { CalendarDays, Check, Clock3, Flag, Lock, Pencil, Hourglass, Layers, MessageSquare, Paperclip, Plus, Repeat2, Send, Settings, Tag, ShieldAlert, ShieldCheck, ShieldX, ThumbsDown, ThumbsUp, Trash2, UserRound, X } from 'lucide-react';
+import { CalendarDays, Check, Clock3, Flag, Footprints, Lock, MapPin, Pencil, Hourglass, Layers, MessageSquare, Paperclip, Plus, Repeat2, Send, Settings, Tag, ShieldAlert, ShieldCheck, ShieldX, ThumbsDown, ThumbsUp, Trash2, UserRound, X } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import PropostaChat, { AvatarUsuario, SeletorResponsavel } from './PropostaChat';
 import { Project, SiengeProjectDisplay, SiengeTabelaVendaColuna, SiengeTabelaVendaUnidade, SiengeTabelaVendaVersao } from '../../types';
 import NovaPropostaModal, { AutorizacaoResumo } from './NovaPropostaModal';
 import ConfigPropostas from './ConfigPropostas';
+import VisitaModal from './VisitaModal';
 import StatusWhatsApp from './StatusWhatsApp';
 import {
   ComercialProposta, PROPOSTA_ETAPAS, PropostaEtapa, codigoProposta, definirResponsavelProposta, excluirProposta, podeEditarProposta,
@@ -85,6 +86,14 @@ function BarraDecisao({ p, gestor, usuarioId, onMover }: {
   let acoes: Acao[] = [];
 
   switch (p.etapa) {
+    case 'visita':
+      icone = <Footprints size={15} className="text-slate-300" />;
+      titulo = 'O cliente quer fazer proposta?';
+      texto = p.projectId
+        ? 'Leve a visita para Propostas e depois edite a proposta para preencher a ficha e o fluxo de pagamento.'
+        : 'Visita generalista: edite a visita e escolha o empreendimento antes de transformá-la em proposta.';
+      acoes = p.projectId ? [{ para: 'realizada', rotulo: 'Transformar em proposta', estilo: ESTILO.primario }] : [];
+      break;
     case 'realizada':
       tom = 'border-blue-500/25 bg-blue-500/[0.05]';
       titulo = 'Pronta para análise?';
@@ -194,6 +203,54 @@ function PainelAprovacao({ p }: { p: ComercialProposta }) {
   );
 }
 
+/** "Casa Uchôa · 17/11 às 14:30": onde e quando foi a visita. */
+const quandoVisita = (p: ComercialProposta) =>
+  [p.visita?.local, `${dataBr(p.visitaEm ?? p.enviadaEm).slice(0, 5)}${p.visita?.hora ? ` às ${p.visita.hora}` : ''}`].filter(Boolean).join(' · ');
+
+/** Ficha da visita no painel: o essencial em destaque, o perfil e a observação abaixo. */
+function FichaVisita({ p, acao }: { p: ComercialProposta; acao: React.ReactNode }) {
+  const v = p.visita;
+  if (!v) return null;
+  const perfil = [
+    { rotulo: 'Profissão', valor: v.profissao },
+    { rotulo: 'Onde mora', valor: v.ondeMora },
+    { rotulo: 'Idade', valor: v.idade != null ? `${v.idade} anos` : '' },
+    { rotulo: 'Estado civil', valor: v.estadoCivil },
+  ];
+  const item = (rotulo: string, valor: React.ReactNode, vazio = false) => (
+    <div className="rounded-xl border border-zinc-800/70 p-3.5 min-w-0">
+      <span className="block text-[11px] text-zinc-500">{rotulo}</span>
+      <p className={`mt-0.5 text-[14px] font-medium truncate ${vazio ? 'text-zinc-600' : 'text-zinc-100'}`}>{valor}</p>
+    </div>
+  );
+  return (
+    <section className="space-y-3">
+      <div className="flex items-center justify-between gap-3">
+        <h4 className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+          <Footprints size={12} /> Visita
+        </h4>
+        {acao}
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {item('Cliente', p.cliente)}
+        {item('Local', <span className="inline-flex items-center gap-1"><MapPin size={12} className="text-zinc-500" />{v.local}</span>)}
+        {item('Dia e hora', <span className="tabular-nums">{dataBr(p.visitaEm ?? p.enviadaEm)}{v.hora ? ` às ${v.hora}` : ''}</span>)}
+        {item('Interesse', v.interesse === 'geral' ? 'Todos os empreendimentos' : 'Empreendimento específico')}
+        {item('Atendido por', p.corretor || '—', !p.corretor)}
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {perfil.map(x => <React.Fragment key={x.rotulo}>{item(x.rotulo, x.valor || '—', !x.valor)}</React.Fragment>)}
+      </div>
+      <div className="rounded-xl border border-zinc-800/70 p-3.5">
+        <span className="block text-[11px] text-zinc-500">Observações / resumo</span>
+        <p className={`mt-1 text-[13px] leading-relaxed whitespace-pre-wrap break-words ${v.observacao ? 'text-zinc-300' : 'text-zinc-600'}`}>
+          {v.observacao || 'Sem observações.'}
+        </p>
+      </div>
+    </section>
+  );
+}
+
 interface Props {
   projects: Project[];
   projectDisplays: SiengeProjectDisplay[];
@@ -208,6 +265,8 @@ export default function PropostasKanban({ projects, projectDisplays, unidades, v
   const [configAberta, setConfigAberta] = useState(false);
   // Proposta aberta no formulário em modo edição.
   const [editando, setEditando] = useState<string | null>(null);
+  // Formulário de visita: 'nova' ou o id da visita em edição.
+  const [visitaForm, setVisitaForm] = useState<string | null>(null);
   const propostas = useQuery({ queryKey: ['comercialPropostas'], queryFn: fetchComercialPropostas, staleTime: 30_000 }).data ?? [];
   const [dragOver, setDragOver] = useState<PropostaEtapa | null>(null);
   const [arrastando, setArrastando] = useState<string | null>(null);
@@ -224,11 +283,11 @@ export default function PropostasKanban({ projects, projectDisplays, unidades, v
   // Esc fecha o painel da proposta, como na task.
   useEffect(() => {
     // Com o formulário de edição aberto, Esc não fecha o painel por baixo.
-    if (!aberta || editando) return;
+    if (!aberta || editando || visitaForm) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setAberta(null); };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [aberta, editando]);
+  }, [aberta, editando, visitaForm]);
   // Mesmo padrão do Dashboard do Comercial: este ano, comparado ao ano anterior.
   const [filtro, setFiltro] = useState<FiltroPropostas>(() => ({
     projetos: null, imobiliaria: null, corretor: null,
@@ -248,7 +307,7 @@ export default function PropostasKanban({ projects, projectDisplays, unidades, v
     mensagens.forEach(x => { if (x.tipo === 'mensagem') m.set(x.propostaId, (m.get(x.propostaId) ?? 0) + 1); });
     return m;
   }, [mensagens]);
-  const nomeProjeto = (id: string) => projects.find(p => p.id === id)?.name || '—';
+  const nomeProjeto = (id: string | null) => (id ? projects.find(p => p.id === id)?.name || '—' : 'Todos os empreendimentos');
 
   // Características da unidade: as colunas descritivas da Tabela de Vendas (área,
   // tipo, vagas, andar...), na ordem e com o rótulo que o empreendimento usa.
@@ -291,13 +350,26 @@ export default function PropostasKanban({ projects, projectDisplays, unidades, v
       {edicao.pode ? <Pencil size={13} /> : <Lock size={13} />} Editar proposta
     </button>
   ) : null;
+  const botaoEditarVisita = proposta?.visita && edicao ? (
+    <button
+      type="button" disabled={!edicao.pode} onClick={() => setVisitaForm(proposta.id)}
+      title={edicao.motivo ?? 'Editar os dados da visita'}
+      className="inline-flex items-center gap-1.5 h-8 px-3.5 rounded-md border text-[12px] font-semibold transition-colors text-slate-300 bg-slate-500/10 border-slate-500/25 hover:bg-slate-500/20 disabled:text-zinc-500 disabled:bg-zinc-900/60 disabled:border-zinc-800 disabled:cursor-not-allowed"
+    >
+      {edicao.pode ? <Pencil size={13} /> : <Lock size={13} />} Editar visita
+    </button>
+  ) : null;
+  const visitaEditada = visitaForm && visitaForm !== 'nova' ? propostas.find(p => p.id === visitaForm) ?? null : null;
   const aguardando = propostas.filter(p => p.etapa === 'em_analise').length;
 
   const mover = async (id: string, etapa: PropostaEtapa) => {
     const atual = propostas.find(p => p.id === id);
     if (!atual || atual.etapa === etapa) return;
     setErro(null);
-    const bloqueio = bloqueioEtapa(atual, etapa, isMaster, currentUser?.id);
+    // Visita generalista: o banco exige o empreendimento para virar proposta.
+    const bloqueio = !atual.projectId && etapa !== 'visita'
+      ? 'Visita sem empreendimento definido: edite a visita e escolha o empreendimento antes de mover.'
+      : bloqueioEtapa(atual, etapa, isMaster, currentUser?.id);
     if (bloqueio) {
       setErro(bloqueio);
       return;
@@ -376,8 +448,16 @@ export default function PropostasKanban({ projects, projectDisplays, unidades, v
         )}
         <button
           type="button"
+          onClick={() => setVisitaForm('nova')}
+          title="Registrar a visita de um cliente a um dos pontos de atendimento"
+          className={`${isMaster ? 'ml-1' : 'ml-auto sm:ml-2'} inline-flex items-center gap-2 px-4 py-2.5 rounded-lg border border-zinc-700 bg-zinc-900 hover:bg-zinc-800 text-zinc-100 text-sm font-semibold transition-colors shrink-0`}
+        >
+          <Footprints size={16} /> Nova visita
+        </button>
+        <button
+          type="button"
           onClick={() => setNovaAberta(true)}
-          className={`${isMaster ? 'ml-1' : 'ml-auto sm:ml-2'} inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold shadow-lg shadow-blue-500/30 ring-1 ring-blue-400/50 transition-colors shrink-0`}
+          className={`ml-1 inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold shadow-lg shadow-blue-500/30 ring-1 ring-blue-400/50 transition-colors shrink-0`}
         >
           <Plus size={16} strokeWidth={3} /> Nova proposta
         </button>
@@ -448,7 +528,18 @@ export default function PropostasKanban({ projects, projectDisplays, unidades, v
                           {p.unidade && <span className="shrink-0 font-medium text-zinc-300 tabular-nums">Un. {p.unidade}</span>}
                         </div>
                       )}
-                      <p className="text-[15px] font-semibold text-blue-400 leading-tight tracking-tight break-words">{nomeProjeto(p.projectId)}</p>
+                      <p className={`text-[15px] font-semibold leading-tight tracking-tight break-words ${p.projectId ? 'text-blue-400' : 'text-slate-300'}`}>{nomeProjeto(p.projectId)}</p>
+                      {p.etapa === 'visita' && p.visita ? (
+                        <>
+                          <p className="mt-1 text-[13px] font-semibold text-zinc-50 truncate" title={p.cliente}>{p.cliente}</p>
+                          <p className="text-[11px] mt-0.5 text-zinc-400 truncate inline-flex items-center gap-1 max-w-full" title={quandoVisita(p)}>
+                            <MapPin size={10} className="shrink-0 text-zinc-500" /> <span className="truncate">{quandoVisita(p)}</span>
+                          </p>
+                          {p.corretor && (
+                            <p className="text-[11px] mt-0.5 truncate text-zinc-500">Atendido por <span className="text-zinc-300">{primeiroNome(p.corretor)}</span></p>
+                          )}
+                        </>
+                      ) : (<>
                       <p
                         className={`mt-1 text-[14px] font-bold tabular-nums ${vgvDe(p) > 0 ? 'text-zinc-50' : 'text-[12px] font-medium text-zinc-600'}`}
                         title={p.autorizacao ? 'VGV: valor contratado na ficha' : 'VGV: valor da unidade na Tabela de Vendas'}
@@ -460,6 +551,7 @@ export default function PropostasKanban({ projects, projectDisplays, unidades, v
                         {p.imobiliaria && <span className="text-zinc-500"> · {p.imobiliaria}</span>}
                       </p>
                       <SeloDesconto p={p} />
+                      </>)}
                       <div className="flex items-center justify-between mt-2 pt-1.5 border-t border-zinc-800/60 text-[10px] text-zinc-400">
                         <span
                           className="inline-flex items-center gap-1 tabular-nums"
@@ -533,7 +625,7 @@ export default function PropostasKanban({ projects, projectDisplays, unidades, v
               {/* Topo: só a identificação da proposta e as ações de janela. */}
               <header className="flex items-center justify-between gap-4 px-6 h-12 border-b border-zinc-800/60 shrink-0">
                 <div className="flex items-center gap-2 min-w-0 text-[12px]">
-                  <span className="text-zinc-500">Proposta</span>
+                  <span className="text-zinc-500">{proposta.etapa === 'visita' ? 'Visita' : 'Proposta'}</span>
                   {proposta.numero !== null && (
                     <span className="font-mono font-medium tracking-wide text-zinc-400">{codigoProposta(proposta.numero)}</span>
                   )}
@@ -595,7 +687,9 @@ export default function PropostasKanban({ projects, projectDisplays, unidades, v
                     <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Etapa da proposta">
                       {PROPOSTA_ETAPAS.map(et => {
                         const ativa = proposta.etapa === et.id;
-                        const motivo = ativa ? null : bloqueioEtapa(proposta, et.id, isMaster, currentUser?.id);
+                        const motivo = ativa ? null
+                          : !proposta.projectId ? 'Visita sem empreendimento: edite a visita e escolha o empreendimento.'
+                          : bloqueioEtapa(proposta, et.id, isMaster, currentUser?.id);
                         return (
                           <button
                             key={et.id} type="button" role="radio" aria-checked={ativa}
@@ -648,7 +742,12 @@ export default function PropostasKanban({ projects, projectDisplays, unidades, v
 
                 <PainelAprovacao key={proposta.id} p={proposta} />
 
-                {proposta.autorizacao ? (
+                <FichaVisita p={proposta} acao={botaoEditarVisita} />
+
+                {/* Visita que ainda não virou proposta: não há ficha nem fluxo para mostrar. */}
+                {proposta.visita && proposta.etapa === 'visita' && !proposta.autorizacao ? (
+                  anexos || null
+                ) : proposta.autorizacao ? (
                   <AutorizacaoResumo autorizacao={proposta.autorizacao} cliente={proposta.cliente} corretor={corretor} lateral={anexos} acaoFluxo={botaoEditar} />
                 ) : (
                   <>
@@ -697,6 +796,18 @@ export default function PropostasKanban({ projects, projectDisplays, unidades, v
           propostas={propostas}
           proposta={editada}
           onClose={() => { setNovaAberta(false); setEditando(null); }}
+        />
+      )}
+      {(visitaForm === 'nova' || visitaEditada) && (
+        <VisitaModal
+          key={visitaEditada?.id ?? 'nova'}
+          projects={projects}
+          projectDisplays={projectDisplays}
+          unidades={unidades}
+          versoes={versoes}
+          propostas={propostas}
+          visita={visitaEditada}
+          onClose={() => setVisitaForm(null)}
         />
       )}
       {configAberta && isMaster && <ConfigPropostas onClose={() => setConfigAberta(false)} />}
