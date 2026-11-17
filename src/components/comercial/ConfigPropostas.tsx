@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, MessageCircle, Settings, X } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { SeletorResponsavel } from './PropostaChat';
+import LinksVisita from './LinksVisita';
 import { fetchAprovadorPropostas, salvarAprovadorPropostas } from '../../lib/comercialApi';
 
 /**
@@ -48,7 +49,7 @@ export default function ConfigPropostas({ onClose }: { onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 p-4 pt-[12vh]" onMouseDown={onClose}>
       <div
-        className="w-full max-w-md rounded-xl border border-zinc-800 bg-[#121215] shadow-2xl"
+        className="w-full max-w-lg rounded-xl border border-zinc-800 bg-[#121215] shadow-2xl"
         onMouseDown={e => e.stopPropagation()}
         role="dialog" aria-label="Configurações das propostas"
       >
@@ -96,6 +97,10 @@ export default function ConfigPropostas({ onClose }: { onClose: () => void }) {
             </p>
           )}
           {erro && <p className="text-[12px] text-rose-300">{erro}</p>}
+        </div>
+
+        <div className="px-5 pb-5 pt-4 border-t border-zinc-800/70">
+          <LinksVisita />
         </div>
       </div>
     </div>

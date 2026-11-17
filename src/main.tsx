@@ -9,6 +9,7 @@ import { LP_CORRETOR_BASE_PATH, LP_VALIDACAO_BASE_PATH, aplicarTemaLp, temaLpSal
 // o editor e as planilhas do app interno.
 const AppRoot = lazy(() => import('./AppRoot'));
 const LpCorretorPage = lazy(() => import('./components/LpCorretorPage'));
+const VisitaPublicaPage = lazy(() => import('./components/VisitaPublicaPage'));
 
 // Rota pública da LP do Corretor (/tabela/<slug>): renderizada fora do
 // AuthProvider e de todo o resto do app, então quem abre o link não carrega —
@@ -28,11 +29,16 @@ const lpSlug = segmentoDaRota(LP_CORRETOR_BASE_PATH);
 // que importa — renderizar fora do AuthProvider, sem arrastar o app interno.
 const lpToken = segmentoDaRota(LP_VALIDACAO_BASE_PATH);
 
+// /visita/<token>: cadastro de visitas das recepcionistas, também fora do app interno.
+const visitaToken = segmentoDaRota('/visita'); // = VISITA_BASE_PATH (lib/visitaPublica)
+
 // A LP tem visual próprio e não segue a preferência do sistema nem a do usuário
 // do app interno: quem escolhe é quem abre o link, pelo botão de tema da própria
 // página, e a escolha vive numa chave só dela. Aplicado aqui, antes do render,
 // para a página não piscar no tema errado a cada carregamento.
 if (lpSlug || lpToken) aplicarTemaLp(temaLpSalvo());
+// A página de visitas é sempre escura (visual da marca, sem botão de tema).
+if (visitaToken) aplicarTemaLp('escuro');
 
 // A meta viewport NÃO é alterada aqui de propósito. Acrescentar
 // `viewport-fit=cover` por JavaScript depois do carregamento fazia o Samsung
@@ -48,6 +54,7 @@ createRoot(document.getElementById('root')!).render(
     <Suspense fallback={<div className="min-h-screen bg-[#08080a]" />}>
       {lpSlug ? <LpCorretorPage slug={lpSlug} />
         : lpToken ? <LpCorretorPage validacaoToken={lpToken} />
+        : visitaToken ? <VisitaPublicaPage token={visitaToken} />
         : <AppRoot />}
     </Suspense>
   </StrictMode>,
