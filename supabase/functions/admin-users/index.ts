@@ -38,7 +38,7 @@ function normalizePhone(raw?: string | null): string | null {
   return digits.length >= 12 && digits.length <= 13 ? digits : null;
 }
 
-const PERFIS_ATRIBUIVEIS = ['master', 'analista', 'assistente', 'financeiro'];
+const PERFIS_ATRIBUIVEIS = ['master', 'analista', 'assistente', 'financeiro', 'consultoria'];
 
 function perfilValido(perfil: unknown): string | null {
   return typeof perfil === 'string' && PERFIS_ATRIBUIVEIS.includes(perfil) ? perfil : null;

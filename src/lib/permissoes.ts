@@ -9,7 +9,7 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase } from './supabase';
 import { useAuth } from '../context/AuthContext';
 
-export type Perfil = 'administrador' | 'master' | 'analista' | 'assistente' | 'financeiro';
+export type Perfil = 'administrador' | 'master' | 'analista' | 'assistente' | 'financeiro' | 'consultoria';
 export type PerfilConfiguravel = Exclude<Perfil, 'administrador'>;
 export type Nivel = 'nenhum' | 'ver' | 'editar';
 
@@ -31,9 +31,13 @@ export const PERFIS: { id: Perfil; label: string; descricao: string }[] = [
   { id: 'analista',      label: 'Analista',      descricao: 'Acesso definido pelo administrador.' },
   { id: 'assistente',    label: 'Assistente',    descricao: 'Acesso definido pelo administrador.' },
   { id: 'financeiro',    label: 'Financeiro',    descricao: 'Acesso definido pelo administrador.' },
+  { id: 'consultoria',   label: 'Consultoria',   descricao: 'Somente leitura: vê os módulos liberados, não altera nada.' },
 ];
 
-export const PERFIS_CONFIGURAVEIS: PerfilConfiguravel[] = ['master', 'analista', 'assistente', 'financeiro'];
+export const PERFIS_CONFIGURAVEIS: PerfilConfiguravel[] = ['master', 'analista', 'assistente', 'financeiro', 'consultoria'];
+
+/** Perfis que nunca recebem "Editar" (o banco também recusa). */
+export const PERFIS_SOMENTE_LEITURA: PerfilConfiguravel[] = ['consultoria'];
 
 export const rotuloPerfil = (p?: string | null) => PERFIS.find(x => x.id === p)?.label ?? 'Assistente';
 
@@ -70,7 +74,7 @@ export type MatrizPermissoes = Record<PerfilConfiguravel, Partial<Record<Modulo,
 export async function fetchMatrizPermissoes(): Promise<MatrizPermissoes> {
   const { data, error } = await supabase.from('perfis_permissoes').select('perfil, modulo, nivel');
   if (error) throw new Error(`[Permissões] carregar: ${error.message}`);
-  const matriz: MatrizPermissoes = { master: {}, analista: {}, assistente: {}, financeiro: {} };
+  const matriz: MatrizPermissoes = { master: {}, analista: {}, assistente: {}, financeiro: {}, consultoria: {} };
   for (const r of data || []) {
     if (r.perfil in matriz) matriz[r.perfil as PerfilConfiguravel][r.modulo as Modulo] = r.nivel as Nivel;
   }
@@ -112,7 +116,9 @@ export function usePermissoes(): Permissoes {
 
   const nivel = (modulo: Modulo): Nivel => {
     if (isAdmin) return 'editar';
-    return matriz?.[perfil as PerfilConfiguravel]?.[modulo] ?? 'nenhum';
+    const n = matriz?.[perfil as PerfilConfiguravel]?.[modulo] ?? 'nenhum';
+    if (n === 'editar' && (PERFIS_SOMENTE_LEITURA as string[]).includes(perfil)) return 'ver';
+    return n;
   };
   const pode = (modulo: Modulo, n: Exclude<Nivel, 'nenhum'> = 'ver') => ORDEM[nivel(modulo)] >= ORDEM[n];
   const podeAlgum = (modulos: Modulo[], n: Exclude<Nivel, 'nenhum'> = 'ver') => modulos.some(m => pode(m, n));
