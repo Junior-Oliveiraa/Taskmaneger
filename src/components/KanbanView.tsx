@@ -28,7 +28,8 @@ import {
   Tag as TagIcon,
   AlignJustify,
   LayoutGrid,
-  Hourglass
+  Hourglass,
+  Settings
 } from 'lucide-react';
 import { Task, TaskStatus, TaskPriority, Project, Label } from '../types';
 
@@ -68,6 +69,10 @@ import { useAuth } from '../context/AuthContext';
 import ReminderBell from './ReminderBell';
 import PriorityPicker from './PriorityPicker';
 import AssigneePicker from './AssigneePicker';
+import KanbanTimesModal from './KanbanTimesModal';
+import { useKanbanTimes } from '../lib/kanbanTimes';
+
+const TIME_STORAGE_KEY = 'kanban.filtroTime';
 
 type EditorPresence = { name: string; avatarUrl?: string; color: string };
 
@@ -125,6 +130,27 @@ export default function KanbanView({
   // dropIndex: index in column where the indicator is shown, -1 = end of list
   const [dropIndicator, setDropIndicator] = useState<{ colId: TaskStatus; index: number } | null>(null);
   const [filterAssigneeId, setFilterAssigneeId] = useState<string | 'all'>(currentUser?.id || 'all');
+  const [filterTimeId, setFilterTimeIdState] = useState<string | 'all'>(() => {
+    try { return localStorage.getItem(TIME_STORAGE_KEY) || 'all'; } catch { return 'all'; }
+  });
+  const setFilterTimeId = (id: string | 'all') => {
+    setFilterTimeIdState(id);
+    try { localStorage.setItem(TIME_STORAGE_KEY, id); } catch { /* sem storage */ }
+  };
+  const [showTimesConfig, setShowTimesConfig] = useState(false);
+  const { times } = useKanbanTimes();
+
+  // Times: só quem está em algum time aparece no quadro (no filtro e nas
+  // tarefas). Sem nenhum time cadastrado, o quadro mostra todo mundo.
+  const timeAtivo = filterTimeId !== 'all' ? times.find(t => t.id === filterTimeId) : undefined;
+  const idsNoQuadro: Set<string> | null = times.length === 0
+    ? null
+    : new Set(timeAtivo ? timeAtivo.membros : times.flatMap(t => t.membros));
+  const boardUsers = idsNoQuadro ? sortedUsers.filter(u => idsNoQuadro.has(u.id)) : sortedUsers;
+  // Responsável escolhido que não está no time selecionado: volta para "Todos".
+  const assigneeEfetivo = filterAssigneeId !== 'all' && idsNoQuadro && !idsNoQuadro.has(filterAssigneeId)
+    ? 'all'
+    : filterAssigneeId;
   const [filterPriority, setFilterPriority] = useState<TaskPriority | 'all'>('all');
   const [sortPriority, setSortPriority] = useState<'none' | 'asc' | 'desc'>('desc');
   const [sortDue, setSortDue] = useState<'none' | 'asc' | 'desc'>('asc');
@@ -156,7 +182,10 @@ export default function KanbanView({
   // Filter tasks
   let filteredTasks = tasks.filter(task => {
     if (currentProjectFilter && task.projectId !== currentProjectFilter) return false;
-    if (filterAssigneeId !== 'all' && task.assigneeId !== filterAssigneeId) return false;
+    if (idsNoQuadro) {
+      if (task.assigneeId ? !idsNoQuadro.has(task.assigneeId) : !!timeAtivo) return false;
+    }
+    if (assigneeEfetivo !== 'all' && task.assigneeId !== assigneeEfetivo) return false;
     if (filterPriority !== 'all' && task.priority !== filterPriority) return false;
     return true;
   });
@@ -424,7 +453,7 @@ export default function KanbanView({
     inners.forEach(el => el.style.minHeight = '0px');
     inners.forEach(el => { if (el.scrollHeight > max) max = el.scrollHeight; });
     inners.forEach(el => el.style.minHeight = `${max}px`);
-  }, [tasks, isCompact, filterAssigneeId, filterPriority, hideFilters]);
+  }, [tasks, isCompact, assigneeEfetivo, filterTimeId, times, filterPriority, hideFilters]);
 
   // ─────────────────────────────────────────────────
   // PRIORITY BADGE
@@ -465,15 +494,28 @@ export default function KanbanView({
       {/* Filters Bar */}
       {!hideFilters && (
         <div className="view-pad-x py-3 short:py-2 border-b border-zinc-900/60 flex items-center flex-wrap gap-y-2 shrink-0">
+          {/* Team Filter */}
+          {times.length > 0 && (
+            <div className="flex items-center gap-2 xl:gap-3 mr-3 xl:mr-6">
+              <span className="hidden xl:inline text-xs text-zinc-500 font-medium">Time:</span>
+              <div className="flex items-center gap-1 bg-zinc-900/40 p-1 rounded-full border border-zinc-800/50">
+                <button onClick={() => setFilterTimeId('all')} className={`text-[10px] px-3 py-1 rounded-full font-medium transition-all ${!timeAtivo ? 'bg-zinc-800 text-zinc-100 shadow-sm' : 'bg-transparent text-zinc-500 hover:text-zinc-300'}`}>Todos</button>
+                {times.map(t => (
+                  <button key={t.id} onClick={() => setFilterTimeId(t.id)} className={`text-[10px] px-3 py-1 rounded-full font-medium transition-all whitespace-nowrap ${timeAtivo?.id === t.id ? 'bg-zinc-800 text-zinc-100 shadow-sm' : 'bg-transparent text-zinc-500 hover:text-zinc-300'}`}>{t.nome}</button>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="flex items-center gap-3">
             <span className="hidden xl:inline text-xs text-zinc-500 font-medium">Responsáveis:</span>
             <div className="flex items-center gap-1.5 bg-zinc-900/40 p-1 rounded-full border border-zinc-800/50">
-              <button onClick={() => setFilterAssigneeId('all')} className={`text-[10px] px-3 py-1 rounded-full font-medium transition-all ${filterAssigneeId === 'all' ? 'bg-zinc-800 text-zinc-100 shadow-sm' : 'bg-transparent text-zinc-500 hover:text-zinc-300'}`}>Todos</button>
+              <button onClick={() => setFilterAssigneeId('all')} className={`text-[10px] px-3 py-1 rounded-full font-medium transition-all ${assigneeEfetivo === 'all' ? 'bg-zinc-800 text-zinc-100 shadow-sm' : 'bg-transparent text-zinc-500 hover:text-zinc-300'}`}>Todos</button>
               <div className="w-[1px] h-4 bg-zinc-800 mx-0.5" />
               <div className="flex items-center pl-1 pr-1 gap-1">
-                {sortedUsers.map(u => (
+                {boardUsers.map(u => (
                   <button key={u.id} onClick={() => setFilterAssigneeId(u.id)} title={u.name}
-                    className={`relative w-6 h-6 rounded-full border-2 transition-all duration-300 overflow-hidden flex items-center justify-center text-[9px] font-bold shrink-0 ${filterAssigneeId === u.id ? 'border-blue-500 scale-110 shadow-lg shadow-blue-500/20' : 'border-transparent opacity-50 hover:opacity-100 hover:scale-105'}`}
+                    className={`relative w-6 h-6 rounded-full border-2 transition-all duration-300 overflow-hidden flex items-center justify-center text-[9px] font-bold shrink-0 ${assigneeEfetivo === u.id ? 'border-blue-500 scale-110 shadow-lg shadow-blue-500/20' : 'border-transparent opacity-50 hover:opacity-100 hover:scale-105'}`}
                     style={{ backgroundColor: u.avatarUrl ? 'transparent' : '#27272a' }}
                   >
                     {u.avatarUrl ? <img src={u.avatarUrl} alt={u.name} className="w-full h-full object-cover" /> : <span className="text-zinc-400">{u.initials}</span>}
@@ -552,8 +594,8 @@ export default function KanbanView({
             </div>
           )}
 
-          {/* Compact mode toggle */}
-          <div className="ml-auto flex items-center">
+          {/* Compact mode toggle + team settings */}
+          <div className="ml-auto flex items-center gap-2">
             <button
               onClick={() => setIsCompact(v => !v)}
               title={isCompact ? 'Modo Normal' : 'Modo Ultra-Compacto'}
@@ -562,9 +604,18 @@ export default function KanbanView({
               {isCompact ? <LayoutGrid size={12} /> : <AlignJustify size={12} />}
               <span>{isCompact ? 'Normal' : 'Compacto'}</span>
             </button>
+            <button
+              onClick={() => setShowTimesConfig(true)}
+              title="Configurar times"
+              className="flex items-center justify-center p-1.5 rounded-lg border bg-zinc-900/40 border-zinc-800/50 text-zinc-500 hover:text-zinc-300 transition-all"
+            >
+              <Settings size={13} />
+            </button>
           </div>
         </div>
       )}
+
+      {showTimesConfig && <KanbanTimesModal onClose={() => setShowTimesConfig(false)} />}
 
       {/* Board */}
       <div className="relative flex-1 flex min-h-0">
