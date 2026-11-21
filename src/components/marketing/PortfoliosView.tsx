@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Plus, Pencil, Briefcase, ChevronRight } from 'lucide-react';
 import { Task } from '../../types';
-import { useMarketingProjetos, MarketingPortfolio, MarketingProjeto } from '../../lib/marketingProjetos';
+import { useMarketingProjetos, MarketingPortfolio, MarketingProjeto, formatarData } from '../../lib/marketingProjetos';
 import { PortfolioModal, ProjetoModal } from './ProjetoModais';
 import { resumir, BarraProgresso, ChipStatus } from './ProjetosView';
 
@@ -30,12 +30,15 @@ export default function PortfoliosView({ tasks, onAbrirProjeto, podeEditar }: {
     return (
       <button
         onClick={() => onAbrirProjeto(p.id)}
-        className="w-full grid grid-cols-[1fr_auto] sm:grid-cols-[minmax(0,1fr)_110px_200px_16px] items-center gap-4 px-4 py-3 text-left hover:bg-zinc-900/50 transition-colors"
+        className="w-full grid grid-cols-[1fr_auto] sm:grid-cols-[minmax(0,1fr)_90px_110px_200px_16px] items-center gap-4 px-4 py-3 text-left hover:bg-zinc-900/50 transition-colors"
       >
         <div className="flex items-center gap-2 min-w-0">
           <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: p.cor }} />
           <span className="text-[13px] text-zinc-200 truncate">{p.nome}</span>
         </div>
+        <span className={`hidden sm:block text-[11px] font-mono ${p.dataEntrega ? 'text-zinc-400' : 'text-zinc-600'}`}>
+          {p.dataEntrega ? formatarData(p.dataEntrega) : 'sem data'}
+        </span>
         <div className="hidden sm:block"><ChipStatus status={p.status} /></div>
         <div className="hidden sm:block"><BarraProgresso resumo={resumo} cor={p.cor} /></div>
         <ChevronRight size={14} className="text-zinc-600" />
@@ -73,7 +76,10 @@ export default function PortfoliosView({ tasks, onAbrirProjeto, podeEditar }: {
                   <span className="w-3 h-3 rounded shrink-0" style={{ backgroundColor: pf.cor }} />
                   <div className="min-w-0">
                     <h2 className="text-sm font-semibold text-zinc-100 truncate">{pf.nome}</h2>
-                    {pf.descricao && <p className="text-[11px] text-zinc-500 truncate">{pf.descricao}</p>}
+                    <p className="text-[11px] text-zinc-500 truncate">
+                      {pf.dataEntrega ? `Finalização: ${formatarData(pf.dataEntrega)}` : 'Sem data de finalização'}
+                      {pf.descricao && ` · ${pf.descricao}`}
+                    </p>
                   </div>
                 </div>
                 <div className="flex items-center gap-3 shrink-0">
@@ -121,6 +127,7 @@ export default function PortfoliosView({ tasks, onAbrirProjeto, podeEditar }: {
       {editando && (
         <PortfolioModal
           portfolio={editando === 'novo' ? null : editando}
+          tarefas={tasks}
           onClose={() => setEditando(null)}
           onSalvo={() => { setEditando(null); recarregar(); }}
         />
@@ -129,6 +136,7 @@ export default function PortfoliosView({ tasks, onAbrirProjeto, podeEditar }: {
         <ProjetoModal
           portfolios={portfolios}
           portfolioInicial={novoProjetoEm}
+          tarefas={tasks}
           onClose={() => setNovoProjetoEm(null)}
           onSalvo={() => { setNovoProjetoEm(null); recarregar(); }}
         />

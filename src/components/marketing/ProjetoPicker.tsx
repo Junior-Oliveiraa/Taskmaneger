@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import { FolderOpen } from 'lucide-react';
-import { useMarketingProjetos } from '../../lib/marketingProjetos';
+import { useMarketingProjetos, limiteDoProjeto, formatarData } from '../../lib/marketingProjetos';
 
 /** Campo "Projeto" da tarefa: em qual projeto de Marketing ela está. */
-export default function ProjetoPicker({ taskId, disabled }: { taskId: string; disabled?: boolean }) {
-  const { projetos, projetoDaTarefa, vincularTarefa } = useMarketingProjetos();
+export default function ProjetoPicker({ taskId, dueDate, disabled }: { taskId: string; dueDate?: string; disabled?: boolean }) {
+  const { projetos, portfolios, projetoDaTarefa, vincularTarefa } = useMarketingProjetos();
   const [aberto, setAberto] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const atual = projetos.find(p => p.id === projetoDaTarefa[taskId]);
@@ -12,6 +12,12 @@ export default function ProjetoPicker({ taskId, disabled }: { taskId: string; di
   const escolher = async (id: string | null) => {
     setAberto(false);
     setErro(null);
+    // O prazo da tarefa precisa caber na entrega do projeto escolhido.
+    const limite = id ? limiteDoProjeto(projetos.find(p => p.id === id), portfolios) : null;
+    if (limite && dueDate && dueDate.slice(0, 10) > limite) {
+      setErro(`O prazo da tarefa passa da entrega deste projeto (${formatarData(limite)}). Ajuste o prazo antes.`);
+      return;
+    }
     try { await vincularTarefa(taskId, id); }
     catch (e: any) { setErro(e.message); }
   };

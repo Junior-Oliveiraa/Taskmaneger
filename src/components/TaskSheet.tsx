@@ -67,6 +67,7 @@ import { uploadToStorage, UPLOAD_LIMITS, sanitizeFileName } from '../lib/storage
 import { useSyncManager } from '../lib/SyncManager';
 import { logTaskFieldHistory } from '../lib/api';
 import ProjetoPicker from './marketing/ProjetoPicker';
+import { useMarketingProjetos, formatarData } from '../lib/marketingProjetos';
 
 type EditorPresence = { name: string; avatarUrl?: string; color: string };
 
@@ -703,6 +704,16 @@ export default function TaskSheet({
   const [isChatOpen, setIsChatOpen] = useState(true);
   const [descColumns, setDescColumns] = useState(1);
   const [deadlineRequestDraft, setDeadlineRequestDraft] = useState<{ date: string | undefined; reason: string } | null>(null);
+  // Hierarquia de datas: prazo da tarefa ≤ entrega do projeto (ou do portfólio).
+  const { limiteDaTarefa } = useMarketingProjetos();
+  const limitePrazo = task?.id ? limiteDaTarefa(task.id) : null;
+  const [erroPrazo, setErroPrazo] = useState<string | null>(null);
+  useEffect(() => { setErroPrazo(null); }, [task?.id]);
+  const prazoForaDoLimite = (d?: string | null) => {
+    if (!d || !limitePrazo || d.slice(0, 10) <= limitePrazo.data) return false;
+    setErroPrazo(`O prazo não pode passar da entrega do projeto "${limitePrazo.projeto}" (${formatarData(limitePrazo.data)}).`);
+    return true;
+  };
 
   const plainDesc = (descriptionRef.current || '').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, '').trim();
   const missingTitle = !(titleRef.current && titleRef.current.trim());
@@ -1065,6 +1076,8 @@ export default function TaskSheet({
 
   const handleDeadlinePicked = (newDate: string | undefined) => {
     if (!task || effectiveLock) return;
+    setErroPrazo(null);
+    if (prazoForaDoLimite(newDate)) return;
     // Aprovação só faz sentido quando existe um prazo para ser alterado. Na primeira
     // definição (tarefa ainda sem prazo) qualquer um grava direto.
     const isFirstDeadline = !task.dueDate;
@@ -1114,6 +1127,7 @@ export default function TaskSheet({
   const approveDeadlineChange = () => {
     if (!task || !currentUser || !pendingDeadlineChange) return;
     const p = pendingDeadlineChange;
+    if (prazoForaDoLimite(p.requestedDueDate)) return;
     let newStatus = status;
     if (status === 'no_forecast' && p.requestedDueDate) newStatus = 'todo';
     else if (status === 'todo' && !p.requestedDueDate) newStatus = 'no_forecast';
@@ -1695,7 +1709,7 @@ export default function TaskSheet({
                 )}
               </div>
 
-              {task?.id && <ProjetoPicker taskId={task.id} disabled={!!effectiveLock} />}
+              {task?.id && <ProjetoPicker taskId={task.id} dueDate={dueDate} disabled={!!effectiveLock} />}
 
               <div id="section-deadline"className="flex flex-col gap-1.5 min-w-[120px]">
                 <span className="text-zinc-500 font-medium font-sans flex items-center gap-1.5"><CalendarIcon size={13} className="opacity-60" /> Prazo</span>
@@ -1703,7 +1717,12 @@ export default function TaskSheet({
                   value={dueDate}
                   disabled={!!effectiveLock || !!pendingDeadlineChange}
                   onChange={handleDeadlinePicked}
+                  maxDate={limitePrazo?.data}
                 />
+                {limitePrazo && !erroPrazo && (
+                  <span className="text-[10px] text-zinc-500">Até {formatarData(limitePrazo.data)} (projeto)</span>
+                )}
+                {erroPrazo && <span className="text-[10px] text-red-400 max-w-[220px]">{erroPrazo}</span>}
                 {pendingDeadlineChange && (
                   <div className="mt-1.5 flex flex-col gap-1.5 p-2 rounded-md border border-amber-500/30 bg-amber-500/5 max-w-[260px]">
                     <span className="text-[10px] font-semibold text-amber-400 uppercase tracking-wide">

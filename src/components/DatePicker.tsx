@@ -14,12 +14,14 @@ interface DatePickerProps {
   forceOpen?: number; // increment to programmatically open picker
   disabled?: boolean;
   disablePast?: boolean;
+  /** Último dia selecionável (YYYY-MM-DD); dias depois ficam desabilitados. */
+  maxDate?: string | null;
 }
 
 const MONTHS = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
 const WEEKDAYS = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'];
 
-export default function DatePicker({ value, onChange, trigger, enableTime, onQuickAdd, fullWidth, suggestedDate, align = 'left', disableAutoScroll, forceOpen, disabled, disablePast }: DatePickerProps) {
+export default function DatePicker({ value, onChange, trigger, enableTime, onQuickAdd, fullWidth, suggestedDate, align = 'left', disableAutoScroll, forceOpen, disabled, disablePast, maxDate }: DatePickerProps) {
   const [isOpen, setIsOpen] = useState(false);
   const prevForceOpen = useRef(0);
   useEffect(() => {
@@ -228,7 +230,8 @@ export default function DatePicker({ value, onChange, trigger, enableTime, onQui
                 const isToday = new Date().toDateString() === targetDate.toDateString();
                 const isSuggested = suggestedDate && formattedDate === suggestedDate.split('T')[0] && !isSelected;
 
-                const isPast = disablePast && targetDate.getTime() < new Date(new Date().setHours(0,0,0,0)).getTime();
+                const isPast = (disablePast && targetDate.getTime() < new Date(new Date().setHours(0,0,0,0)).getTime())
+                  || (!!maxDate && formattedDate > maxDate.slice(0, 10));
 
                 return (
                   <button
@@ -263,6 +266,7 @@ export default function DatePicker({ value, onChange, trigger, enableTime, onQui
                 <input
                   type="date"
                   value={currentDatePart}
+                  max={maxDate ? maxDate.slice(0, 10) : undefined}
                   onChange={(e) => {
                     e.stopPropagation();
                     const newDate = e.target.value;

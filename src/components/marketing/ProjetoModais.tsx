@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import { X, Loader2, Trash2 } from 'lucide-react';
+import { Task } from '../../types';
 import {
   MarketingProjeto, MarketingPortfolio, ProjetoStatus, STATUS_PROJETO, CORES_PROJETO,
   salvarProjeto, excluirProjeto, salvarPortfolio, excluirPortfolio,
+  useMarketingProjetos, maiorPrazo, formatarData,
 } from '../../lib/marketingProjetos';
 
 function Moldura({ titulo, onClose, children }: { titulo: string; onClose: () => void; children: React.ReactNode }) {
@@ -65,27 +67,44 @@ function Rodape({ salvando, erro, podeExcluir, onExcluir, onCancelar, rotuloSalv
   );
 }
 
-export function ProjetoModal({ projeto, portfolios, portfolioInicial, onClose, onSalvo }: {
+export function ProjetoModal({ projeto, portfolios, portfolioInicial, tarefas, onClose, onSalvo }: {
   projeto?: MarketingProjeto | null;
   portfolios: MarketingPortfolio[];
   portfolioInicial?: string | null;
+  /** Todas as tarefas: o modal pega as do projeto para checar os prazos. */
+  tarefas: Task[];
   onClose: () => void;
   onSalvo: (id: string | null) => void;
 }) {
+  const { projetoDaTarefa } = useMarketingProjetos();
   const [nome, setNome] = useState(projeto?.nome ?? '');
   const [descricao, setDescricao] = useState(projeto?.descricao ?? '');
   const [cor, setCor] = useState(projeto?.cor ?? CORES_PROJETO[0]);
   const [status, setStatus] = useState<ProjetoStatus>(projeto?.status ?? 'ativo');
   const [portfolioId, setPortfolioId] = useState<string | null>(projeto?.portfolioId ?? portfolioInicial ?? null);
+  const [dataEntrega, setDataEntrega] = useState(projeto?.dataEntrega ?? '');
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+
+  const portfolio = portfolios.find(p => p.id === portfolioId);
+  const limitePortfolio = portfolio?.dataEntrega ?? null;
+  const maiorTarefa = projeto ? maiorPrazo(tarefas.filter(t => projetoDaTarefa[t.id] === projeto.id)) : null;
 
   const salvar = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!nome.trim()) { setErro('Dê um nome ao projeto.'); return; }
+    if (dataEntrega && limitePortfolio && dataEntrega > limitePortfolio) {
+      setErro(`A entrega do projeto não pode passar da entrega do portfólio "${portfolio!.nome}" (${formatarData(limitePortfolio)}).`);
+      return;
+    }
+    const limiteEfetivo = dataEntrega || limitePortfolio;
+    if (limiteEfetivo && maiorTarefa && maiorTarefa > limiteEfetivo) {
+      setErro(`Há tarefas deste projeto com prazo em ${formatarData(maiorTarefa)}, depois da entrega (${formatarData(limiteEfetivo)}). Ajuste os prazos antes.`);
+      return;
+    }
     setSalvando(true); setErro(null);
     try {
-      const id = await salvarProjeto({ id: projeto?.id, nome, descricao, cor, status, portfolioId });
+      const id = await salvarProjeto({ id: projeto?.id, nome, descricao, cor, status, portfolioId, dataEntrega: dataEntrega || null });
       onSalvo(id);
     } catch (err: any) {
       setErro(err.message); setSalvando(false);
@@ -126,6 +145,23 @@ export function ProjetoModal({ projeto, portfolios, portfolioInicial, onClose, o
           </div>
         </div>
         <div>
+          <label className={rotulo}>Data de entrega</label>
+          <input
+            type="date"
+            value={dataEntrega}
+            max={limitePortfolio ?? undefined}
+            min={maiorTarefa ?? undefined}
+            onChange={e => setDataEntrega(e.target.value)}
+            className={`${campo} [color-scheme:dark]`}
+          />
+          <p className="text-[11px] text-zinc-500 mt-1.5">
+            {limitePortfolio
+              ? <>Até {formatarData(limitePortfolio)} (entrega do portfólio).</>
+              : 'Sem limite: o projeto não está num portfólio com data.'}
+            {maiorTarefa && <> Tarefa mais tardia: {formatarData(maiorTarefa)}.</>}
+          </p>
+        </div>
+        <div>
           <label className={rotulo}>Cor</label>
           <SeletorCor cor={cor} onChange={setCor} />
         </div>
@@ -135,22 +171,41 @@ export function ProjetoModal({ projeto, portfolios, portfolioInicial, onClose, o
   );
 }
 
-export function PortfolioModal({ portfolio, onClose, onSalvo }: {
+export function PortfolioModal({ portfolio, tarefas, onClose, onSalvo }: {
   portfolio?: MarketingPortfolio | null;
+  tarefas: Task[];
   onClose: () => void;
   onSalvo: () => void;
 }) {
+  const { projetos, projetoDaTarefa } = useMarketingProjetos();
   const [nome, setNome] = useState(portfolio?.nome ?? '');
   const [descricao, setDescricao] = useState(portfolio?.descricao ?? '');
   const [cor, setCor] = useState(portfolio?.cor ?? CORES_PROJETO[1]);
+  const [dataEntrega, setDataEntrega] = useState(portfolio?.dataEntrega ?? '');
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+
+  // O que está abaixo do portfólio: data dos projetos e, nos projetos sem
+  // data, o prazo das tarefas (que ficam limitadas direto pelo portfólio).
+  const doPortfolio = portfolio ? projetos.filter(p => p.portfolioId === portfolio.id) : [];
+  const maiorProjeto = maiorPrazo(doPortfolio.map(p => ({ dueDate: p.dataEntrega ?? undefined })));
+  const semData = new Set(doPortfolio.filter(p => !p.dataEntrega).map(p => p.id));
+  const maiorTarefaSemData = maiorPrazo(tarefas.filter(t => semData.has(projetoDaTarefa[t.id])));
+  const minimo = [maiorProjeto, maiorTarefaSemData].filter(Boolean).sort().pop() ?? null;
 
   const salvar = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!nome.trim()) { setErro('Dê um nome ao portfólio.'); return; }
+    if (dataEntrega && maiorProjeto && maiorProjeto > dataEntrega) {
+      setErro(`Há projetos deste portfólio com entrega em ${formatarData(maiorProjeto)}, depois desta data. Ajuste os projetos antes.`);
+      return;
+    }
+    if (dataEntrega && maiorTarefaSemData && maiorTarefaSemData > dataEntrega) {
+      setErro(`Há tarefas de projetos sem data neste portfólio com prazo em ${formatarData(maiorTarefaSemData)}, depois desta data.`);
+      return;
+    }
     setSalvando(true); setErro(null);
-    try { await salvarPortfolio({ id: portfolio?.id, nome, descricao, cor }); onSalvo(); }
+    try { await salvarPortfolio({ id: portfolio?.id, nome, descricao, cor, dataEntrega: dataEntrega || null }); onSalvo(); }
     catch (err: any) { setErro(err.message); setSalvando(false); }
   };
 
@@ -171,6 +226,20 @@ export function PortfolioModal({ portfolio, onClose, onSalvo }: {
         <div>
           <label className={rotulo}>Descrição</label>
           <textarea value={descricao} onChange={e => setDescricao(e.target.value)} rows={3} className={`${campo} resize-none`} />
+        </div>
+        <div>
+          <label className={rotulo}>Data de finalização</label>
+          <input
+            type="date"
+            value={dataEntrega}
+            min={minimo ?? undefined}
+            onChange={e => setDataEntrega(e.target.value)}
+            className={`${campo} [color-scheme:dark]`}
+          />
+          <p className="text-[11px] text-zinc-500 mt-1.5">
+            Os projetos do portfólio terão de entregar até esta data.
+            {minimo && <> Não pode ser antes de {formatarData(minimo)} (entrega mais tardia hoje).</>}
+          </p>
         </div>
         <div>
           <label className={rotulo}>Cor</label>

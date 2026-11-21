@@ -43,8 +43,9 @@ import ConfirmModal from './components/ConfirmModal';
 import { ComercialTabBar, ComercialTab, ComercialDashboardTab, ABAS_COMERCIAL, ABAS_DASHBOARD, ABAS_GRUPO_DASHBOARD } from './components/comercial/ComercialTabs';
 import HomeView from './components/HomeView';
 import TarefasAbas from './components/marketing/TarefasAbas';
+import MembrosProjeto from './components/marketing/MembrosProjeto';
 import { ProjetoModal } from './components/marketing/ProjetoModais';
-import { useMarketingProjetos } from './lib/marketingProjetos';
+import { useMarketingProjetos, limiteDoProjeto, formatarData } from './lib/marketingProjetos';
 import type { NavItemId, FinanceiroSecao, ModoTarefas } from './lib/navegacao';
 
 // Módulos carregados sob demanda: o código de cada área só é baixado quando
@@ -1155,6 +1156,16 @@ export default function App() {
       if (!hasOtherChanges) return;
     }
 
+    // Hierarquia de datas: o prazo não passa da entrega do projeto (ou do
+    // portfólio, se o projeto não tiver data). O banco também recusa.
+    if ('dueDate' in updates && updates.dueDate) {
+      const limite = marketing.limiteDaTarefa(updates.id);
+      if (limite && updates.dueDate.slice(0, 10) > limite.data) {
+        showToast(`O prazo não pode passar da entrega do projeto "${limite.projeto}" (${formatarData(limite.data)}).`);
+        return;
+      }
+    }
+
     // Automação: prazo removido de task ativa → volta silenciosamente para 'Sem Previsão'
     const dueDateBeingCleared = 'dueDate' in updates && !updates.dueDate && Boolean(targetTask.dueDate);
     if (dueDateBeingCleared && targetTask.status !== 'done') {
@@ -1248,6 +1259,12 @@ export default function App() {
     // dentro de Em Progresso/Refação) nunca passa pela transição de status que
     // liga o cronômetro em handleUpdateTask — sem isto, ela ficava com
     // timeTracking vazio para sempre e o card não mostrava o tempo trabalhado.
+    // Criada dentro de um projeto com prazo além da entrega: fica sem prazo.
+    const limiteNovo = projetoAberto ? limiteDoProjeto(projetoAberto, marketing.portfolios) : null;
+    if (limiteNovo && newTask.dueDate && newTask.dueDate.slice(0, 10) > limiteNovo) {
+      showToast(`O prazo não pode passar da entrega do projeto (${formatarData(limiteNovo)}). A tarefa foi criada sem prazo.`);
+      newTask = { ...newTask, dueDate: undefined, status: newTask.status === 'done' ? 'done' : 'no_forecast' };
+    }
     const runStates: TaskStatus[] = ['in_progress', 'rework'];
     if (runStates.includes(newTask.status) && !newTask.timeTracking) {
       const nowISO = new Date().toISOString();
@@ -1516,6 +1533,10 @@ export default function App() {
       setModoTarefas(m);
     }
   };
+  // Sem o filtro de empreendimento: membros contam todas as tarefas do projeto.
+  const tarefasDoProjetoAberto = projetoAberto
+    ? tasks.filter(t => marketing.projetoDaTarefa[t.id] === projetoAberto.id)
+    : [];
   const tarefasDaTela = activeView === 'my_tasks'
     ? visibleTasks.filter(t => t.assigneeId === currentUser?.id)
     : projetoAberto
@@ -1733,7 +1754,21 @@ export default function App() {
             <TarefasAbas
               titulo={activeView === 'my_tasks' ? 'Minhas tarefas' : projetoAberto ? projetoAberto.nome : 'Todas as tarefas'}
               cor={projetoAberto?.cor}
-              subtitulo={projetoAberto?.descricao || undefined}
+              subtitulo={projetoAberto ? (() => {
+                const limite = limiteDoProjeto(projetoAberto, marketing.portfolios);
+                const entrega = limite
+                  ? `Entrega: ${formatarData(limite)}${projetoAberto.dataEntrega ? '' : ' (do portfólio)'}`
+                  : 'Sem data de entrega';
+                return projetoAberto.descricao ? `${entrega} · ${projetoAberto.descricao}` : entrega;
+              })() : undefined}
+              portfolio={projetoAberto ? marketing.portfolios.find(p => p.id === projetoAberto.portfolioId) ?? null : null}
+              direita={projetoAberto ? (
+                <MembrosProjeto
+                  projetoId={projetoAberto.id}
+                  tarefasDoProjeto={tarefasDoProjetoAberto}
+                  podeEditar={permissoes.nivel('tarefas') === 'editar'}
+                />
+              ) : undefined}
               modo={modoAtual}
               onModo={trocarModo}
               onVoltar={activeView === 'my_tasks' ? undefined : () => { setProjetoAbertoId(null); setCurrentProjectFilter(null); setActiveView('marketing_projetos'); }}
@@ -2166,6 +2201,7 @@ export default function App() {
         <ProjetoModal
           projeto={projetoAberto}
           portfolios={marketing.portfolios}
+          tarefas={tasks}
           onClose={() => setEditandoProjetoAberto(false)}
           onSalvo={(id) => {
             setEditandoProjetoAberto(false);
