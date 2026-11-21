@@ -10,6 +10,9 @@ export type ComercialTab = 'vendas_dashboard' | 'vendas_estoque' | 'vendas_metas
 export type ComercialDashboardTab = 'vendas_dashboard' | 'vendas_estoque' | 'vendas_metas';
 export const ABAS_DASHBOARD: ComercialTab[] = ['vendas_dashboard', 'vendas_estoque', 'vendas_metas'];
 
+/** Abas reunidas no item "Dashboard Comercial" do menu (com barra de abas). */
+export const ABAS_GRUPO_DASHBOARD: ComercialTab[] = ['vendas_dashboard', 'vendas_estoque', 'vendas_metas', 'historico'];
+
 /** apenasMaster: além do módulo, exige perfil master (ou administrador). */
 export const ABAS_COMERCIAL: { id: ComercialTab; label: string; modulo: Modulo; apenasMaster?: boolean }[] = [
   { id: 'vendas_dashboard', label: 'Dashboard',        modulo: 'comercial_dashboard' },

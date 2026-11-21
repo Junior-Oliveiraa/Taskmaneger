@@ -40,8 +40,12 @@ import ListView from './components/ListView';
 import CalendarView from './components/CalendarView';
 import InboxView from './components/InboxView';
 import ConfirmModal from './components/ConfirmModal';
-import { ComercialTabBar, ComercialTab, ComercialDashboardTab, ABAS_COMERCIAL, ABAS_DASHBOARD } from './components/comercial/ComercialTabs';
+import { ComercialTabBar, ComercialTab, ComercialDashboardTab, ABAS_COMERCIAL, ABAS_DASHBOARD, ABAS_GRUPO_DASHBOARD } from './components/comercial/ComercialTabs';
 import HomeView from './components/HomeView';
+import TarefasAbas from './components/marketing/TarefasAbas';
+import { ProjetoModal } from './components/marketing/ProjetoModais';
+import { useMarketingProjetos } from './lib/marketingProjetos';
+import type { NavItemId, FinanceiroSecao, ModoTarefas } from './lib/navegacao';
 
 // Módulos carregados sob demanda: o código de cada área só é baixado quando
 // alguém com acesso a abre. A proteção real é o RLS no banco; isto apenas
@@ -54,6 +58,8 @@ const ComercialHistorico = lazy(() => import('./components/comercial/ComercialHi
 const PropostasKanban = lazy(() => import('./components/comercial/PropostasKanban'));
 const DashboardView = lazy(() => import('./components/DashboardView'));
 const RedeSocialView = lazy(() => import('./components/redeSocial/RedeSocialView'));
+const ProjetosView = lazy(() => import('./components/marketing/ProjetosView'));
+const PortfoliosView = lazy(() => import('./components/marketing/PortfoliosView'));
 
 /** Módulo(s) que liberam cada tela. Telas fora do mapa são de todos. */
 const MODULOS_DA_TELA: Partial<Record<ViewType, Modulo[]>> = {
@@ -61,6 +67,9 @@ const MODULOS_DA_TELA: Partial<Record<ViewType, Modulo[]>> = {
   tasks_list: ['tarefas'],
   calendar: ['tarefas'],
   rede_social: ['tarefas'],
+  my_tasks: ['tarefas'],
+  marketing_projetos: ['tarefas'],
+  portfolios: ['tarefas'],
   crm: ['crm'],
   projects: ['empreendimentos'],
   sienge: ['financas', 'financas_orcamento'],
@@ -126,6 +135,18 @@ export default function App() {
   const [activeView, setActiveView] = useState<ViewType>('home');
   const [activeTaskViewType, setActiveTaskViewType] = useState<'board' | 'list'>('board');
   const [comercialTab, setComercialTab] = useState<ComercialTab>('vendas_dashboard');
+  // Menu Marketing: vista das telas de tarefas (Minhas tarefas / projeto aberto)
+  // e o projeto aberto dentro de Projetos (null = lista de projetos).
+  const [modoTarefas, setModoTarefas] = useState<ModoTarefas>('board');
+  const [projetoAbertoId, setProjetoAbertoId] = useState<string | null>(null);
+  const [editandoProjetoAberto, setEditandoProjetoAberto] = useState(false);
+  // Menu Financeiro: qual seção a tela de Finanças mostra.
+  const [financeiroSecao, setFinanceiroSecao] = useState<FinanceiroSecao>('titulos');
+  const marketing = useMarketingProjetos();
+  // Projeto aberto (só vale dentro da tela Projetos).
+  const projetoAberto = activeView === 'marketing_projetos'
+    ? marketing.projetos.find(p => p.id === projetoAbertoId) ?? null
+    : null;
   // A sidebar expandida come 280px — 20% de um notebook de 1366px, e é o que
   // sobra de largura para o kanban. Abaixo de 1280px ela nasce recolhida e volta
   // sozinha quando a janela cresce. O listener reage só à TRANSIÇÃO do limiar
@@ -256,11 +277,12 @@ export default function App() {
     if (permissoes.carregando) return;
     if (!podeVerTela(activeView)) setActiveView('home');
     if (abasComercial.length > 0 && !abasComercial.includes(comercialTab)) setComercialTab(abasComercial[0]);
+    if (financeiroSecao !== 'dashboard' && !permissoes.pode('financas') && permissoes.pode('financas_orcamento')) setFinanceiroSecao('dashboard');
   });
   // Módulo da tela aberta, para o aviso de somente leitura.
   const moduloAtual: Modulo | null =
     activeView === 'comercial' ? (ABAS_COMERCIAL.find(a => a.id === comercialTab)?.modulo ?? null)
-    : activeView === 'sienge' ? (permissoes.pode('financas') ? 'financas' : 'financas_orcamento')
+    : activeView === 'sienge' ? (financeiroSecao === 'dashboard' || !permissoes.pode('financas') ? 'financas_orcamento' : 'financas')
     : MODULOS_DA_TELA[activeView]?.[0] ?? null;
   const somenteLeitura = !!moduloAtual && permissoes.nivel(moduloAtual) === 'ver';
   
@@ -1237,7 +1259,13 @@ export default function App() {
     }
     markRecentlySaved(newTask.id);
     queryClient.setQueryData<Task[]>(['tasks'], prev => [newTask, ...(prev || [])]);
-    saveTask(newTask).catch(console.error);
+    const salvo = saveTask(newTask);
+    salvo.catch(console.error);
+    // Criada dentro de um projeto aberto: já nasce nele. O vínculo espera a
+    // tarefa existir no banco (chave estrangeira).
+    if (projetoAberto) {
+      marketing.vincularTarefa(newTask.id, projetoAberto.id, salvo).catch(console.error);
+    }
   };
 
   const handleDeleteTask = (taskId: string) => {
@@ -1419,22 +1447,111 @@ export default function App() {
     return matches;
   });
 
+  // --- Menu lateral: item ↔ tela -------------------------------------------
+  const navegar = (item: NavItemId) => {
+    setCurrentProjectFilter(null);
+    switch (item) {
+      case 'home': setActiveView('home'); break;
+      case 'inbox': setActiveView('inbox'); break;
+      case 'my_tasks': setActiveView('my_tasks'); break;
+      case 'projetos': setProjetoAbertoId(null); setActiveView('marketing_projetos'); break;
+      case 'portfolios': setActiveView('portfolios'); break;
+      case 'rede_social': setActiveView('rede_social'); break;
+      case 'empreendimentos': setActiveView('projects'); break;
+      case 'analytics': setActiveView('dashboard'); break;
+      case 'leads': setActiveView('crm'); break;
+      case 'propostas': setComercialTab('propostas'); setActiveView('comercial'); break;
+      case 'tabelas_vendas': setComercialTab('vendas'); setActiveView('comercial'); break;
+      case 'dashboard_comercial': {
+        if (!ABAS_GRUPO_DASHBOARD.includes(comercialTab)) {
+          const primeira = ABAS_GRUPO_DASHBOARD.find(a => abasComercial.includes(a));
+          if (primeira) setComercialTab(primeira);
+        }
+        setActiveView('comercial');
+        break;
+      }
+      case 'titulos': setFinanceiroSecao('titulos'); setActiveView('sienge'); break;
+      case 'cartao': setFinanceiroSecao('cartao'); setActiveView('sienge'); break;
+      case 'dashboard_financeiro': setFinanceiroSecao('dashboard'); setActiveView('sienge'); break;
+    }
+  };
+
+  const itemAtivo: NavItemId | null = (() => {
+    switch (activeView) {
+      case 'home': return 'home';
+      case 'inbox': return 'inbox';
+      case 'my_tasks': return 'my_tasks';
+      case 'marketing_projetos':
+      case 'tasks_board':
+      case 'tasks_list':
+      case 'calendar': return 'projetos';
+      case 'portfolios': return 'portfolios';
+      case 'rede_social': return 'rede_social';
+      case 'projects': return 'empreendimentos';
+      case 'dashboard': return 'analytics';
+      case 'crm': return 'leads';
+      case 'comercial':
+        return comercialTab === 'propostas' ? 'propostas'
+          : comercialTab === 'vendas' ? 'tabelas_vendas'
+          : 'dashboard_comercial';
+      case 'sienge':
+        return financeiroSecao === 'cartao' ? 'cartao' : financeiroSecao === 'dashboard' ? 'dashboard_financeiro' : 'titulos';
+      default: return null;
+    }
+  })();
+
+  // --- Telas de tarefas (Minhas tarefas, projeto aberto, todas as tarefas) ---
+  // "Todas as tarefas" reaproveita as telas antigas (tasks_board / calendar),
+  // que também atendem a busca (Ctrl+K) e o clique num empreendimento.
+  const telaTodasTarefas = activeView === 'tasks_board' || activeView === 'tasks_list' || activeView === 'calendar';
+  const telaDeTarefas = activeView === 'my_tasks' || !!projetoAberto || telaTodasTarefas;
+  const modoAtual: ModoTarefas = telaTodasTarefas
+    ? (activeView === 'calendar' ? 'calendar' : activeView === 'tasks_list' ? 'list' : activeTaskViewType)
+    : modoTarefas;
+  const trocarModo = (m: ModoTarefas) => {
+    if (telaTodasTarefas) {
+      if (m === 'calendar') setActiveView('calendar');
+      else { setActiveTaskViewType(m); setActiveView('tasks_board'); }
+    } else {
+      setModoTarefas(m);
+    }
+  };
+  const tarefasDaTela = activeView === 'my_tasks'
+    ? visibleTasks.filter(t => t.assigneeId === currentUser?.id)
+    : projetoAberto
+      ? visibleTasks.filter(t => marketing.projetoDaTarefa[t.id] === projetoAberto.id)
+      : visibleTasks;
+
   const getBreadcrumbLabel = () => {
     switch (activeView) {
       case 'tasks_board':
-        return activeTaskViewType === 'board' ? 'Quadro Kanban' : 'Lista Compacta';
+      case 'tasks_list':
+      case 'calendar':
+        return 'Todas as tarefas';
+      case 'my_tasks':
+        return 'Minhas tarefas';
+      case 'marketing_projetos':
+        return projetoAberto ? `Projetos / ${projetoAberto.nome}` : 'Projetos';
+      case 'portfolios':
+        return 'Portfólios';
+      case 'inbox':
+        return 'Caixa de entrada';
+      case 'dashboard':
+        return 'Analytics';
+      case 'sienge':
+        return financeiroSecao === 'cartao' ? 'Cartão de crédito' : financeiroSecao === 'dashboard' ? 'Dashboard Financeiro' : 'Títulos';
       case 'projects':
-        return 'Empreendimentos Globais';
+        return 'Empreendimentos';
       case 'calendar':
         return 'Calendário';
       case 'rede_social':
         return 'Rede Social';
       case 'crm':
-        return 'CRM';
+        return 'Leads';
       case 'settings':
         return 'Ajustes';
       case 'comercial':
-        return 'Comercial';
+        return comercialTab === 'propostas' ? 'Propostas' : comercialTab === 'vendas' ? 'Tabelas de Vendas' : 'Dashboard Comercial';
       default:
         return 'Workspace';
     }
@@ -1498,17 +1615,14 @@ export default function App() {
       <Sidebar
         collapsed={collapsed}
         setCollapsed={setCollapsed}
-        activeView={activeView}
-        setActiveView={setActiveView}
-        activeTaskViewType={activeTaskViewType}
-        setActiveTaskViewType={setActiveTaskViewType}
+        activeItem={itemAtivo}
+        onNavigate={navegar}
+        settingsActive={activeView === 'settings'}
+        onOpenSettings={() => setActiveView('settings')}
         projects={projects}
         tasks={tasks}
+        projetosCount={marketing.projetos.filter(p => p.status !== 'concluido').length}
         onOpenCommandBar={() => setIsCommandBarOpen(true)}
-        onNewTask={handleAddNewTaskPrompt}
-        currentProjectFilter={currentProjectFilter}
-        setCurrentProjectFilter={setCurrentProjectFilter}
-        onSelectTask={handleSelectTask}
       />
 
       {/* Main Container Viewport */}
@@ -1598,9 +1712,38 @@ export default function App() {
             />
           )}
 
-          {activeView === 'tasks_board' && activeTaskViewType === 'board' && (
+          {activeView === 'marketing_projetos' && !projetoAberto && (
+            <ProjetosView
+              tasks={tasks}
+              podeEditar={permissoes.nivel('tarefas') === 'editar'}
+              onAbrirProjeto={(id) => { setProjetoAbertoId(id); }}
+              onAbrirTodas={() => { setActiveTaskViewType('board'); setActiveView('tasks_board'); }}
+            />
+          )}
+
+          {activeView === 'portfolios' && (
+            <PortfoliosView
+              tasks={tasks}
+              podeEditar={permissoes.nivel('tarefas') === 'editar'}
+              onAbrirProjeto={(id) => { setProjetoAbertoId(id); setActiveView('marketing_projetos'); }}
+            />
+          )}
+
+          {telaDeTarefas && (
+            <TarefasAbas
+              titulo={activeView === 'my_tasks' ? 'Minhas tarefas' : projetoAberto ? projetoAberto.nome : 'Todas as tarefas'}
+              cor={projetoAberto?.cor}
+              subtitulo={projetoAberto?.descricao || undefined}
+              modo={modoAtual}
+              onModo={trocarModo}
+              onVoltar={activeView === 'my_tasks' ? undefined : () => { setProjetoAbertoId(null); setCurrentProjectFilter(null); setActiveView('marketing_projetos'); }}
+              onEditar={projetoAberto && permissoes.nivel('tarefas') === 'editar' ? () => setEditandoProjetoAberto(true) : undefined}
+            />
+          )}
+
+          {telaDeTarefas && modoAtual === 'board' && (
             <KanbanView
-              tasks={visibleTasks}
+              tasks={tarefasDaTela}
               projects={projects}
               labels={labels}
               onSelectTask={handleSelectTask}
@@ -1613,9 +1756,9 @@ export default function App() {
             />
           )}
 
-          {activeView === 'tasks_board' && activeTaskViewType === 'list' && (
+          {telaDeTarefas && modoAtual === 'list' && (
             <ListView
-              tasks={visibleTasks}
+              tasks={tarefasDaTela}
               projects={projects}
               labels={labels}
               onSelectTask={handleSelectTask}
@@ -1626,9 +1769,9 @@ export default function App() {
             />
           )}
 
-          {activeView === 'calendar' && (
+          {telaDeTarefas && modoAtual === 'calendar' && (
             <CalendarView
-              tasks={visibleTasks}
+              tasks={tarefasDaTela}
               projects={projects}
               labels={labels}
               onSelectTask={handleSelectTask}
@@ -1672,8 +1815,14 @@ export default function App() {
             />
           )}
 
-          {activeView === 'comercial' && (
-            <ComercialTabBar tab={comercialTab} onChange={setComercialTab} permitidas={abasComercial} />
+          {/* Só o Dashboard Comercial tem abas (Dashboard, Estoque e VGV, Metas,
+              Histórico); Propostas e Tabelas de Vendas são itens do menu. */}
+          {activeView === 'comercial' && ABAS_GRUPO_DASHBOARD.includes(comercialTab) && (
+            <ComercialTabBar
+              tab={comercialTab}
+              onChange={setComercialTab}
+              permitidas={abasComercial.filter(a => ABAS_GRUPO_DASHBOARD.includes(a))}
+            />
           )}
 
           {activeView === 'comercial' && comercialTab === 'propostas' && (
@@ -1702,6 +1851,7 @@ export default function App() {
             <div className="flex-1 min-h-0">
             <SiengeView
               forcedTab={activeView === 'comercial' && (comercialTab === 'vendas' || ABAS_DASHBOARD.includes(comercialTab)) ? comercialTab as 'vendas' | ComercialDashboardTab : undefined}
+              secao={activeView === 'sienge' ? financeiroSecao : undefined}
               titles={siengeTitles}
               statusHistory={siengeTitleStatusHistory}
               lotes={siengeLotes}
@@ -2010,6 +2160,19 @@ export default function App() {
           <span className="text-red-500 text-base leading-none">⚠</span>
           {toast.message}
         </div>
+      )}
+
+      {editandoProjetoAberto && projetoAberto && (
+        <ProjetoModal
+          projeto={projetoAberto}
+          portfolios={marketing.portfolios}
+          onClose={() => setEditandoProjetoAberto(false)}
+          onSalvo={(id) => {
+            setEditandoProjetoAberto(false);
+            marketing.recarregar();
+            if (!id) setProjetoAbertoId(null); // excluído: volta à lista
+          }}
+        />
       )}
 
       <ConfirmModal

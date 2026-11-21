@@ -66,6 +66,7 @@ import { useAuth } from '../context/AuthContext';
 import { uploadToStorage, UPLOAD_LIMITS, sanitizeFileName } from '../lib/storage';
 import { useSyncManager } from '../lib/SyncManager';
 import { logTaskFieldHistory } from '../lib/api';
+import ProjetoPicker from './marketing/ProjetoPicker';
 
 type EditorPresence = { name: string; avatarUrl?: string; color: string };
 
@@ -1694,7 +1695,9 @@ export default function TaskSheet({
                 )}
               </div>
 
-              <div id="section-deadline" className="flex flex-col gap-1.5 min-w-[120px]">
+              {task?.id && <ProjetoPicker taskId={task.id} disabled={!!effectiveLock} />}
+
+              <div id="section-deadline"className="flex flex-col gap-1.5 min-w-[120px]">
                 <span className="text-zinc-500 font-medium font-sans flex items-center gap-1.5"><CalendarIcon size={13} className="opacity-60" /> Prazo</span>
                 <DatePicker
                   value={dueDate}

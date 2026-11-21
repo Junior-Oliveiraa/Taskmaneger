@@ -9,6 +9,7 @@ import SiengeVendasModal from './SiengeVendasModal';
 import SiengeVendasDashboard from './SiengeVendasDashboard';
 import ComercialDashboard from './comercial/ComercialDashboard';
 import type { ComercialDashboardTab } from './comercial/ComercialTabs';
+import type { FinanceiroSecao } from '../lib/navegacao';
 import { usePermissoes } from '../lib/permissoes';
 
 interface SiengeViewProps {
@@ -87,6 +88,8 @@ interface SiengeViewProps {
    * fiação enorme de handlers que o App.tsx já monta uma vez.
    */
   forcedTab?: 'vendas' | ComercialDashboardTab;
+  /** Seção do menu Financeiro: Títulos (com Lotes), Cartão de crédito ou Dashboard. */
+  secao?: FinanceiroSecao;
 }
 
 export default function SiengeView({
@@ -101,6 +104,7 @@ export default function SiengeView({
   taxonomy, onAddCentroCusto, onAddCategoria, onRenameCategoria, onDeleteCategoria, onAddSubcategoria, onDeleteSubcategoria,
   mensalidades, onSaveMensalidade, onDeleteMensalidade,
   forcedTab,
+  secao,
 }: SiengeViewProps) {
   // Títulos/lotes/faturas pedem o módulo Finanças; a aba Metas, o de orçamento.
   const { pode } = usePermissoes();
@@ -109,7 +113,13 @@ export default function SiengeView({
   const [activeTab, setActiveTab] = useState<'titulos' | 'lotes' | 'faturas' | 'metas' | 'vendas' | 'vendas_dashboard'>(verTitulos ? 'titulos' : 'metas');
   const openLotes = lotes.filter(l => l.status === 'aberto');
   const openFaturas = faturas.filter(f => f.status === 'aberto');
-  const tab = forcedTab ?? (!verTitulos && activeTab !== 'metas' ? 'metas' : activeTab);
+  const tab = forcedTab
+    ?? (secao === 'cartao' ? 'faturas'
+      : secao === 'dashboard' ? 'metas'
+      : secao === 'titulos' ? (activeTab === 'lotes' ? 'lotes' : 'titulos')
+      : (!verTitulos && activeTab !== 'metas' ? 'metas' : activeTab));
+  // Com seção definida, a barra só aparece em Títulos (Títulos | Lotes).
+  const mostrarAbas = !forcedTab && (!secao || secao === 'titulos');
 
   // Mesma regra de visibilidade/ordem usada no Dashboard Analítico — empreendimentos
   // ocultados (sienge_project_display) também somem da Tabela de Vendas.
@@ -129,14 +139,14 @@ export default function SiengeView({
     <div className="flex flex-col h-full bg-[#08080a]">
       {/* View Header with Tabs — ausente no modo dedicado: lá a navegação é o
           próprio menu lateral, e uma barra de abas com uma aba só seria ruído. */}
-      {!forcedTab && (
+      {mostrarAbas && (
       <div className="flex items-center gap-4 xl:gap-6 view-pad-x pt-4 short:pt-2.5 border-b border-zinc-800/60 shrink-0 overflow-x-auto no-scrollbar">
         {verTitulos && (<>
         <button
           onClick={() => setActiveTab('titulos')}
           className={`pb-3 short:pb-2 text-sm short:text-[13px] font-semibold whitespace-nowrap shrink-0 transition-colors border-b-2 ${
-            activeTab === 'titulos'
-              ? 'text-zinc-100 border-blue-500'
+            tab === 'titulos'
+              ?'text-zinc-100 border-blue-500'
               : 'text-zinc-500 border-transparent hover:text-zinc-300'
           }`}
         >
@@ -145,8 +155,8 @@ export default function SiengeView({
         <button
           onClick={() => setActiveTab('lotes')}
           className={`pb-3 short:pb-2 text-sm short:text-[13px] font-semibold whitespace-nowrap shrink-0 transition-colors border-b-2 flex items-center gap-2 ${
-            activeTab === 'lotes'
-              ? 'text-zinc-100 border-blue-500'
+            tab === 'lotes'
+              ?'text-zinc-100 border-blue-500'
               : 'text-zinc-500 border-transparent hover:text-zinc-300'
           }`}
         >
@@ -157,6 +167,7 @@ export default function SiengeView({
             </span>
           )}
         </button>
+        {!secao && (
         <button
           onClick={() => setActiveTab('faturas')}
           className={`pb-3 short:pb-2 text-sm short:text-[13px] font-semibold whitespace-nowrap shrink-0 transition-colors border-b-2 flex items-center gap-2 ${
@@ -172,8 +183,9 @@ export default function SiengeView({
             </span>
           )}
         </button>
+        )}
         </>)}
-        {showMetasTab && (
+        {showMetasTab && !secao && (
           <button
             onClick={() => setActiveTab('metas')}
             className={`pb-3 short:pb-2 text-sm short:text-[13px] font-semibold whitespace-nowrap shrink-0 transition-colors border-b-2 ${

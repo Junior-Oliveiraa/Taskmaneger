@@ -337,7 +337,7 @@ export interface UserDocument {
   updatedAt: string;
 }
 
-export type ViewType = 'home' | 'crm' | 'inbox' | 'tasks_board' | 'tasks_list' | 'projects' | 'calendar' | 'settings' | 'sienge' | 'comercial' | 'dashboard' | 'rede_social';
+export type ViewType = 'home' | 'crm' | 'inbox' | 'tasks_board' | 'tasks_list' | 'projects' | 'calendar' | 'settings' | 'sienge' | 'comercial' | 'dashboard' | 'rede_social' | 'my_tasks' | 'marketing_projetos' | 'portfolios';
 
 export type SiengeStatus = 'a_lancar' | 'aprovacao_1' | 'aprovacao_2' | 'aprovacao_3' | 'aguardando_pagamento' | 'recusados' | 'pago';
 
