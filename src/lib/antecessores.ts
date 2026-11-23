@@ -42,6 +42,17 @@ export function avancaStatus(atual: TaskStatus, novo: TaskStatus): boolean {
   return AVANCO.includes(novo);
 }
 
+/** Alguma tarefa depende de `taskId`. */
+export const ehAntecessora = (taskId: string, mapa: MapaAntecessores) =>
+  Object.values(mapa).some(ids => ids.includes(taskId));
+
+/**
+ * Mudar início ou prazo já definido exige motivo só em tarefa de projeto ou que
+ * seja antecessora de outra. Rede social e tarefas soltas mudam livremente.
+ */
+export const datasExigemJustificativa = (taskId: string, projetoDaTarefa: Record<string, string>, mapa: MapaAntecessores) =>
+  !!projetoDaTarefa[taskId] || ehAntecessora(taskId, mapa);
+
 /** Tarefas que podem seguir agora que `concluidaId` foi concluída. */
 export function liberadasPor<T extends TarefaMin>(concluidaId: string, mapa: MapaAntecessores, tasks: T[]): T[] {
   const depois = tasks.map(t => t.id === concluidaId ? { ...t, status: 'done' as const } : t);

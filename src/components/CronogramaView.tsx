@@ -16,6 +16,8 @@ import {
 import { hojeLocal } from '../lib/datas';
 import { dataInicio, mudancasDeDatas } from '../lib/dataInicio';
 import { pedirJustificativa } from './JustificarDatas';
+import { useAntecessores } from '../hooks/useAntecessores';
+import { datasExigemJustificativa } from '../lib/antecessores';
 import { compararUrgencia, formatarDataExtensaCurta, getDueState, tooltipPrazo } from '../lib/prazo';
 import { idsResponsaveis } from '../lib/responsaveis';
 import { getHolidays } from '../utils/holidays';
@@ -116,6 +118,7 @@ export default function CronogramaView({
 }: Props) {
   const { allUsers, currentUser } = useAuth();
   const { limiteDaTarefa, projetoDaTarefa, vincularTarefa } = useMarketingProjetos();
+  const { mapa: antecessores } = useAntecessores();
   const minhas = !!usuariosFiltro;
   const { prefs, mudarPrefs, casaFiltros, projetos } = usePrefsLista(projects, minhas, false);
   const hoje = hojeLocal();
@@ -243,8 +246,9 @@ export default function CronogramaView({
     if (!Object.keys(u).length) return;
     const inicio = u.startDate ?? t.startDate?.slice(0, 10), prazo = u.dueDate ?? t.dueDate!.slice(0, 10);
     const texto = inicio && inicio < prazo ? `${formatarDataExtensaCurta(inicio, hoje)} a ${formatarDataExtensaCurta(prazo, hoje)}` : formatarDataExtensaCurta(prazo, hoje);
-    // Data já definida só muda com justificativa; pedida na hora, antes da janela de desfazer.
-    const mudancas = mudancasDeDatas(t, u);
+    // Data já definida de tarefa de projeto ou antecessora só muda com justificativa;
+    // pedida na hora, antes da janela de desfazer.
+    const mudancas = datasExigemJustificativa(t.id, projetoDaTarefa, antecessores) ? mudancasDeDatas(t, u) : [];
     if (mudancas.length) {
       const motivo = await pedirJustificativa(t.title, mudancas);
       if (!motivo) return;

@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import DatePicker from './DatePicker';
 import { dataInicio, mudancasDeDatas } from '../lib/dataInicio';
-import { antecessorAtrasado, antecessoresPendentes, avancaStatus } from '../lib/antecessores';
+import { antecessorAtrasado, antecessoresPendentes, avancaStatus, datasExigemJustificativa } from '../lib/antecessores';
 import { useAntecessores } from '../hooks/useAntecessores';
 
 import RichTextEditor from './RichTextEditor';
@@ -19,7 +19,7 @@ import RoutineProperties from './RoutineProperties';
 import SocialMediaApproval from './SocialMediaApproval';
 import TaskChat from './TaskChat';
 import TaskHistoryPanel from './TaskHistoryPanel';
-import { Task, Subtask, TaskStatus, TaskPriority, Label, Project, PendingDeadlineChange } from '../types';
+import { Task, Subtask, TaskStatus, TaskPriority, Label, Project } from '../types';
 import { useNotifications } from '../context/NotificationContext';
 import { useAuth } from '../context/AuthContext';
 
@@ -170,10 +170,9 @@ export default function TaskSheet({
   const [chatEscolha, setChatEscolha] = useState<boolean | null>(null);
   const isChatOpen = chatEscolha ?? (task?.chatMessages?.length ?? 0) > 0;
   const [descColumns, setDescColumns] = useState(1);
-  const [deadlineRequestDraft, setDeadlineRequestDraft] = useState<{ date: string | undefined; reason: string } | null>(null);
   const { mapa: antecessores } = useAntecessores();
   // Hierarquia de datas: prazo da tarefa ≤ entrega do projeto.
-  const { limiteDaTarefa } = useMarketingProjetos();
+  const { limiteDaTarefa, projetoDaTarefa } = useMarketingProjetos();
   const limitePrazo = task?.id ? limiteDaTarefa(task.id) : null;
   const [erroPrazo, setErroPrazo] = useState<string | null>(null);
   useEffect(() => { setErroPrazo(null); }, [task?.id]);
@@ -417,7 +416,6 @@ export default function TaskSheet({
       if (e.key !== 'Escape') return;
       // Fecha primeiro o que estiver por cima do painel.
       if (showDeleteConfirm) setShowDeleteConfirm(false);
-      else if (deadlineRequestDraft) setDeadlineRequestDraft(null);
       else if (isHistoryOpen) setIsHistoryOpen(false);
       else if (isCompareSearchOpen) setIsCompareSearchOpen(false);
       else if (isFullscreenDesc) { setIsFullscreenDesc(false); setDescEditorKey(k => k + 1); }
@@ -427,7 +425,7 @@ export default function TaskSheet({
       window.addEventListener('keydown', handleEsc);
     }
     return () => window.removeEventListener('keydown', handleEsc);
-  }, [isOpen, task, projectId, assigneeId, taskLabels, showDeleteConfirm, deadlineRequestDraft, isHistoryOpen, isCompareSearchOpen, isFullscreenDesc]);
+  }, [isOpen, task, projectId, assigneeId, taskLabels, showDeleteConfirm, isHistoryOpen, isCompareSearchOpen, isFullscreenDesc]);
 
   if (!isOpen || !task) return null;
 
@@ -458,53 +456,20 @@ export default function TaskSheet({
     if (!task || effectiveLock) return;
     setErroPrazo(null);
     if (prazoForaDoLimite(newDate)) return;
-    // Aprovação só faz sentido quando existe um prazo para ser alterado. Na primeira
-    // definição (tarefa ainda sem prazo) qualquer um grava direto.
-    const isFirstDeadline = !task.dueDate;
-    if (isDeadlineAdmin || isFirstDeadline) {
-      const mudancas = mudancasDeDatas(task, { dueDate: newDate || '' });
-      const motivo = mudancas.length ? await pedirJustificativa(task.title, mudancas) : undefined;
-      if (motivo === null) return;
-      let newStatus = status;
-      if (status === 'no_forecast' && newDate) newStatus = 'todo';
-      else if (status === 'todo' && !newDate) newStatus = 'no_forecast';
-      setDueDate(newDate);
-      setStatus(newStatus);
-      saveChange({ dueDate: newDate, status: newStatus, ...(motivo ? { justificativaData: motivo } : {}) });
-      return;
-    }
-    // Não-admins não alteram o prazo direto: precisam justificar e enviar para aprovação do Cidnei.
-    setDeadlineRequestDraft({ date: newDate, reason: '' });
-  };
-
-  const submitDeadlineChangeRequest = () => {
-    if (!task || !currentUser || !deadlineRequestDraft) return;
-    const reason = deadlineRequestDraft.reason.trim();
-    if (!reason) return;
-
-    const pending: PendingDeadlineChange = {
-      requestedDueDate: deadlineRequestDraft.date || null,
-      previousDueDate: task.dueDate || null,
-      reason,
-      requestedBy: currentUser.id,
-      requestedByName: currentUser.name,
-      requestedAt: new Date().toISOString()
-    };
-    onUpdateTask({ id: task.id, pendingDeadlineChange: pending } as Task);
-
-    const admin = USERS.find(u => Number(u.permissionLevel) === 1);
-    if (admin) {
-      addNotification({
-        userId: admin.id,
-        actorId: currentUser.id,
-        taskId: task.id,
-        type: 'deadline_change_requested',
-        message: `${currentUser.name} solicitou alteração de prazo em "${task.title || 'Tarefa'}"`,
-        details: `De ${formatDeadlineForNotif(pending.previousDueDate)} para ${formatDeadlineForNotif(pending.requestedDueDate)}. Motivo: ${reason}`,
-        targetId: 'deadline'
-      });
-    }
-    setDeadlineRequestDraft(null);
+    // Qualquer um altera o prazo direto, sem pedir aprovação. Prazo já definido de
+    // tarefa de projeto ou antecessora de outra só muda com motivo.
+    const mudancas = datasExigemJustificativa(task.id, projetoDaTarefa, antecessores)
+      ? mudancasDeDatas(task, { dueDate: newDate || '' })
+      : [];
+    const motivo = mudancas.length ? await pedirJustificativa(task.title, mudancas) : undefined;
+    if (motivo === null) return;
+    let newStatus = status;
+    if (status === 'no_forecast' && newDate) newStatus = 'todo';
+    else if (status === 'todo' && !newDate) newStatus = 'no_forecast';
+    setDueDate(newDate);
+    setStatus(newStatus);
+    // Um pedido de aprovação antigo perde o sentido quando o prazo é trocado direto.
+    saveChange({ dueDate: newDate, status: newStatus, ...(pendingDeadlineChange ? { pendingDeadlineChange: null } : {}), ...(motivo ? { justificativaData: motivo } : {}) });
   };
 
   const approveDeadlineChange = () => {
@@ -1067,13 +1032,13 @@ export default function TaskSheet({
                       <span id="section-deadline" className="inline-flex">
                         <DatePicker
                           value={dueDate || ''}
-                          disabled={bloqueada || !!pendingDeadlineChange}
+                          disabled={bloqueada}
                           onChange={handleDeadlinePicked}
                           maxDate={limitePrazo?.data}
                           trigger={
                             <button
                               type="button"
-                              disabled={bloqueada || !!pendingDeadlineChange}
+                              disabled={bloqueada}
                               title={`${dueDate ? `Prazo · ${tooltipPrazo(dueDate)}` : 'Prazo'}${limitePrazo ? ` · entrega do projeto em ${formatarData(limitePrazo.data)}` : ''}`}
                               className={`h-6 px-1.5 rounded-md tabular-nums enabled:hover:text-zinc-50 enabled:hover:bg-[#27272a] transition-colors ${dueDate ? '' : 'text-zinc-400'} ${FOCO}`}
                             >
@@ -1416,55 +1381,6 @@ export default function TaskSheet({
               </button>
               <button type="button" onClick={(e) => { e.stopPropagation(); onDeleteTask(task.id); }} className={`btn-danger-soft h-9 px-3 rounded-lg text-body font-medium transition-colors ${FOCO}`}>
                 Excluir
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Modal de Justificativa para Solicitação de Alteração de Prazo */}
-      {deadlineRequestDraft && (
-        <div
-          className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in"
-          onClick={(e) => {
-            e.stopPropagation();
-            setDeadlineRequestDraft(null);
-          }}
-        >
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="pedir-prazo-titulo"
-            className="bg-[#18181b] border border-white/10 rounded-2xl p-5 flex flex-col gap-2 w-full max-w-[420px] shadow-2xl animate-slide-up"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 id="pedir-prazo-titulo" className="text-heading font-semibold text-zinc-100">Solicitar alteração de prazo</h3>
-            <p className="text-body text-zinc-400">
-              Novo prazo: <b className="text-zinc-200">{formatDeadlineForNotif(deadlineRequestDraft.date)}</b>.
-              A mudança precisa da aprovação do Cidnei. Explique o motivo antes de enviar.
-            </p>
-            <textarea
-              value={deadlineRequestDraft.reason}
-              onChange={(e) => setDeadlineRequestDraft(prev => prev ? { ...prev, reason: e.target.value } : prev)}
-              placeholder="Motivo da alteração de prazo…"
-              aria-label="Motivo da alteração de prazo"
-              autoFocus
-              className="mt-2 w-full min-h-[96px] p-3 rounded-lg bg-[#0c0c0e] border border-zinc-800 text-body text-zinc-200 placeholder-zinc-500 outline-none focus:border-blue-500/60 resize-none"
-            />
-            <div className="flex justify-end gap-2 mt-3">
-              <button type="button" onClick={(e) => { e.stopPropagation(); setDeadlineRequestDraft(null); }} className={BOTAO_BORDA}>
-                Cancelar
-              </button>
-              <button
-                type="button"
-                disabled={!deadlineRequestDraft.reason.trim()}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  submitDeadlineChangeRequest();
-                }}
-                className={`btn-brand h-9 px-3 rounded-lg text-body font-medium disabled:opacity-40 disabled:cursor-not-allowed ${FOCO}`}
-              >
-                Enviar para aprovação
               </button>
             </div>
           </div>

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { antecessorAtrasado, antecessoresPendentes, avancaStatus, criaCiclo, liberadasPor } from './antecessores';
+import { antecessorAtrasado, antecessoresPendentes, avancaStatus, criaCiclo, datasExigemJustificativa, liberadasPor } from './antecessores';
 import { mudancasDeDatas, textoMudanca } from './dataInicio';
 import type { TaskStatus } from '../types';
 
@@ -47,4 +47,13 @@ test('justificativa: só para data que já existia e mudou', () => {
   assert.deepEqual(mudancasDeDatas(antes, {}), []);
   const m = mudancasDeDatas(antes, { startDate: '', dueDate: '2026-11-30' });
   assert.deepEqual(m.map(textoMudanca), ['Início de 10/11/2026 para sem data', 'Prazo de 24/11/2026 para 30/11/2026']);
+});
+
+test('justificativa: só em tarefa de projeto ou antecessora de outra', () => {
+  const projetos = { p: 'projeto-1' };
+  const mapa = { b: ['a'] };
+  assert.equal(datasExigemJustificativa('p', projetos, mapa), true);  // de projeto
+  assert.equal(datasExigemJustificativa('a', projetos, mapa), true);  // antecessora de b
+  assert.equal(datasExigemJustificativa('b', projetos, mapa), false); // só depende de outra
+  assert.equal(datasExigemJustificativa('solta', projetos, mapa), false);
 });

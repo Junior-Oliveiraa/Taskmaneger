@@ -58,7 +58,7 @@ import PropriedadesProjeto from './components/marketing/PropriedadesProjeto';
 import { ProjetoModal } from './components/marketing/ProjetoModais';
 import { SEM_PROJETO, ROTULO_SEM_PROJETO } from './lib/projetosLista';
 import { useMarketingProjetos, limiteDoProjeto, formatarData } from './lib/marketingProjetos';
-import { antecessorAtrasado, antecessoresPendentes, avancaStatus, liberadasPor } from './lib/antecessores';
+import { antecessorAtrasado, antecessoresPendentes, avancaStatus, datasExigemJustificativa, liberadasPor } from './lib/antecessores';
 import { useAntecessores } from './hooks/useAntecessores';
 import JustificarDatas, { pedirJustificativa } from './components/JustificarDatas';
 import { useResponsaveisExtras, comResponsaveis, temResponsavel, idsResponsaveis } from './lib/responsaveis';
@@ -1269,8 +1269,11 @@ export default function App() {
       if (!Object.keys(updates).some(k => k !== 'id' && k !== 'updatedBy')) return;
     }
 
-    // Início e prazo já definidos só mudam com justificativa, de qualquer tela.
-    const mudancas = mudancasDeDatas(targetTask, updates);
+    // Início e prazo já definidos só mudam com justificativa quando a tarefa é de um
+    // projeto ou antecessora de outra. Rede social e tarefas soltas mudam direto.
+    const mudancas = datasExigemJustificativa(targetTask.id, marketing.projetoDaTarefa, antecessores)
+      ? mudancasDeDatas(targetTask, updates)
+      : [];
     if (mudancas.length > 0) {
       if (!justificativa) {
         const pedido = updates;
