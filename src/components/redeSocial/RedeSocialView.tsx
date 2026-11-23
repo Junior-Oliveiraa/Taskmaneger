@@ -159,6 +159,11 @@ export default function RedeSocialView({ tasks, projects, onSelectTask, onUpdate
       if (ehPost(task, porId)) abrirSecaoSocial();
     },
     novoPost: (data) => onNewPost(data),
+    // As regras de prazo (limite do projeto, motivo) ficam na gravação central.
+    moverParaDia: (post, dia) => {
+      if (post.data?.slice(0, 10) === dia) return;
+      onUpdateTask({ id: post.task.id, dueDate: dia });
+    },
     aprovar: (post) => {
       const a = post.task.socialMediaApproval || {};
       onUpdateTask({ id: post.task.id, status: 'done', socialMediaApproval: { ...a, status: 'approved' } });

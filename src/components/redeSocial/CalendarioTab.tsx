@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Plus } from 'lucide-react';
 import { DIAS_CURTOS, ETAPAS, etapaInfo, inicioSemana, isoDia, somaDias } from '../../lib/redeSocial';
 import { AcoesPost, BotoesAprovacao, EtapaChip, Miniatura, PostView } from './shared';
@@ -17,11 +17,23 @@ interface Props {
 
 const ordenar = (a: PostView, b: PostView) => (a.horario || '99').localeCompare(b.horario || '99');
 
-function CardDia({ post, acoes }: { post: PostView; acoes: AcoesPost }) {
+const TIPO_ARRASTO = 'application/x-post-id';
+
+function CardDia({ post, acoes, arrastando, onArrastar }: {
+  post: PostView; acoes: AcoesPost; arrastando: boolean; onArrastar: (id: string | null) => void;
+}) {
   return (
     <article
       onClick={() => acoes.abrir(post.task)}
-      className="flex flex-col gap-2 p-2 bg-[#121214] hover:bg-[#161619] border border-zinc-900/80 hover:border-zinc-800 rounded-lg cursor-pointer transition-colors"
+      draggable={acoes.podeEditar}
+      onDragStart={e => {
+        e.dataTransfer.setData(TIPO_ARRASTO, post.task.id);
+        e.dataTransfer.effectAllowed = 'move';
+        onArrastar(post.task.id);
+      }}
+      onDragEnd={() => onArrastar(null)}
+      title={acoes.podeEditar ? 'Clique para abrir · arraste para outro dia para mudar a data' : undefined}
+      className={`flex flex-col gap-2 p-2 bg-[#121214] hover:bg-[#161619] border border-zinc-900/80 hover:border-zinc-800 rounded-lg cursor-pointer transition-[colors,opacity] ${arrastando ? 'opacity-40' : ''}`}
       style={{ borderTop: `3px solid ${etapaInfo(post.etapa).cor}` }}
     >
       <div className="flex items-center justify-between gap-1.5">
@@ -44,22 +56,46 @@ function CardDia({ post, acoes }: { post: PostView; acoes: AcoesPost }) {
 function Semana({ inicio, posts, acoes }: { inicio: Date; posts: PostView[]; acoes: AcoesPost }) {
   const hoje = isoDia(new Date());
   const dias = Array.from({ length: 7 }, (_, i) => isoDia(somaDias(inicio, i)));
+  // Arrastar um card para outra coluna muda o dia do post.
+  const [arrastado, setArrastado] = useState<string | null>(null);
+  const [alvo, setAlvo] = useState<string | null>(null);
+  const origem = posts.find(p => p.task.id === arrastado)?.data?.slice(0, 10);
+  const soltar = (e: React.DragEvent, dia: string) => {
+    e.preventDefault();
+    const id = e.dataTransfer.getData(TIPO_ARRASTO);
+    const post = posts.find(p => p.task.id === id);
+    setAlvo(null);
+    setArrastado(null);
+    if (post) acoes.moverParaDia(post, dia);
+  };
   return (
     <div className="grid grid-cols-7 gap-2 min-w-[1050px] items-start">
       {dias.map((dia, i) => {
         const doDia = posts.filter(p => p.data === dia).sort(ordenar);
         const ehHoje = dia === hoje;
+        const ehAlvo = !!arrastado && alvo === dia && dia !== origem;
         return (
           <section
             key={dia}
             aria-label={`${DIAS_CURTOS[i]} ${Number(dia.slice(8))}`}
-            className={`group/dia flex flex-col gap-2 p-1.5 rounded-xl border ${ehHoje ? 'bg-zinc-900/40 border-zinc-600' : 'bg-zinc-950/40 border-zinc-900/80'}`}
+            onDragOver={e => {
+              if (!acoes.podeEditar || !e.dataTransfer.types.includes(TIPO_ARRASTO)) return;
+              e.preventDefault();
+              e.dataTransfer.dropEffect = 'move';
+              if (alvo !== dia) setAlvo(dia);
+            }}
+            onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setAlvo(a => a === dia ? null : a); }}
+            onDrop={e => soltar(e, dia)}
+            className={`group/dia flex flex-col gap-2 p-1.5 rounded-xl border min-h-[160px] transition-colors ${
+              ehAlvo ? 'bg-blue-500/10 border-blue-500/60 border-dashed'
+                : ehHoje ? 'bg-zinc-900/40 border-zinc-600' : 'bg-zinc-950/40 border-zinc-900/80'
+            }`}
           >
             <header className="flex items-center justify-between px-1.5 pt-1 pb-1">
               <span className="text-caption font-semibold text-zinc-500">{DIAS_CURTOS[i]}</span>
               <span className={`text-body font-semibold tabular-nums rounded-full px-2 ${ehHoje ? 'bg-zinc-100 text-zinc-900' : 'text-zinc-200'}`}>{Number(dia.slice(8))}</span>
             </header>
-            {doDia.map(p => <CardDia key={p.task.id} post={p} acoes={acoes} />)}
+            {doDia.map(p => <CardDia key={p.task.id} post={p} acoes={acoes} arrastando={arrastado === p.task.id} onArrastar={setArrastado} />)}
             {acoes.podeEditar && (
               <button
                 type="button"
@@ -147,7 +183,8 @@ export default function CalendarioTab({ modo, inicio, mes, posts, acoes, onIrPar
           </span>
         ))}
         <span className="ml-auto hidden md:inline">
-          {modo === 'semana' ? 'Clique em um post para abrir, ler a legenda completa e aprovar.' : 'Clique em uma semana para ver os posts em detalhe.'}
+          {modo === 'semana'
+            ? `Clique em um post para abrir, ler a legenda completa e aprovar.${acoes.podeEditar ? ' Arraste para outro dia para mudar a data.' : ''}` : 'Clique em uma semana para ver os posts em detalhe.'}
         </span>
       </div>
       <div className="flex-1 min-h-0 overflow-auto scrollbar-minimal view-pad">

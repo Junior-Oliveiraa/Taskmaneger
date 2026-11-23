@@ -33,6 +33,8 @@ export interface AcoesPost {
   aprovar: (post: PostView) => void;
   pedirRefacao: (post: PostView) => void;
   novoPost: (data?: string) => void;
+  /** Muda o dia do post (arrastar no calendário). */
+  moverParaDia: (post: PostView, dia: string) => void;
   podeEditar: boolean;
 }
 
