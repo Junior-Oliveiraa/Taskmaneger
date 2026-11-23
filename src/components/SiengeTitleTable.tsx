@@ -22,7 +22,7 @@ const STATUS_GROUPS: { id: SiengeStatus; label: string; color: string; dotColor:
   { id: 'aprovacao_2', label: 'Aprovação em 2ª Alçada', color: 'text-blue-400', dotColor: 'bg-blue-500', icon: <ChevronRight size={12} /> },
   { id: 'aprovacao_3', label: 'Aprovação em 3ª Alçada', color: 'text-violet-400', dotColor: 'bg-violet-500', icon: <ChevronRight size={12} /> },
   { id: 'aguardando_pagamento', label: 'Aguardando Pagamento', color: 'text-amber-400', dotColor: 'bg-amber-500', icon: <Banknote size={12} /> },
-  { id: 'recusados', label: 'Recusados', color: 'text-red-400', dotColor: 'bg-red-500', icon: <XCircle size={12} /> },
+  { id: 'recusados', label: 'Recusados', color: 'text-red-400', dotColor: 'bg-danger-400', icon: <XCircle size={12} /> },
   { id: 'pago', label: 'Pago', color: 'text-emerald-400', dotColor: 'bg-emerald-500', icon: <CheckCircle2 size={12} /> },
 ];
 

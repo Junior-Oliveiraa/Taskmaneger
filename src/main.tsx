@@ -1,6 +1,7 @@
 import {StrictMode, Suspense, lazy} from 'react';
 import {createRoot} from 'react-dom/client';
 import './index.css';
+import LimiteDeErro from './components/LimiteDeErro';
 
 import { LP_CORRETOR_BASE_PATH, LP_VALIDACAO_BASE_PATH, aplicarTemaLp, temaLpSalvo } from './lib/lpCorretor';
 
@@ -55,7 +56,7 @@ createRoot(document.getElementById('root')!).render(
       {lpSlug ? <LpCorretorPage slug={lpSlug} />
         : lpToken ? <LpCorretorPage validacaoToken={lpToken} />
         : visitaToken ? <VisitaPublicaPage token={visitaToken} />
-        : <AppRoot />}
+        : <LimiteDeErro><AppRoot /></LimiteDeErro>}
     </Suspense>
   </StrictMode>,
 );

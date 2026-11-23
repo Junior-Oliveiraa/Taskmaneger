@@ -1081,7 +1081,7 @@ export default function BudgetProperties({ task, saveChange, themeColor }: Budge
   };
 
   return (
-    <div className="flex flex-col animate-fade-in bg-[#08080a]/40 p-4 rounded-md border border-zinc-900 mt-2">
+    <div className="flex flex-col animate-fade-in">
       {/* Tabs */}
       <div className="flex items-center justify-between border-b border-zinc-800/50 mb-4">
         <div className="flex">

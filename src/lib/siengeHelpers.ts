@@ -49,6 +49,68 @@ export const ALCADA_LEVEL_BY_STATUS: Partial<Record<SiengeStatus, { level: 1 | 2
   aprovacao_3: { level: 3, label: '3ª' },
 };
 
+// ─── Ações de alçada compartilhadas (card do Kanban e Caixa de entrada) ───
+
+/** Título após a ação positiva ("Aprovado") do status atual, ou null se não houver. */
+export function aprovarTitulo<T extends { status: SiengeStatus; vencimento?: string; vencimentoOriginal?: string }>(title: T): T | null {
+  const acao = getPositiveAction(title.status);
+  if (!acao) return null;
+  return withVencimentoOriginal({ ...title, status: acao.nextStatus });
+}
+
+/** Título após recusa com motivo (mesma regra do card do Kanban). */
+export function reprovarTitulo<T extends { status: SiengeStatus }>(title: T, motivo: string): T {
+  return {
+    ...title,
+    status: rejectTargetStatus(title.status),
+    motivoRecusa: motivo.trim(),
+    motivoRecusaRegistradoEm: new Date().toISOString(),
+    motivoRecusaResolvido: false,
+    motivoRecusaResolvidoEm: undefined,
+    motivoRecusaObservacao: undefined,
+  };
+}
+
+/**
+ * Notificação para o responsável da alçada em que o título acabou de entrar, ou
+ * null se o status não mudou / não é alçada / não há responsável configurado.
+ */
+export function notificacaoAlcada(
+  title: { id: string; status: SiengeStatus; titulo?: string; descricao?: string },
+  previousStatus: SiengeStatus | undefined,
+  config: { alcada1UserId?: string; alcada2UserId?: string; alcada3UserId?: string },
+  actorId: string,
+) {
+  if (!previousStatus || previousStatus === title.status) return null;
+  const entry = ALCADA_LEVEL_BY_STATUS[title.status];
+  if (!entry) return null;
+  const responsibleId = alcadaResponsibleId(config, entry.level);
+  if (!responsibleId) return null;
+  return {
+    userId: responsibleId,
+    actorId,
+    siengeTitleId: title.id,
+    targetId: String(entry.level),
+    type: 'alcada_pending' as const,
+    message: `Título aguardando ${entry.label} alçada`,
+    details: `O título "${title.titulo || title.descricao || ''}" está aguardando sua aprovação.`,
+  };
+}
+
+// Pedido para abrir um título específico na tela do Sienge (vindo da Caixa de
+// entrada). Fica guardado até o Kanban montar e consumir.
+let tituloParaAbrir: string | null = null;
+export const EVENTO_ABRIR_TITULO = 'orbit:abrir-titulo-sienge';
+export function solicitarAberturaTitulo(id: string) {
+  tituloParaAbrir = id;
+  window.dispatchEvent(new CustomEvent(EVENTO_ABRIR_TITULO));
+}
+export function consumirAberturaTitulo(): string | null {
+  const id = tituloParaAbrir;
+  tituloParaAbrir = null;
+  return id;
+}
+
 export function alcadaResponsibleId(config: { alcada1UserId?: string; alcada2UserId?: string; alcada3UserId?: string }, level: 1 | 2 | 3): string | undefined {
   if (level === 1) return config.alcada1UserId;
   if (level === 2) return config.alcada2UserId;

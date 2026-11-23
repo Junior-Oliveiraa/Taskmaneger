@@ -25,15 +25,15 @@ function CardDia({ post, acoes }: { post: PostView; acoes: AcoesPost }) {
       style={{ borderTop: `3px solid ${etapaInfo(post.etapa).cor}` }}
     >
       <div className="flex items-center justify-between gap-1.5">
-        <span className="text-[11px] font-bold text-zinc-200 tabular-nums">{post.horario || '--:--'}</span>
-        {post.canal && <span className="text-[10px] font-semibold text-zinc-300 bg-zinc-800/80 rounded px-1.5 py-0.5 truncate">{post.canal}</span>}
+        <span className="text-caption font-semibold text-zinc-200 tabular-nums">{post.horario || '--:--'}</span>
+        {post.canal && <span className="text-caption font-semibold text-zinc-300 bg-zinc-800/80 rounded px-1.5 py-0.5 truncate">{post.canal}</span>}
       </div>
       <Miniatura post={post} proporcional />
-      <h3 className="text-[12px] font-semibold text-zinc-100 leading-snug line-clamp-2">{post.task.title || 'Post sem título'}</h3>
+      <h3 className="text-caption font-semibold text-zinc-100 leading-snug line-clamp-2">{post.task.title || 'Post sem título'}</h3>
       {post.copy ? (
-        <p className="text-[11px] leading-relaxed text-zinc-400 line-clamp-4">{post.copy}</p>
+        <p className="text-caption leading-relaxed text-zinc-400 line-clamp-4">{post.copy}</p>
       ) : (
-        <p className="text-[11px] italic text-zinc-600">Sem legenda ainda</p>
+        <p className="text-caption italic text-zinc-600">Sem legenda ainda</p>
       )}
       <EtapaChip etapa={post.etapa} className="self-start" />
       <BotoesAprovacao post={post} acoes={acoes} />
@@ -56,8 +56,8 @@ function Semana({ inicio, posts, acoes }: { inicio: Date; posts: PostView[]; aco
             className={`group/dia flex flex-col gap-2 p-1.5 rounded-xl border ${ehHoje ? 'bg-zinc-900/40 border-zinc-600' : 'bg-zinc-950/40 border-zinc-900/80'}`}
           >
             <header className="flex items-center justify-between px-1.5 pt-1 pb-1">
-              <span className="text-[10px] font-bold tracking-wider text-zinc-500">{DIAS_CURTOS[i]}</span>
-              <span className={`text-sm font-bold tabular-nums rounded-full px-2 ${ehHoje ? 'bg-zinc-100 text-zinc-900' : 'text-zinc-200'}`}>{Number(dia.slice(8))}</span>
+              <span className="text-caption font-semibold text-zinc-500">{DIAS_CURTOS[i]}</span>
+              <span className={`text-body font-semibold tabular-nums rounded-full px-2 ${ehHoje ? 'bg-zinc-100 text-zinc-900' : 'text-zinc-200'}`}>{Number(dia.slice(8))}</span>
             </header>
             {doDia.map(p => <CardDia key={p.task.id} post={p} acoes={acoes} />)}
             {acoes.podeEditar && (
@@ -65,7 +65,7 @@ function Semana({ inicio, posts, acoes }: { inicio: Date; posts: PostView[]; aco
                 type="button"
                 onClick={() => acoes.novoPost(dia)}
                 aria-label={`Adicionar post em ${DIAS_CURTOS[i]} ${Number(dia.slice(8))}`}
-                className={`h-9 flex items-center justify-center gap-1 rounded-lg border border-dashed border-zinc-800 text-[11px] font-medium text-zinc-500 hover:text-zinc-200 hover:border-zinc-700 transition-all ${
+                className={`h-9 flex items-center justify-center gap-1 rounded-lg border border-dashed border-zinc-800 text-caption font-medium text-zinc-500 hover:text-zinc-200 hover:border-zinc-700 transition-all ${
                   doDia.length > 0 ? 'opacity-0 group-hover/dia:opacity-100 focus:opacity-100' : ''
                 }`}
               >
@@ -92,7 +92,7 @@ function Mes({ mes, posts, onIrParaSemana }: { mes: Date; posts: PostView[]; onI
   return (
     <div className="min-w-[860px] flex flex-col gap-1.5">
       <div className="grid grid-cols-7 gap-1.5">
-        {DIAS_CURTOS.map(d => <div key={d} className="text-[10px] font-bold tracking-wider text-zinc-500 px-2">{d}</div>)}
+        {DIAS_CURTOS.map(d => <div key={d} className="text-caption font-semibold text-zinc-500 px-2">{d}</div>)}
       </div>
       {semanas.map(s => (
         <button
@@ -112,7 +112,7 @@ function Mes({ mes, posts, onIrParaSemana }: { mes: Date; posts: PostView[]; onI
                 key={dia}
                 className={`min-h-[104px] flex flex-col gap-1.5 p-2 rounded-lg border ${dia === hoje ? 'border-zinc-600 bg-zinc-900/40' : 'border-zinc-900/80 bg-zinc-950/40'} ${foraDoMes ? 'opacity-40' : ''}`}
               >
-                <span className={`self-end text-xs font-bold tabular-nums rounded-full px-1.5 ${dia === hoje ? 'bg-zinc-100 text-zinc-900' : 'text-zinc-300'}`}>{d.getDate()}</span>
+                <span className={`self-end text-caption font-semibold tabular-nums rounded-full px-1.5 ${dia === hoje ? 'bg-zinc-100 text-zinc-900' : 'text-zinc-300'}`}>{d.getDate()}</span>
                 <div className="flex flex-wrap gap-1">
                   {doDia.slice(0, 4).map(p => (
                     <span
@@ -125,7 +125,7 @@ function Mes({ mes, posts, onIrParaSemana }: { mes: Date; posts: PostView[]; onI
                     </span>
                   ))}
                   {doDia.length > 4 && (
-                    <span className="w-9 h-9 rounded-md bg-zinc-900 border border-zinc-800 flex items-center justify-center text-[10px] font-semibold text-zinc-400">+{doDia.length - 4}</span>
+                    <span className="w-9 h-9 rounded-md bg-zinc-900 border border-zinc-800 flex items-center justify-center text-caption font-semibold text-zinc-400">+{doDia.length - 4}</span>
                   )}
                 </div>
               </div>
@@ -140,7 +140,7 @@ function Mes({ mes, posts, onIrParaSemana }: { mes: Date; posts: PostView[]; onI
 export default function CalendarioTab({ modo, inicio, mes, posts, acoes, onIrParaSemana }: Props) {
   return (
     <div className="flex-1 min-h-0 flex flex-col">
-      <div className="view-pad-x pt-4 shrink-0 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-zinc-500">
+      <div className="view-pad-x pt-4 shrink-0 flex flex-wrap gap-x-4 gap-y-1 text-caption text-zinc-500">
         {ETAPAS.map(e => (
           <span key={e.id} className="flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-sm" style={{ background: e.cor }} aria-hidden="true" />{e.label}

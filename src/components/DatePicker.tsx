@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { encaixar } from './tarefa/Propriedade';
 
 interface DatePickerProps {
   value: string;
@@ -54,6 +55,9 @@ export default function DatePicker({ value, onChange, trigger, enableTime, onQui
 
   const [popoverPosition, setPopoverPosition] = useState<'top' | 'bottom'>('bottom');
 
+  // Não deixa o calendário passar da borda da tela.
+  React.useLayoutEffect(() => { if (isOpen) encaixar(popoverRef.current); }, [isOpen]);
+
   // Calculate popover position based on available space
   useEffect(() => {
     if (isOpen && containerRef.current) {
@@ -79,6 +83,18 @@ export default function DatePicker({ value, onChange, trigger, enableTime, onQui
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  // Esc fecha só o calendário, não o painel ou modal em volta.
+  useEffect(() => {
+    if (!isOpen) return;
+    const esc = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.stopPropagation();
+      setIsOpen(false);
+    };
+    document.addEventListener('keydown', esc, true);
+    return () => document.removeEventListener('keydown', esc, true);
+  }, [isOpen]);
 
   // Update view when opening
   const handleOpen = (e?: React.MouseEvent) => {
@@ -179,16 +195,16 @@ export default function DatePicker({ value, onChange, trigger, enableTime, onQui
           type="button"
           disabled={disabled}
           onClick={handleOpen}
-          className="w-full flex items-center justify-between gap-1.5 text-[10px] font-sans font-medium px-2 py-1 rounded border text-zinc-300 bg-zinc-500/10 border-zinc-500/20 hover:bg-zinc-500/20 transition-colors cursor-pointer min-h-[26px] disabled:opacity-50 disabled:cursor-not-allowed"
+          className="w-full flex items-center justify-between gap-1.5 text-caption font-sans font-medium px-2 py-1 rounded border text-zinc-300 bg-zinc-500/10 border-zinc-500/20 hover:bg-zinc-500/20 transition-colors cursor-pointer min-h-[26px] disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <span>{displayValue || 'Sem prazo'}</span>
-          <span className="text-[9px] opacity-60 ml-1">▼</span>
+          <span className="text-caption opacity-60 ml-1">▼</span>
         </button>
       )}
 
       {/* Popover */}
       {isOpen && (
-        <div ref={popoverRef} className={`absolute ${popoverPosition === 'top' ? 'bottom-full mb-2' : 'top-full mt-2'} ${align === 'right' ? 'right-0' : 'left-0'} w-[252px] bg-[#111113] border border-zinc-800/70 rounded-xl shadow-2xl shadow-black/70 overflow-hidden z-50 animate-fade-in`}>
+        <div ref={popoverRef} className={`absolute ${popoverPosition === 'top' ? 'bottom-full mb-2' : 'top-full mt-2'} ${align === 'right' ? 'right-0' : 'left-0'} w-[264px] bg-[#18181b] border border-white/10 rounded-xl shadow-[0_12px_32px_rgb(0_0_0/0.28)] overflow-hidden z-50 animate-fade-in`}>
 
           {/* Header — mês e navegação */}
           <div className="flex items-center justify-between px-3 py-2.5 border-b border-zinc-800/60">
@@ -199,7 +215,7 @@ export default function DatePicker({ value, onChange, trigger, enableTime, onQui
             >
               <ChevronLeft size={13} />
             </button>
-            <span className="text-[11px] font-semibold text-zinc-100 tracking-widest uppercase select-none">
+            <span className="text-body font-semibold text-zinc-100 select-none">
               {MONTHS[currentMonth]} {currentYear}
             </span>
             <button
@@ -215,7 +231,7 @@ export default function DatePicker({ value, onChange, trigger, enableTime, onQui
             {/* Dias da semana */}
             <div className="grid grid-cols-7 mb-1.5">
               {WEEKDAYS.map((wd, i) => (
-                <div key={i} className="h-6 flex items-center justify-center text-[9px] font-semibold text-zinc-600 uppercase tracking-wider select-none">
+                <div key={i} className="h-6 flex items-center justify-center text-caption font-medium text-zinc-500 select-none">
                   {wd}
                 </div>
               ))}
@@ -241,13 +257,13 @@ export default function DatePicker({ value, onChange, trigger, enableTime, onQui
                     title={isSuggested ? 'Data sugerida' : undefined}
                     onClick={(e) => handleSelectDay(slot.day, slot.monthOffset, e)}
                     className={[
-                      'h-7 w-full flex items-center justify-center text-[11px] rounded-md transition-all select-none',
-                      (!slot.isCurrentMonth || isPast) ? 'opacity-20 text-zinc-500 pointer-events-none' : 'text-zinc-300',
+                      'h-7 w-full flex items-center justify-center text-body tabular-nums rounded-md transition-all select-none',
+                      (!slot.isCurrentMonth || isPast) ? 'opacity-20 text-zinc-500 pointer-events-none' : isSelected || isToday || isSuggested ? '' : 'text-zinc-300',
                       isSelected
-                        ? 'bg-blue-600 text-white font-bold shadow-sm shadow-blue-900/40'
+                        ? 'bg-blue-600 text-white font-semibold shadow-sm shadow-blue-900/40'
                         : isSuggested
                         ? 'bg-emerald-500/10 text-emerald-400 font-semibold ring-1 ring-inset ring-emerald-500/20'
-                        : 'hover:bg-zinc-800 hover:text-zinc-100',
+                        : 'hover:bg-[#1F1F22] hover:text-zinc-100',
                       isToday && !isSelected && !isSuggested
                         ? 'text-blue-400 font-semibold ring-1 ring-inset ring-blue-500/30'
                         : '',
@@ -261,7 +277,7 @@ export default function DatePicker({ value, onChange, trigger, enableTime, onQui
 
             {/* Digitar Manualmente */}
             <div className="mt-3 flex flex-col gap-2 bg-zinc-800/50 rounded-lg px-3 py-2">
-              <span className="text-[10px] text-zinc-500 font-medium select-none">Digitar Data/Hora</span>
+              <span className="text-caption text-zinc-400 font-medium select-none">{enableTime ? 'Digitar data e hora' : 'Digitar data'}</span>
               <div className="flex items-center gap-2">
                 <input
                   type="date"
@@ -277,7 +293,7 @@ export default function DatePicker({ value, onChange, trigger, enableTime, onQui
                     }
                   }}
                   onClick={(e) => e.stopPropagation()}
-                  className="bg-transparent text-zinc-100 text-[11px] font-mono font-semibold outline-none cursor-text [color-scheme:dark] tabular-nums flex-1"
+                  className="bg-transparent text-zinc-100 text-body font-medium outline-none cursor-text tabular-nums flex-1"
                 />
                 {enableTime && (
                   <input
@@ -292,7 +308,7 @@ export default function DatePicker({ value, onChange, trigger, enableTime, onQui
                       onChange(`${datePartToUse}T${e.target.value || '09:00'}`);
                     }}
                     onClick={(e) => e.stopPropagation()}
-                    className="bg-transparent text-zinc-100 text-[11px] font-mono font-semibold outline-none cursor-text [color-scheme:dark] tabular-nums w-20 border-l border-zinc-700 pl-2"
+                    className="bg-transparent text-zinc-100 text-body font-medium outline-none cursor-text tabular-nums w-20 border-l border-zinc-700 pl-2"
                   />
                 )}
               </div>
@@ -300,18 +316,18 @@ export default function DatePicker({ value, onChange, trigger, enableTime, onQui
           </div>
 
           {/* Footer */}
-          <div className="flex items-center justify-between px-3 py-2 border-t border-zinc-800/60 bg-zinc-900/50">
+          <div className="flex items-center justify-between px-3 py-2 border-t border-zinc-800/60">
             <button
               type="button"
               onClick={handleClear}
-              className="text-[10px] font-medium text-zinc-600 hover:text-red-400 transition-colors px-2 py-1 rounded-md hover:bg-red-500/5"
+              className="text-body font-medium text-zinc-400 hover:text-red-400 transition-colors px-2 py-1 rounded-md hover:bg-red-500/5"
             >
               Excluir
             </button>
             <button
               type="button"
               onClick={handleToday}
-              className="text-[10px] font-semibold text-blue-400 hover:text-blue-300 transition-colors px-2.5 py-1 rounded-md bg-blue-500/8 hover:bg-blue-500/15"
+              className="text-body font-semibold text-blue-400 hover:text-blue-300 transition-colors px-2.5 py-1 rounded-md bg-blue-500/8 hover:bg-blue-500/15"
             >
               Hoje
             </button>

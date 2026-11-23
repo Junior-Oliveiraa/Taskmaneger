@@ -36,7 +36,7 @@ export interface DeliveryThreadMessage {
   id: string;
   role: 'designer' | 'manager';
   type: 'submission' | 'feedback' | 'reply' | 'chat';
-  action?: 'approved' | 'rejected' | 'request_review' | 'will_rework';
+  action?: 'approved' | 'rejected' | 'request_review' | 'will_rework' | 'canceled';
   content: string;
   imageUrl?: string;
   imageUrls?: string[]; // Suporte para múltiplas imagens
@@ -47,6 +47,8 @@ export interface DeliveryThreadMessage {
   copyText?: string;
   editorName?: string;
   copyEditorId?: string;
+  /** Em envios de copy: quem foi escolhido para aprovar esta rodada. */
+  approverId?: string;
   authorId?: string;
   authorName?: string;
   majorVersion?: number; // X in X.Y
@@ -58,12 +60,14 @@ export interface DeliveryThreadMessage {
 
 export interface Delivery {
   id: string;
+  name?: string;
   imageUrl?: string; // URL do print original ou mais recente
   imageUrls?: string[]; // Múltiplos prints do criativo
   thumbnailUrl?: string; // URL comprimida (para histórico apos 30 dias)
   figmaLink?: string;
   creativeDefense?: string; // Legacy
-  status: 'pending' | 'approved' | 'rejected' | 'reworking' | 'review_requested';
+  /** `draft`: criativo ainda não enviado para aprovação. */
+  status: 'draft' | 'pending' | 'approved' | 'rejected' | 'reworking' | 'review_requested';
   rejectedFeedback?: string; // Legacy
   annotatedImageUrl?: string; // Legacy
   annotatedImageUrls?: string[]; // Multiple annotated images
@@ -146,7 +150,7 @@ export interface AppNotification {
   actorId: string;
   taskId?: string;
   siengeTitleId?: string;
-  type: 'task_assigned' | 'task_deleted' | 'status_changed' | 'assignee_replaced' | 'properties_changed' | 'feedback_received' | 'rejected' | 'review_requested' | 'approved' | 'reminder' | 'deadline' | 'deadline_changed' | 'deadline_change_requested' | 'deadline_change_rejected' | 'approval_pending' | 'chat_mention' | 'alcada_pending';
+  type: 'task_assigned' | 'task_deleted' | 'status_changed' | 'assignee_replaced' | 'properties_changed' | 'feedback_received' | 'rejected' | 'review_requested' | 'approved' | 'reminder' | 'deadline' | 'deadline_changed' | 'deadline_change_requested' | 'deadline_change_rejected' | 'approval_pending' | 'chat_mention' | 'alcada_pending' | 'predecessor_done' | 'predecessor_late';
   status: 'unread' | 'read' | 'viewed' | 'postponed' | 'important';
   createdAt: string;
   viewedAt?: string;
@@ -271,9 +275,16 @@ export interface Task {
   proposals?: Proposal[];
   budgetApprovals?: BudgetApprovalRound[];
   chatMessages?: ChatMessage[];
+  /** Início planejado (YYYY-MM-DD). Ver lib/dataInicio. */
+  startDate?: string;
   dueDate?: string; // ISO date format like '2026-06-20'
   createdAt: string;
   assigneeId?: string;
+  /**
+   * Todos os responsáveis (principal primeiro). Calculado no App a partir de
+   * task_responsaveis; não é gravado em tasks. Ler com idsResponsaveis().
+   */
+  responsaveis?: string[];
   parentTaskId?: string;
   hierarchyOrder?: number;
   isPrivate?: boolean;
@@ -286,6 +297,8 @@ export interface Task {
   routine?: RoutineConfig;
   routineOriginId?: string;
   pendingDeadlineChange?: PendingDeadlineChange | null;
+  /** Só viaja com a alteração: motivo de mudar início ou prazo. Vai para o histórico, não para a tarefa. */
+  justificativaData?: string;
 }
 
 export interface PendingDeadlineChange {
@@ -321,23 +334,7 @@ export interface Project {
   terceiros?: boolean;
 }
 
-export type UserDocumentKind = 'link' | 'note' | 'document';
-
-// Item particular do usuário na seção "Meus Documentos" da Home.
-export interface UserDocument {
-  id: string;
-  userId: string;
-  kind: UserDocumentKind;
-  title: string;
-  url?: string;      // link externo ou URL pública do arquivo no Storage
-  content?: string;  // HTML da anotação
-  fileName?: string;
-  fileSize?: number;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export type ViewType = 'home' | 'crm' | 'inbox' | 'tasks_board' | 'tasks_list' | 'projects' | 'calendar' | 'settings' | 'sienge' | 'comercial' | 'dashboard' | 'rede_social' | 'my_tasks' | 'marketing_projetos' | 'portfolios';
+export type ViewType = 'home' | 'crm' | 'inbox' | 'tasks_board' | 'tasks_list' | 'projects' | 'calendar' | 'settings' | 'sienge' | 'comercial' | 'dashboard' | 'rede_social' | 'my_tasks' | 'marketing_projetos';
 
 export type SiengeStatus = 'a_lancar' | 'aprovacao_1' | 'aprovacao_2' | 'aprovacao_3' | 'aguardando_pagamento' | 'recusados' | 'pago';
 

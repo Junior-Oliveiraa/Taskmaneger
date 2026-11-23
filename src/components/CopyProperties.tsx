@@ -1,20 +1,25 @@
-import React, { useState, useEffect, useRef } from 'react';
+// Copy da tarefa: briefing, textos (com a aprovação de cada um) e histórico.
+import React, { useEffect, useState } from 'react';
+import { Plus } from 'lucide-react';
 import { Task, CopyBriefing } from '../types';
-import { Edit2, Check, ChevronDown, ChevronRight } from 'lucide-react';
-import ConfirmModal from './ConfirmModal';
-import DeliveryApproval from './DeliveryApproval';
-import DeliveryForm from './DeliveryForm';
-import RichTextEditor from './RichTextEditor';
 import { useAuth } from '../context/AuthContext';
-import { useNotifications } from '../context/NotificationContext';
-import { fetchTaskBriefings } from '../lib/api';
-import { useSyncManager } from '../lib/SyncManager';
+import { entregaDoTexto, entregaTravada, enviar, htmlEnviado, pendentesSemTexto, rodadasDe, situacaoDe, tudoAprovado } from '../lib/aprovacao';
+import { Abas, EditoresTexto } from './tarefa/Abas';
+import { FaixaAprovacao, HistoricoAprovacao, IconeSituacao } from './tarefa/Aprovacao';
+import { EscolhasBriefing, GrupoBriefing, SecaoBriefing } from './tarefa/Briefing';
+import { BOTAO_GHOST, TituloSecao } from './tarefa/Propriedade';
+import { listaDe, useBriefing, useDecisoes } from './tarefa/useBriefing';
 
 interface CopyPropertiesProps {
   task: Task;
   saveChange: (updates: Partial<Task>) => void;
-  themeColor?: string;
   disabled?: boolean;
+  /** Cor da classe nos títulos das seções. */
+  cor?: string;
+  /** Motivo pelo qual ainda não dá para enviar para aprovação. */
+  bloqueio?: string;
+  /** O conteúdo ainda está vindo do banco: não dá para escrever por cima. */
+  carregando?: boolean;
 }
 
 const PERFIL_PRIMARIO_OPTIONS = [
@@ -83,871 +88,262 @@ const EXTENSAO_TEXTO_OPTIONS = [
   'Headline (até 10 palavras)', 'Copy curta (1-3 linhas)', 'Copy média (1 parágrafo)', 'Copy longa (múltiplos parágrafos)'
 ];
 
-type TabId = 'copy' | 'aprovacao';
+type CampoBriefing = Exclude<keyof CopyBriefing, 'isFilled' | 'textoCopy' | 'copyEditors' | 'deliveries'>;
 
-export default function CopyProperties({ task, saveChange, themeColor = 'text-pink-500', disabled = false }: CopyPropertiesProps) {
-  const [activeTab, setActiveTab] = useState<TabId>('copy');
-  const [isBriefingOpen, setIsBriefingOpen] = useState(false);
-  const [isCreatingDelivery, setIsCreatingDelivery] = useState(false);
+const GRUPOS: { titulo: string; campos: { chave: CampoBriefing; rotulo: string; opcoes: string[] }[] }[] = [
+  { titulo: 'Para quem', campos: [
+    { chave: 'perfilPrimario', rotulo: 'Perfil primário', opcoes: PERFIL_PRIMARIO_OPTIONS },
+    { chave: 'momentoCompra', rotulo: 'Momento de compra', opcoes: MOMENTO_COMPRA_OPTIONS },
+    { chave: 'faixaRenda', rotulo: 'Faixa de renda', opcoes: FAIXA_RENDA_OPTIONS },
+  ] },
+  { titulo: 'Dor e desejo', campos: [
+    { chave: 'desejoSonho', rotulo: 'Maior desejo', opcoes: DESEJO_SONHO_OPTIONS },
+    { chave: 'objecoes', rotulo: 'Objeções comuns', opcoes: OBJECOES_OPTIONS },
+  ] },
+  { titulo: 'Objetivo da peça', campos: [
+    { chave: 'objetivoMarketing', rotulo: 'Objetivo', opcoes: OBJETIVO_MARKETING_OPTIONS },
+    { chave: 'etapaFunil', rotulo: 'Etapa do funil', opcoes: ETAPA_FUNIL_OPTIONS },
+    { chave: 'acaoUnica', rotulo: 'Ação única', opcoes: ACAO_UNICA_OPTIONS },
+  ] },
+  { titulo: 'Tom e voz', campos: [
+    { chave: 'tomPeca', rotulo: 'Tom da peça', opcoes: TOM_PECA_OPTIONS },
+    { chave: 'comoMarcaPercebida', rotulo: 'Percepção da marca', opcoes: COMO_MARCA_PERCEBIDA_OPTIONS },
+  ] },
+  { titulo: 'Formato e canal', campos: [
+    { chave: 'canalVeiculacao', rotulo: 'Canal', opcoes: CANAL_VEICULACAO_OPTIONS },
+    { chave: 'formatoPeca', rotulo: 'Formato', opcoes: FORMATO_PECA_OPTIONS },
+    { chave: 'extensaoTexto', rotulo: 'Extensão do texto', opcoes: EXTENSAO_TEXTO_OPTIONS },
+  ] },
+];
+// Duas colunas equilibradas: público e objetivo | tom e formato.
+const COLUNAS = [GRUPOS.slice(0, 3), GRUPOS.slice(3)];
+const CAMPOS = GRUPOS.flatMap(g => g.campos);
+const MAX_TEXTOS = 5;
 
-  const { allUsers: USERS, currentUser } = useAuth();
-  const { getPendingField, saveImmediately } = useSyncManager();
-  const [isSavingDelivery, setIsSavingDelivery] = useState(false);
-  const [deliverySaveError, setDeliverySaveError] = useState<string | null>(null);
-  const sortedUsers = currentUser
-    ? [currentUser, ...USERS.filter(u => u.id !== currentUser.id)]
-    : USERS;
-  const { addNotification } = useNotifications();
-  
+function formularioDaTarefa(task: Task): CopyBriefing {
+  const existing = task.copyBriefing || {} as Partial<CopyBriefing>;
+  return {
+    ...(Object.fromEntries(CAMPOS.map(c => [c.chave, listaDe(existing[c.chave])])) as Pick<CopyBriefing, CampoBriefing>),
+    isFilled: existing.isFilled || false,
+    textoCopy: existing.textoCopy || '',
+    copyEditors: existing.copyEditors?.length
+      ? existing.copyEditors
+      // Id fixo: o primeiro texto ainda não existe no banco e não pode mudar de identidade.
+      : [{ id: `texto-${task.id}`, name: 'Texto principal', content: existing.textoCopy || '' }],
+    deliveries: existing.deliveries || [],
+  };
+}
 
-  const safeArray = (val: any): string[] => Array.isArray(val) ? val : (typeof val === 'string' && val ? [val] : []);
+const textoCompleto = (editores: { name: string; content: string }[]) => ({
+  textoCopy: editores.map(ed => `<h3>${ed.name}</h3>${ed.content}`).join('<br/><hr/><br/>'),
+});
 
-  const [isEditing, setIsEditing] = useState(false);
-  const [showNamePrompt, setShowNamePrompt] = useState(false);
-  const [newEditorName, setNewEditorName] = useState('');
-  const [showAlert, setShowAlert] = useState(false);
-  const [alertMessage, setAlertMessage] = useState('');
-  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
-  
-  const [briefingForm, setBriefingForm] = useState<CopyBriefing>(() => {
-    const existing = task.copyBriefing || {} as Partial<CopyBriefing>;
-    const defaultEditors = existing.textoCopy 
-      ? [{ id: Date.now().toString(), name: 'Texto Principal', content: existing.textoCopy }]
-      : [{ id: Date.now().toString(), name: '', content: '' }];
-      
-    return {
-      isFilled: existing.isFilled || false,
-      perfilPrimario: safeArray(existing.perfilPrimario),
-      momentoCompra: safeArray(existing.momentoCompra),
-      faixaRenda: safeArray(existing.faixaRenda),
-      desejoSonho: safeArray(existing.desejoSonho),
-      objecoes: safeArray(existing.objecoes),
-      objetivoMarketing: safeArray(existing.objetivoMarketing),
-      etapaFunil: safeArray(existing.etapaFunil),
-      acaoUnica: safeArray(existing.acaoUnica),
-      tomPeca: safeArray(existing.tomPeca),
-      comoMarcaPercebida: safeArray(existing.comoMarcaPercebida),
-      canalVeiculacao: safeArray(existing.canalVeiculacao),
-      formatoPeca: safeArray(existing.formatoPeca),
-      extensaoTexto: safeArray(existing.extensaoTexto),
-      textoCopy: existing.textoCopy || '',
-      copyEditors: existing.copyEditors || defaultEditors,
-      deliveries: existing.deliveries || []
-    };
+const SECOES = { briefing: false, textos: true, historico: false };
+
+export default function CopyProperties({ task, saveChange, cor, bloqueio, disabled = false, carregando = false }: CopyPropertiesProps) {
+  const { currentUser } = useAuth();
+  const [aberto, setAberto] = useState(SECOES);
+  const alternar = (k: keyof typeof aberto) => setAberto(a => ({ ...a, [k]: !a[k] }));
+  const [textoAtivo, setTextoAtivo] = useState('');
+  // Entrega aberta por uma notificação, até os textos carregarem.
+  const [alvo, setAlvo] = useState<string | null>(null);
+  // Texto que está sendo enviado: já não pode mudar.
+  const [enviandoId, setEnviandoId] = useState<string | null>(null);
+
+  const b = useBriefing({
+    campo: 'copyBriefing', task, disabled, saveChange, formulario: formularioDaTarefa, derivado: textoCompleto,
+    aoTrocarTarefa: () => { setTextoAtivo(''); setAlvo(null); setEnviandoId(null); setAberto(SECOES); },
   });
-
-  // Sync state when task changes (important since this component is never unmounted by TaskSheet)
-  useEffect(() => {
-    if (task) {
-      const existing = task.copyBriefing || {} as Partial<CopyBriefing>;
-      const defaultEditors = existing.textoCopy 
-        ? [{ id: Date.now().toString(), name: 'Texto Principal', content: existing.textoCopy }]
-        : [{ id: Date.now().toString(), name: '', content: '' }];
-        
-      setBriefingForm({
-        isFilled: existing.isFilled || false,
-        perfilPrimario: safeArray(existing.perfilPrimario),
-        momentoCompra: safeArray(existing.momentoCompra),
-        faixaRenda: safeArray(existing.faixaRenda),
-        desejoSonho: safeArray(existing.desejoSonho),
-        objecoes: safeArray(existing.objecoes),
-        objetivoMarketing: safeArray(existing.objetivoMarketing),
-        etapaFunil: safeArray(existing.etapaFunil),
-        acaoUnica: safeArray(existing.acaoUnica),
-        tomPeca: safeArray(existing.tomPeca),
-        comoMarcaPercebida: safeArray(existing.comoMarcaPercebida),
-        canalVeiculacao: safeArray(existing.canalVeiculacao),
-        formatoPeca: safeArray(existing.formatoPeca),
-        extensaoTexto: safeArray(existing.extensaoTexto),
-        textoCopy: existing.textoCopy || '',
-        copyEditors: existing.copyEditors || defaultEditors,
-        deliveries: existing.deliveries || []
-      });
-      setIsEditing(false); // Reset to view mode on new task
-    }
-  }, [task.id, task.copyBriefing, disabled]);
+  const { form, textos, salvando } = b;
+  const entregas = form.deliveries || [];
+  const { decidir, cancelarEnvio, pedirAprovacao } = useDecisoes<'copyBriefing'>({
+    tipo: 'texto', task, gravar: b.gravar,
+    nomeDe: entrega => rodadasDe([entrega])[0]?.nome ?? 'Texto',
+    tudoAprovado: (deliveries, base) => tudoAprovado(deliveries, base.copyEditors || []),
+  });
 
   useEffect(() => {
     const handleOpenSection = (e: CustomEvent<{ section: string, targetId?: string }>) => {
-      if (e.detail.section === 'copyProps' && e.detail.targetId && e.detail.targetId.startsWith('copy-delivery-')) {
-        setActiveTab('aprovacao');
+      if (e.detail.section === 'copyProps' && e.detail.targetId?.startsWith('copy-delivery-')) {
+        setAlvo(e.detail.targetId.replace('copy-delivery-', ''));
       }
     };
     window.addEventListener('openTaskSection', handleOpenSection as EventListener);
     return () => window.removeEventListener('openTaskSection', handleOpenSection as EventListener);
   }, []);
 
-  const toggleArrayItem = (array: string[], item: string) => {
-    if (array.includes(item)) return array.filter(i => i !== item);
-    return [...array, item];
+  // A aprovação fica junto do texto: abre a aba dele.
+  useEffect(() => {
+    if (!alvo || !entregas.some(d => d.id === alvo)) return;
+    const texto = textos.find(t => entregaDoTexto(entregas, t)?.id === alvo);
+    setAberto(a => ({ ...a, textos: true }));
+    if (texto) setTextoAtivo(texto.id);
+    setAlvo(null);
+  }, [alvo, form.deliveries]);
+
+  const entregaPorTexto = new Map(textos.map(t => [t.id, entregaDoTexto(entregas, t)]));
+  const travado = (id: string) => enviandoId === id || entregaTravada(entregaPorTexto.get(id));
+  const ativo = textos.find(t => t.id === textoAtivo) ?? textos[0];
+  const entregaAtiva = ativo && entregaPorTexto.get(ativo.id);
+  const preenchidos = CAMPOS.filter(c => listaDe(form[c.chave]).length > 0).length;
+  const rodadas = rodadasDe(entregas);
+  const rodadaDe = (id?: string) => rodadas.find(r => r.entregaId === id);
+
+  const enviarTexto = async (textoId: string, aprovadorId: string) => {
+    const local = textos.find(t => t.id === textoId);
+    if (!local || salvando) return;
+    // O que está na tela vai junto no envio: o salvamento com atraso não é mais necessário.
+    const content = b.textosPendentes.current[textoId] ?? local.content;
+    b.cancelarAtraso(textoId);
+    setEnviandoId(textoId);
+    const ok = await b.gravar(base => {
+      const copyEditors = b.mesclarTexto(base, textoId, { content });
+      const texto = copyEditors.find(t => t.id === textoId)!;
+      const name = texto.name || 'Texto sem nome';
+      const envio = enviar(base.deliveries || [], { ...texto, name }, aprovadorId, currentUser);
+      if (!envio) return null;
+      return {
+        partial: { ...b.comTextos(copyEditors), deliveries: envio.entregas },
+        taskUpdates: task.status === 'approval' ? {} : { status: 'approval' },
+        avisar: () => pedirAprovacao(aprovadorId, envio.id, name),
+      };
+    });
+    if (!b.naTarefa()) return;
+    if (ok) { if (b.textosPendentes.current[textoId] === content) delete b.textosPendentes.current[textoId]; }
+    else if (textoId in b.textosPendentes.current) b.agendarTexto(textoId, content);
+    setEnviandoId(null);
   };
 
-  // Re-fetches the latest copyBriefing from the server and applies only the
-  // fields the recipe intends to change, so a save from this (possibly stale)
-  // screen never clobbers editors/deliveries that changed elsewhere meanwhile.
-  const saveCopyBriefing = async (
-    recipe: (base: CopyBriefing) => { partial: Partial<CopyBriefing>; taskUpdates?: Partial<Task> }
-  ) => {
-    let base: CopyBriefing = briefingForm;
-    try {
-      const fresh = await fetchTaskBriefings(task.id);
-      if (fresh?.copyBriefing) base = fresh.copyBriefing;
-    } catch {
-      // If the refetch fails, fall back to local state rather than blocking the save.
-    }
-    // A previous saveCopyBriefing call may still be sitting in SyncManager's
-    // debounce queue, not yet flushed to the DB. If we based this save purely on
-    // the DB SELECT above, it would be stale and this save would overwrite that
-    // pending write when it flushes (dropping whatever it added, e.g. a delivery).
-    const pending = getPendingField(task.id, 'copyBriefing');
-    if (pending) base = pending;
-    const { partial, taskUpdates } = recipe(base);
-    const merged = { ...base, ...partial };
-    setBriefingForm(merged);
-    saveChange({ copyBriefing: merged, ...(taskUpdates || {}) });
-    return merged;
-  };
-
-  // Used for delivery (creative) changes: approval, rejection, and new
-  // submissions all hinge on this actually landing in the DB, so unlike
-  // saveCopyBriefing this awaits the real write and only calls `notify`
-  // (used to fire approval notifications) after it succeeds. This closes the
-  // window where a notification was sent for a creative that was still
-  // sitting in a debounced, not-yet-persisted save.
-  const saveDeliveryChange = async (
-    recipe: (base: CopyBriefing) => { partial: Partial<CopyBriefing>; taskUpdates?: Partial<Task>; notify?: () => void }
-  ): Promise<boolean> => {
-    // Set before the refetch below (not after) so the "salvando" button state
-    // disables the button immediately on click — otherwise a double-click during
-    // the fetchTaskBriefings round trip fired this whole function twice, creating
-    // duplicate deliveries and duplicate approval notifications.
-    if (isSavingDelivery) return false;
-    setIsSavingDelivery(true);
-    setDeliverySaveError(null);
-
-    let base: CopyBriefing = briefingForm;
-    try {
-      const fresh = await fetchTaskBriefings(task.id);
-      if (fresh?.copyBriefing) base = fresh.copyBriefing;
-    } catch {
-      // If the refetch fails, fall back to local state rather than blocking the save.
-    }
-    const pending = getPendingField(task.id, 'copyBriefing');
-    if (pending) base = pending;
-
-    const { partial, taskUpdates, notify } = recipe(base);
-    const merged = { ...base, ...partial };
-
-    try {
-      await saveImmediately(task.id, { copyBriefing: merged, ...(taskUpdates || {}) });
-      setBriefingForm(merged);
-      notify?.();
-      return true;
-    } catch (err) {
-      console.error('Failed to save delivery change:', err);
-      setDeliverySaveError('Falha ao salvar. Verifique sua conexão e tente novamente.');
-      return false;
-    } finally {
-      setIsSavingDelivery(false);
-    }
-  };
-
-  const handleSaveBriefing = () => {
-    setIsEditing(false);
-    const { copyEditors, deliveries, ...briefingFields } = briefingForm;
-    saveCopyBriefing(() => ({ partial: { ...briefingFields, isFilled: true } }));
-  };
-
-  // Applies a rename/content patch to one editor, keyed by id. Falls back to the
-  // local (not-yet-saved) editor when it doesn't exist in the freshly fetched base yet
-  // (e.g. a brand-new editor whose creation save hasn't landed on the server).
-  const mergeEditorField = (base: CopyBriefing, editorId: string, patch: Partial<{ name: string; content: string }>) => {
-    const baseEditors = base.copyEditors || [];
-    if (baseEditors.some(ed => ed.id === editorId)) {
-      return baseEditors.map(ed => ed.id === editorId ? { ...ed, ...patch } : ed);
-    }
-    const localEditor = briefingForm.copyEditors?.find(ed => ed.id === editorId);
-    return [...baseEditors, { id: editorId, name: '', content: '', ...(localEditor || {}), ...patch }];
-  };
-
-  // Content edits fire on every keystroke — debounce the fetch-merge-save so we don't
-  // hit the network per character while still avoiding a stale full-object overwrite.
-  const editorSaveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
-  const scheduleEditorContentSave = (editorId: string, newContent: string) => {
-    if (editorSaveTimers.current[editorId]) clearTimeout(editorSaveTimers.current[editorId]);
-    editorSaveTimers.current[editorId] = setTimeout(() => {
-      saveCopyBriefing((base) => {
-        const mergedEditors = mergeEditorField(base, editorId, { content: newContent });
-        const combinedText = mergedEditors.map(ed => `<h3>${ed.name}</h3>${ed.content}`).join('<br/><hr/><br/>');
-        return { partial: { copyEditors: mergedEditors, textoCopy: combinedText } };
-      });
-    }, 800);
-  };
-
-  const renderChipGroup = (
-    options: string[], 
-    selected: string[], 
-    onChange: (newSelected: string[]) => void
-  ) => {
-    return (
-      <div className="flex flex-wrap gap-2">
-        {options.map(opt => {
-          const isSelected = selected.includes(opt);
-          return (
-            <button
-              key={opt}
-              disabled={disabled}
-              onClick={() => onChange(toggleArrayItem(selected, opt))}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
-                isSelected
-                  ? 'bg-pink-500/15 text-pink-300 border border-pink-500/30 shadow-[0_0_8px_rgba(236,72,153,0.15)]'
-                  : 'bg-[#1f2937]/30 text-zinc-400 hover:text-zinc-200 hover:bg-[#1f2937]/60 border border-transparent'
-              }`}
-            >
-              {opt}
-            </button>
-          );
-        })}
-      </div>
-    );
-  };
-
-  const renderReadonlyBriefing = () => {
-    return (
-      <div className="flex flex-col gap-6">
-        <div className="flex items-center justify-between border-b border-zinc-800/40 pb-3">
-          <button 
-            onClick={() => setIsBriefingOpen(!isBriefingOpen)}
-            className={`text-xs font-semibold font-sans uppercase tracking-wider flex items-center gap-1.5 ${themeColor} hover:opacity-80 transition-opacity`}
-          >
-            {isBriefingOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-            Briefing
-          </button>
-          {!disabled && (
-            <button
-              onClick={() => setIsEditing(true)}
-              className="flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-medium bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-zinc-800 rounded transition-colors"
-            >
-              <Edit2 size={10} /> Editar
-            </button>
-          )}
-        </div>
-        
-        {isBriefingOpen && (
-          <div className="flex flex-col gap-8 animate-fade-in">
-            {/* Para quem */}
-            <div className="flex flex-col gap-3">
-              <h4 className={`text-[10px] font-bold uppercase tracking-wider bg-zinc-900/50 px-2 py-1 rounded w-fit ${themeColor}`}>2. Para quem</h4>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="flex flex-col gap-1">
-                <span className="text-[10px] font-bold text-zinc-500 uppercase">Perfil primário</span>
-                <span className="text-xs text-zinc-200">{briefingForm.perfilPrimario.join(', ') || '-'}</span>
-              </div>
-              <div className="flex flex-col gap-1">
-                <span className="text-[10px] font-bold text-zinc-500 uppercase">Momento de compra</span>
-                <span className="text-xs text-zinc-200">{briefingForm.momentoCompra.join(', ') || '-'}</span>
-              </div>
-              <div className="flex flex-col gap-1">
-                <span className="text-[10px] font-bold text-zinc-500 uppercase">Faixa de renda</span>
-                <span className="text-xs text-zinc-200 whitespace-pre-wrap">{briefingForm.faixaRenda.join(', ') || '-'}</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Dor e desejo */}
-          <div className="flex flex-col gap-3">
-            <h4 className={`text-[10px] font-bold uppercase tracking-wider bg-zinc-900/50 px-2 py-1 rounded w-fit ${themeColor}`}>3. Dor e desejo</h4>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="flex flex-col gap-1">
-                <span className="text-[10px] font-bold text-zinc-500 uppercase">Maior desejo ou sonho</span>
-                <span className="text-xs text-zinc-200 whitespace-pre-wrap">{briefingForm.desejoSonho.join(', ') || '-'}</span>
-              </div>
-              <div className="flex flex-col gap-1">
-                <span className="text-[10px] font-bold text-zinc-500 uppercase">Objeções mais comuns</span>
-                <span className="text-xs text-zinc-200 whitespace-pre-wrap">{briefingForm.objecoes.join(', ') || '-'}</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Objetivo da peça */}
-          <div className="flex flex-col gap-3">
-            <h4 className={`text-[10px] font-bold uppercase tracking-wider bg-zinc-900/50 px-2 py-1 rounded w-fit ${themeColor}`}>4. Objetivo da peça</h4>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="flex flex-col gap-1">
-                <span className="text-[10px] font-bold text-zinc-500 uppercase">Objetivo de marketing</span>
-                <span className="text-xs text-zinc-200">{briefingForm.objetivoMarketing.join(', ') || '-'}</span>
-              </div>
-              <div className="flex flex-col gap-1">
-                <span className="text-[10px] font-bold text-zinc-500 uppercase">Etapa do funil</span>
-                <span className="text-xs text-zinc-200">{briefingForm.etapaFunil.join(', ') || '-'}</span>
-              </div>
-              <div className="flex flex-col gap-1 md:col-span-2">
-                <span className="text-[10px] font-bold text-zinc-500 uppercase">Ação única que devem tomar</span>
-                <span className="text-xs text-zinc-200 whitespace-pre-wrap">{briefingForm.acaoUnica.join(', ') || '-'}</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Tom e voz */}
-          <div className="flex flex-col gap-3">
-            <h4 className={`text-[10px] font-bold uppercase tracking-wider bg-zinc-900/50 px-2 py-1 rounded w-fit ${themeColor}`}>5. Tom e voz</h4>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="flex flex-col gap-1">
-                <span className="text-[10px] font-bold text-zinc-500 uppercase">Tom da peça</span>
-                <span className="text-xs text-zinc-200">{briefingForm.tomPeca.join(', ') || '-'}</span>
-              </div>
-              <div className="flex flex-col gap-1">
-                <span className="text-[10px] font-bold text-zinc-500 uppercase">Como a marca quer ser percebida</span>
-                <span className="text-xs text-zinc-200 whitespace-pre-wrap">{briefingForm.comoMarcaPercebida.join(', ') || '-'}</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Formato e canal */}
-          <div className="flex flex-col gap-3">
-            <h4 className={`text-[10px] font-bold uppercase tracking-wider bg-zinc-900/50 px-2 py-1 rounded w-fit ${themeColor}`}>6. Formato e canal</h4>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="flex flex-col gap-1">
-                <span className="text-[10px] font-bold text-zinc-500 uppercase">Canal de veiculação</span>
-                <span className="text-xs text-zinc-200">{briefingForm.canalVeiculacao.join(', ') || '-'}</span>
-              </div>
-              <div className="flex flex-col gap-1">
-                <span className="text-[10px] font-bold text-zinc-500 uppercase">Formato da peça</span>
-                <span className="text-xs text-zinc-200">{briefingForm.formatoPeca.join(', ') || '-'}</span>
-              </div>
-              <div className="flex flex-col gap-1">
-                <span className="text-[10px] font-bold text-zinc-500 uppercase">Extensão esperada</span>
-                <span className="text-xs text-zinc-200">{briefingForm.extensaoTexto.join(', ') || '-'}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-        )}
-      </div>
-    );
-  };
+  if (carregando && !task.copyBriefing) return <p role="status" className="text-body text-zinc-500">Carregando a copy…</p>;
 
   return (
-    <div className="flex flex-col bg-[#08080a]/40 rounded-md border border-zinc-900/40 overflow-hidden mt-2">
-      {/* Briefing Content */}
-      <div className="p-5 bg-transparent">
-        {isEditing ? (
-          <div className="flex flex-col gap-8">
-            <div className="flex items-center justify-between border-b border-zinc-800/40 pb-3">
-              <h3 className={`text-xs font-semibold font-sans uppercase tracking-wider flex items-center gap-1.5 ${themeColor}`}>
-                Editar Briefing
-              </h3>
-              <button
-                onClick={handleSaveBriefing}
-                disabled={disabled}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider rounded border border-pink-500/50 bg-pink-500/10 hover:bg-pink-500/20 text-pink-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <Check size={12} /> Salvar Briefing
-              </button>
-            </div>
-
-            {/* Form Fields */}
-            <div className="space-y-8">
-              {/* Para quem */}
-              <div className="space-y-4">
-                <h4 className={`text-xs font-bold ${themeColor}`}>2. Para quem</h4>
-                <div className="space-y-3">
-                  <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider flex items-center gap-2">
-                    Perfil primário
-                  </span>
-                  {renderChipGroup(PERFIL_PRIMARIO_OPTIONS, briefingForm.perfilPrimario, (newArr) => setBriefingForm({...briefingForm, perfilPrimario: newArr}))}
-                </div>
-                <div className="space-y-3">
-                  <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider flex items-center gap-2">
-                    Momento de compra
-                  </span>
-                  {renderChipGroup(MOMENTO_COMPRA_OPTIONS, briefingForm.momentoCompra, (newArr) => setBriefingForm({...briefingForm, momentoCompra: newArr}))}
-                </div>
-                <div className="space-y-3">
-                  <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Faixa de renda estimada</span>
-                  {renderChipGroup(FAIXA_RENDA_OPTIONS, briefingForm.faixaRenda, (newArr) => setBriefingForm({...briefingForm, faixaRenda: newArr}))}
-                </div>
-              </div>
-
-              <hr className="border-zinc-800/40" />
-
-              {/* Dor e desejo */}
-              <div className="space-y-4">
-                <h4 className={`text-xs font-bold ${themeColor}`}>3. Dor e desejo</h4>
-                <div className="space-y-3">
-                  <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Qual é o maior desejo ou sonho por trás dessa compra?</span>
-                  {renderChipGroup(DESEJO_SONHO_OPTIONS, briefingForm.desejoSonho, (newArr) => setBriefingForm({...briefingForm, desejoSonho: newArr}))}
-                </div>
-                <div className="space-y-3">
-                  <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Quais são as objeções mais comuns?</span>
-                  {renderChipGroup(OBJECOES_OPTIONS, briefingForm.objecoes, (newArr) => setBriefingForm({...briefingForm, objecoes: newArr}))}
-                </div>
-              </div>
-
-              <hr className="border-zinc-800/40" />
-
-              {/* Objetivo da peça */}
-              <div className="space-y-4">
-                <h4 className={`text-xs font-bold ${themeColor}`}>4. Objetivo da peça</h4>
-                <div className="space-y-3">
-                  <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Objetivo de marketing</span>
-                  {renderChipGroup(OBJETIVO_MARKETING_OPTIONS, briefingForm.objetivoMarketing, (newArr) => setBriefingForm({...briefingForm, objetivoMarketing: newArr}))}
-                </div>
-                <div className="space-y-3">
-                  <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Etapa do funil</span>
-                  {renderChipGroup(ETAPA_FUNIL_OPTIONS, briefingForm.etapaFunil, (newArr) => setBriefingForm({...briefingForm, etapaFunil: newArr}))}
-                </div>
-                <div className="space-y-3">
-                  <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Qual é a única ação que o público deve tomar?</span>
-                  {renderChipGroup(ACAO_UNICA_OPTIONS, briefingForm.acaoUnica, (newArr) => setBriefingForm({...briefingForm, acaoUnica: newArr}))}
-                </div>
-              </div>
-
-              <hr className="border-zinc-800/40" />
-
-              {/* Tom e voz */}
-              <div className="space-y-4">
-                <h4 className={`text-xs font-bold ${themeColor}`}>5. Tom e voz</h4>
-                <div className="space-y-3">
-                  <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Tom da peça</span>
-                  {renderChipGroup(TOM_PECA_OPTIONS, briefingForm.tomPeca, (newArr) => setBriefingForm({...briefingForm, tomPeca: newArr}))}
-                </div>
-                <div className="space-y-3">
-                  <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Como a marca quer ser percebida?</span>
-                  {renderChipGroup(COMO_MARCA_PERCEBIDA_OPTIONS, briefingForm.comoMarcaPercebida, (newArr) => setBriefingForm({...briefingForm, comoMarcaPercebida: newArr}))}
-                </div>
-              </div>
-
-              <hr className="border-zinc-800/40" />
-
-              {/* Formato e canal */}
-              <div className="space-y-4">
-                <h4 className={`text-xs font-bold ${themeColor}`}>6. Formato e canal</h4>
-                <div className="space-y-3">
-                  <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Canal de veiculação</span>
-                  {renderChipGroup(CANAL_VEICULACAO_OPTIONS, briefingForm.canalVeiculacao, (newArr) => setBriefingForm({...briefingForm, canalVeiculacao: newArr}))}
-                </div>
-                <div className="space-y-3">
-                  <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Formato da peça</span>
-                  {renderChipGroup(FORMATO_PECA_OPTIONS, briefingForm.formatoPeca, (newArr) => setBriefingForm({...briefingForm, formatoPeca: newArr}))}
-                </div>
-                <div className="space-y-3">
-                  <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Extensão esperada do texto</span>
-                  {renderChipGroup(EXTENSAO_TEXTO_OPTIONS, briefingForm.extensaoTexto, (newArr) => setBriefingForm({...briefingForm, extensaoTexto: newArr}))}
-                </div>
-              </div>
-
-            </div>
-          </div>
-        ) : !briefingForm.isFilled ? (
-          !disabled ? (
-            <div className="flex items-center justify-start py-1">
-              <button 
-                onClick={() => setIsEditing(true)}
-                className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider rounded border border-pink-500/50 bg-pink-500/10 hover:bg-pink-500/20 text-pink-400 transition-colors shadow-lg"
-              >
-                + Adicionar Briefing
-              </button>
-            </div>
-          ) : null
-        ) : renderReadonlyBriefing()}
-      </div>
-      
-      {/* Tabs Header */}
-      {(!isEditing || briefingForm.isFilled) && (
-        <div className="flex items-center gap-8 px-5 pt-6 pb-0 overflow-x-auto bg-transparent border-b border-zinc-900/50">
-          {[
-            { id: 'copy', label: 'Copy' },
-            { id: 'aprovacao', label: 'Aprovação' }
-          ].map(tab => {
-            const isActive = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id as TabId)}
-                className={`relative pb-3 text-xs uppercase font-bold tracking-widest transition-colors ${
-                  isActive 
-                    ? themeColor
-                    : 'text-zinc-500 hover:text-zinc-300'
-                }`}
-              >
-                {tab.label}
-                {isActive && (
-                  <span className={`absolute left-0 right-0 bottom-0 h-[2px] rounded-t-sm bg-current`} />
-                )}
-              </button>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Tab Content */}
-      <div className="px-5 py-6 min-h-[250px]">
-        {activeTab === 'copy' && (
-          <div className="flex flex-col gap-6 animate-fade-in relative">
-            {!disabled && (
-              <div className="flex items-center justify-end pb-2">
-                <button
-                  onClick={() => {
-                    const editors = briefingForm.copyEditors || [];
-                    if (editors.length >= 5) {
-                      setAlertMessage('Limite máximo de 5 editores atingido.');
-                      setShowAlert(true);
-                    } else {
-                      setShowNamePrompt(true);
-                    }
-                  }}
-                  className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider rounded border border-pink-500/50 bg-pink-500/10 hover:bg-pink-500/20 text-pink-400 transition-colors shadow-lg"
-                >
-                  + Adicionar Editor
-                </button>
-              </div>
-            )}
-
-          <div className="flex flex-col gap-8">
-            {(briefingForm.copyEditors || []).map((editor) => (
-              <div key={editor.id} className="flex flex-col bg-zinc-900/20 border border-zinc-800/40 rounded-xl overflow-hidden shadow-lg relative">
-                {/* Editor Header */}
-                <div className="flex items-center justify-between px-5 py-3 bg-[#121214] border-b border-zinc-800/60">
-                  <h4 className="text-xs font-bold text-pink-400 uppercase tracking-widest">{editor.name || 'Novo Editor'}</h4>
-                </div>
-                
-                {/* Editor Body */}
-                <div className="relative">
-                  {!editor.name ? (
-                    <div className="p-8 flex flex-col items-center justify-center gap-4 bg-zinc-900/40 min-h-[150px]">
-                      <span className="text-sm font-semibold text-zinc-400">Dê um nome a este editor para começar a escrever</span>
-                      <div className="flex items-center gap-2">
-                        <input 
-                          type="text" 
-                          placeholder="Ex: Título, Variável 1..."
-                          disabled={disabled}
-                          className="bg-[#121214] border border-zinc-700/50 rounded-lg px-4 py-2 text-sm text-zinc-200 outline-none focus:border-pink-500/50 min-w-[250px] disabled:opacity-50"
-                          id={`inline-name-${editor.id}`}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter' && !disabled) {
-                              const val = e.currentTarget.value.trim();
-                              if (val) {
-                                saveCopyBriefing((base) => ({
-                                  partial: { copyEditors: mergeEditorField(base, editor.id, { name: val }) }
-                                }));
-                              }
-                            }
-                          }}
-                        />
-                        <button 
-                          disabled={disabled}
-                          onClick={() => {
-                            const val = (document.getElementById(`inline-name-${editor.id}`) as HTMLInputElement).value.trim();
-                            if (val) {
-                              saveCopyBriefing((base) => ({
-                                partial: { copyEditors: mergeEditorField(base, editor.id, { name: val }) }
-                              }));
-                            }
-                          }}
-                          className="px-4 py-2 text-sm font-bold uppercase tracking-wider rounded-lg border border-pink-500/50 bg-pink-500/10 hover:bg-pink-500/20 text-pink-400 transition-colors disabled:opacity-50"
-                        >
-                          Confirmar
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="p-4 bg-transparent resize-y overflow-hidden min-h-[250px]" style={{ height: '400px' }}>
-                      <RichTextEditor
-                        taskId={editor.id}
-                        content={editor.content}
-                        variant="borderless"
-                        wrapperClassName="h-full"
-                        readOnly={disabled}
-                        onChange={(newContent) => {
-                          const newEditors = briefingForm.copyEditors!.map(ed => ed.id === editor.id ? { ...ed, content: newContent } : ed);
-                          const combinedText = newEditors.map(ed => `<h3>${ed.name}</h3>${ed.content}`).join('<br/><hr/><br/>');
-                          setBriefingForm(prev => ({ ...prev, copyEditors: newEditors, textoCopy: combinedText }));
-                          scheduleEditorContentSave(editor.id, newContent);
-                        }}
-                      />
-                    </div>
-                  )}
-                </div>
-              </div>
+    <div className="flex flex-col gap-8">
+      <SecaoBriefing
+        cor={cor}
+        aberta={aberto.briefing}
+        onAlternar={() => alternar('briefing')}
+        preenchidos={preenchidos}
+        total={CAMPOS.length}
+        resumo="Público, objetivo, tom e canal da peça"
+        disabled={disabled}
+      >
+        {COLUNAS.map((grupos, i) => (
+          <div key={i} className="flex flex-col gap-6 min-w-0">
+            {grupos.map(grupo => (
+              <GrupoBriefing key={grupo.titulo} titulo={grupo.titulo}>
+                {grupo.campos.map(({ chave, rotulo, opcoes }) => (
+                  <EscolhasBriefing
+                    key={`${task.id}-${chave}`}
+                    rotulo={rotulo}
+                    opcoes={opcoes}
+                    valores={listaDe(form[chave])}
+                    disabled={disabled}
+                    onAlternar={op => b.mudarOpcao(chave, op)}
+                    onAdicionar={t => b.mudarOpcao(chave, t, true)}
+                  />
+                ))}
+              </GrupoBriefing>
             ))}
           </div>
-        </div>
-      )}
+        ))}
+      </SecaoBriefing>
 
-        {activeTab === 'aprovacao' && (
-          <div className="flex flex-col gap-6 animate-fade-in">
-            {!isCreatingDelivery && (
-              <div className="flex justify-start">
-                <button
-                  onClick={() => setIsCreatingDelivery(true)}
-                  className="flex items-center gap-2 px-3 py-1.5 border border-zinc-800/80 rounded hover:bg-zinc-800/50 hover:border-zinc-700 transition-all text-xs font-medium text-zinc-300"
-                >
-                  <span className="text-pink-500 font-bold">+</span>
-                  Adicionar Copy
-                </button>
-              </div>
+      {/* Textos */}
+      <div className="flex flex-col gap-3">
+        <TituloSecao
+          cor={cor}
+          aberta={aberto.textos}
+          onAlternar={() => alternar('textos')}
+          extra={textos.length > 1 && <span className="text-caption text-zinc-500 tabular-nums">{textos.length}</span>}
+          acoes={!disabled && aberto.textos && (
+            <button
+              type="button"
+              onClick={() => setTextoAtivo(b.adicionarTexto(`Texto ${textos.length + 1}`))}
+              disabled={textos.length >= MAX_TEXTOS}
+              title={textos.length >= MAX_TEXTOS ? `Limite de ${MAX_TEXTOS} textos` : undefined}
+              className={BOTAO_GHOST}
+            >
+              <Plus size={15} aria-hidden /> Adicionar texto
+            </button>
+          )}
+        >
+          Textos
+        </TituloSecao>
+        {aberto.textos && (
+          <>
+            <Abas
+              rotulo={{ grupo: 'Textos da copy', item: 'texto' }}
+              itens={textos}
+              ativoId={ativo?.id}
+              disabled={disabled}
+              travado={travado}
+              icone={id => <IconeSituacao entrega={entregaPorTexto.get(id)} />}
+              onAtivar={setTextoAtivo}
+              onRenomear={b.renomearTexto}
+            />
+            <EditoresTexto
+              taskId={task.id}
+              briefing={b}
+              ativoId={ativo?.id}
+              disabled={disabled}
+              travado={travado}
+              conteudo={t => {
+                const entrega = entregaPorTexto.get(t.id);
+                return situacaoDe(entrega) === 'pendente' ? htmlEnviado(entrega!) ?? t.content : t.content;
+              }}
+            />
+            {ativo && (
+              <FaixaAprovacao
+                key={`${task.id}-${ativo.id}-${rodadaDe(entregaAtiva?.id)?.id}-${situacaoDe(entregaAtiva)}`}
+                tipo="texto"
+                cor={cor}
+                nome={ativo.name || 'Texto sem nome'}
+                entrega={entregaAtiva}
+                rodada={rodadaDe(entregaAtiva?.id)}
+                bloqueio={bloqueio}
+                vazio={!ativo.content.replace(/<[^>]*>|&nbsp;/g, '').trim()}
+                disabled={disabled}
+                salvando={salvando}
+                solicitanteId={task.assigneeId}
+                onEnviar={id => void enviarTexto(ativo.id, id)}
+                onDecidir={(decisao, motivo) => decidir(entregaAtiva!.id, decisao, motivo)}
+                onCancelar={() => cancelarEnvio(entregaAtiva!.id)}
+              />
             )}
-            
-            {/* Formulário de Criação */}
-            {isCreatingDelivery && (
-              <>
-                <DeliveryForm
-                  copyEditors={briefingForm.copyEditors || []}
-                  accent="pink"
-                  users={sortedUsers}
-                  onCancel={() => setIsCreatingDelivery(false)}
-                  onSave={async (data) => {
-                    const success = await saveDeliveryChange((base) => {
-                      const now = new Date().toISOString();
-                      const newDeliveries = [...(base.deliveries || [])];
-                      const newId = Date.now().toString();
-
-                      newDeliveries.push({
-                        id: newId,
-                        status: 'pending',
-                        figmaLink: data.figmaLink,
-                        approverId: data.approverId,
-                        thread: [{
-                          id: newId + '-sub',
-                          role: 'designer',
-                          type: 'submission',
-                          content: data.creativeDefense || 'Nova entrega de copy',
-                          copyText: data.copyText,
-                          editorName: data.editorName,
-                          copyEditorId: data.copyEditorId,
-                          authorId: currentUser?.id,
-                          authorName: currentUser?.name,
-                          createdAt: now
-                        }],
-                        createdAt: now
-                      });
-
-                      let notify: (() => void) | undefined;
-                      if (data.approverId) {
-                        // Deferred: only sent once saveDeliveryChange confirms the
-                        // delivery was persisted, so an approver never gets pinged
-                        // for a copy that isn't in the DB yet.
-                        notify = () => addNotification({
-                          userId: data.approverId!,
-                          actorId: currentUser?.id || 'system',
-                          taskId: task.id,
-                          type: 'review_requested',
-                          message: 'Aprovação de Copy',
-                          details: `Você foi selecionado para aprovar a copy "${data.editorName}" na tarefa "${task.title}".`,
-                          targetId: `copy-delivery-${newId}`
-                        });
-                      }
-
-                      const taskUpdates: Partial<Task> = {};
-                      if (task.status !== 'approval') {
-                        taskUpdates.status = 'approval';
-                      }
-
-                      return { partial: { deliveries: newDeliveries }, taskUpdates, notify };
-                    });
-
-                    if (success) setIsCreatingDelivery(false);
-                    return success;
-                  }}
-                />
-                {deliverySaveError && (
-                  <div className="text-xs text-red-400">{deliverySaveError}</div>
-                )}
-              </>
-            )}
-
-            {/* Lista de Copies */}
-            {!isCreatingDelivery && briefingForm.deliveries && briefingForm.deliveries.length > 0 && (
-              <div className="flex flex-col gap-6">
-                {isSavingDelivery && (
-                  <div className="flex items-center gap-2 text-xs text-pink-400/80">
-                    <span className="w-3 h-3 border-2 border-pink-400/40 border-t-pink-400 rounded-full animate-spin" />
-                    Salvando alterações...
-                  </div>
-                )}
-                {briefingForm.deliveries.map((delivery, i) => (
-                  <div key={delivery.id} id={`target-copy-delivery-${delivery.id}`}>
-                    <DeliveryApproval
-                      delivery={delivery}
-                      index={i + 1}
-                      label="Copy"
-                      accent="pink"
-                      taskTitle={task.title}
-                      requesterFallbackId={task.assigneeId}
-                      copyEditors={briefingForm.copyEditors || []}
-                      disabled={disabled || isSavingDelivery}
-                      onDelete={(id) => setDeleteConfirmId(id)}
-                      onUpdate={(id, updates) => {
-                          saveDeliveryChange((base) => {
-                            const oldDelivery = base.deliveries?.find(d => d.id === id);
-                            const newDeliveries = (base.deliveries || []).map(d =>
-                              d.id === id ? { ...d, ...updates } : d
-                            );
-
-                            const taskUpdates: Partial<Task> = {};
-                            if (updates.status) {
-                              let newTaskStatus = task.status;
-                              if (updates.status === 'pending' || updates.status === 'review_requested') {
-                                newTaskStatus = 'approval';
-                              } else if (updates.status === 'rejected' || updates.status === 'reworking') {
-                                newTaskStatus = 'rework';
-                              }
-
-                              if (updates.status === 'approved') {
-                                const allApproved = newDeliveries.length > 0 && newDeliveries.every(d => d.status === 'approved');
-                                if (allApproved) {
-                                  newTaskStatus = 'implementation';
-                                }
-                              }
-
-                              if (newTaskStatus !== task.status) {
-                                taskUpdates.status = newTaskStatus;
-                              }
-                            }
-
-                            let notify: (() => void) | undefined;
-                            if (updates.status && oldDelivery?.status !== updates.status) {
-                              if (updates.status === 'approved') {
-                                if (task.assigneeId) {
-                                  notify = () => addNotification({
-                                    userId: task.assigneeId!,
-                                    actorId: currentUser?.id || '',
-                                    message: 'Copy Aprovada! 🎉',
-                                    details: `A copy da tarefa "${task.title}" foi aprovada.`,
-                                    type: 'approved',
-                                    taskId: task.id,
-                                    targetId: `copy-delivery-${id}`
-                                  });
-                                }
-                              } else if (updates.status === 'reworking') {
-                                if (task.assigneeId) {
-                                  notify = () => addNotification({
-                                    userId: task.assigneeId!,
-                                    actorId: currentUser?.id || '',
-                                    message: 'Reprovação de Copy',
-                                    details: `A copy da tarefa "${task.title}" foi reprovada e precisa de ajustes.`,
-                                    type: 'rejected',
-                                    taskId: task.id,
-                                    targetId: `copy-delivery-${id}`
-                                  });
-                                }
-                              } else if (updates.status === 'review_requested') {
-                                const targetUserId = oldDelivery?.approverId;
-                                if (targetUserId) {
-                                  notify = () => addNotification({
-                                    userId: targetUserId,
-                                    actorId: currentUser?.id || '',
-                                    message: 'Revisão Solicitada',
-                                    details: `O redator solicitou revisão da copy na tarefa "${task.title}".`,
-                                    type: 'review_requested',
-                                    taskId: task.id,
-                                    targetId: `copy-delivery-${id}`
-                                  });
-                                }
-                              }
-                            }
-
-                            return { partial: { deliveries: newDeliveries }, taskUpdates, notify };
-                          });
-                      }}
-                    />
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+            {b.erro && <p role="alert" className="text-body text-red-400">{b.erro}</p>}
+          </>
         )}
       </div>
 
-      {/* MODALS */}
-      {showNamePrompt && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
-          <div className="bg-[#121214] border border-zinc-800 rounded-2xl p-6 flex flex-col gap-5 w-full max-w-sm shadow-2xl animate-slide-down">
-            <h3 className="text-lg font-bold text-zinc-200">Nome do Editor</h3>
-            <p className="text-xs text-zinc-400">Qual será o nome deste novo editor? (Ex: Copy Principal, Assunto do Email)</p>
-            <input 
-              type="text"
-              autoFocus
-              value={newEditorName}
-              onChange={e => setNewEditorName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && newEditorName.trim()) {
-                  saveCopyBriefing((base) => ({
-                    partial: { copyEditors: [...(base.copyEditors || []), { id: Date.now().toString(), name: newEditorName.trim(), content: '' }] }
-                  }));
-                  setNewEditorName('');
-                  setShowNamePrompt(false);
-                }
-              }}
-              className="bg-[#0c0c0e] border border-zinc-700/50 rounded-lg px-4 py-3 text-sm text-zinc-200 outline-none focus:border-pink-500/50 w-full"
-              placeholder="Digite o nome..."
+      {/* Histórico de aprovação */}
+      <div className="flex flex-col gap-3">
+        <TituloSecao
+          cor={cor}
+          aberta={aberto.historico}
+          onAlternar={() => alternar('historico')}
+          extra={rodadas.length > 0 && <span className="text-caption text-zinc-500 tabular-nums">{rodadas.length}</span>}
+        >
+          Histórico de aprovação
+        </TituloSecao>
+        {/* Aprovações antigas cujo texto foi excluído ou renomeado: a decisão não fica escondida. */}
+        {pendentesSemTexto(entregas, textos).map(d => (
+          <div key={d.id} className="flex flex-col gap-1 p-3 rounded-xl border border-zinc-800">
+            <p className="text-body font-medium text-zinc-200">{rodadaDe(d.id)?.nome}</p>
+            <FaixaAprovacao
+              tipo="texto"
+              nome={rodadaDe(d.id)?.nome ?? 'Texto'}
+              entrega={d}
+              rodada={rodadaDe(d.id)}
+              disabled={disabled}
+              salvando={salvando}
+              solicitanteId={task.assigneeId}
+              onDecidir={(decisao, motivo) => decidir(d.id, decisao, motivo)}
+              onCancelar={() => cancelarEnvio(d.id)}
             />
-            <div className="flex justify-end gap-3 pt-2">
-              <button 
-                onClick={() => {
-                  setShowNamePrompt(false);
-                  setNewEditorName('');
-                }}
-                className="px-4 py-2 text-sm font-medium text-zinc-400 hover:text-zinc-200 transition-colors"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={() => {
-                  if (newEditorName.trim()) {
-                    saveCopyBriefing((base) => ({
-                      partial: { copyEditors: [...(base.copyEditors || []), { id: Date.now().toString(), name: newEditorName.trim(), content: '' }] }
-                    }));
-                    setNewEditorName('');
-                    setShowNamePrompt(false);
-                  }
-                }}
-                disabled={!newEditorName.trim()}
-                className="px-4 py-2 text-sm font-bold uppercase tracking-wider rounded-lg border border-pink-500/50 bg-pink-500/10 hover:bg-pink-500/20 text-pink-400 disabled:opacity-50 transition-colors"
-              >
-                Adicionar
-              </button>
-            </div>
           </div>
-        </div>
-      )}
-
-      {showAlert && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
-          <div className="bg-[#121214] border border-red-900/30 rounded-2xl p-6 flex flex-col gap-4 w-full max-w-sm shadow-[0_0_40px_rgba(220,38,38,0.1)] animate-slide-down">
-            <h3 className="text-lg font-bold text-red-500">Atenção</h3>
-            <p className="text-sm text-zinc-300">{alertMessage}</p>
-            <div className="flex justify-end pt-4">
-              <button 
-                onClick={() => setShowAlert(false)}
-                className="px-5 py-2 text-sm font-semibold bg-red-600/10 hover:bg-red-600/20 text-red-400 border border-red-900/50 rounded-lg transition-colors"
-              >
-                Entendi
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {deleteConfirmId && (
-        <ConfirmModal
-          isOpen={true}
-          title="Excluir Aprovação"
-          message="Tem certeza que deseja excluir esta aprovação de copy? Todo o histórico de revisões será perdido. Esta ação não pode ser desfeita."
-          confirmText="Excluir"
-          onConfirm={() => {
-            if (deleteConfirmId) {
-              const idToDelete = deleteConfirmId;
-              saveDeliveryChange((base) => ({
-                partial: { deliveries: (base.deliveries || []).filter(d => d.id !== idToDelete) }
-              }));
-            }
-            setDeleteConfirmId(null);
-          }}
-          onCancel={() => setDeleteConfirmId(null)}
-        />
-      )}
+        ))}
+        {aberto.historico && <HistoricoAprovacao tipo="texto" rodadas={rodadas} />}
+      </div>
     </div>
   );
 }

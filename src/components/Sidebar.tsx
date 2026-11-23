@@ -1,33 +1,14 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import {
-  FolderKanban,
-  Headset,
-  Settings as SettingsIcon,
-  ChevronLeft,
-  ChevronRight,
-  LogOut,
-  Inbox,
-  Search,
-  Receipt,
-  BarChart2,
-  Home,
-  Share2,
-  CheckSquare,
-  FolderOpen,
-  Briefcase,
-  FileSignature,
-  LineChart,
-  Table2,
-  CreditCard,
-  PieChart,
-  LucideIcon,
+  MapPin, Headset, Settings as SettingsIcon, ChevronLeft, ChevronRight, LogOut, Inbox, Search, Receipt, BarChart2, Home, Share2, CheckSquare, Folder, FileSignature, LineChart, Table2, CreditCard, PieChart, LucideIcon,
 } from 'lucide-react';
 import { Task, Project } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { usePermissoes } from '../lib/permissoes';
 import { useNotifications } from '../context/NotificationContext';
 import type { NavItemId } from '../lib/navegacao';
+import { temResponsavel } from '../lib/responsaveis';
 
 interface SidebarProps {
   collapsed: boolean;
@@ -77,7 +58,8 @@ export default function Sidebar({
     return n.status === 'postponed' && !!n.postponedUntil && new Date() >= new Date(n.postponedUntil);
   }).length;
 
-  const myOpenTasks = tasks.filter(t => t.assigneeId === currentUser?.id && t.status !== 'done').length;
+  const minhasAbertas = tasks.filter(t => !!currentUser && temResponsavel(t, currentUser.id) && t.status !== 'done');
+  const myOpenTasks = minhasAbertas.length;
   // Posts de rede social ainda não concluídos (aprovado também conta como concluído).
   const openPostsCount = tasks.filter(t =>
     t.labels.some(l => l.name === 'Social Media') && t.status !== 'done' && t.socialMediaApproval?.status !== 'approved'
@@ -90,10 +72,9 @@ export default function Sidebar({
         { id: 'home', label: 'Início', icon: Home, visivel: true },
         { id: 'inbox', label: 'Caixa de entrada', icon: Inbox, visivel: true, contador: inboxCount },
         { id: 'my_tasks', label: 'Minhas tarefas', icon: CheckSquare, visivel: verTarefas, contador: myOpenTasks },
-        { id: 'projetos', label: 'Projetos', icon: FolderOpen, visivel: verTarefas, contador: projetosCount },
-        { id: 'portfolios', label: 'Portfólios', icon: Briefcase, visivel: verTarefas },
+        { id: 'projetos', label: 'Projetos', icon: Folder, visivel: verTarefas, contador: projetosCount },
         { id: 'rede_social', label: 'Rede Social', icon: Share2, visivel: verTarefas, contador: openPostsCount },
-        { id: 'empreendimentos', label: 'Empreendimentos', icon: FolderKanban, visivel: pode('empreendimentos'), contador: projects.length },
+        { id: 'empreendimentos', label: 'Empreendimentos', icon: MapPin, visivel: pode('empreendimentos'), contador: projects.length },
         { id: 'analytics', label: 'Analytics', icon: BarChart2, visivel: pode('analytics') },
       ],
     },
@@ -124,30 +105,35 @@ export default function Sidebar({
         key={item.id}
         onClick={() => onNavigate(item.id)}
         title={collapsed ? item.label : undefined}
-        className={`relative w-full flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-          ativo ? 'text-zinc-100' : 'hover:bg-zinc-900/55 hover:text-zinc-200 border border-transparent'
+        aria-current={ativo ? 'page' : undefined}
+        // Seleção = fundo preenchido + barra de 2px no acento. Foco de teclado
+        // = outline (focus-visible), para não ser confundido com seleção.
+        className={`relative w-full flex items-center gap-2.5 px-3 h-8 [@media(pointer:coarse)]:h-11 rounded-md text-body transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-500 ${
+          ativo ? 'font-medium text-zinc-100' : 'text-zinc-400 hover:bg-[#161619] hover:text-zinc-200'
         }`}
       >
         {ativo && (
-          <motion.div layoutId="sidebar-active-pill" className="absolute inset-0 bg-zinc-900/80 border border-zinc-800/50 rounded-md" transition={{ duration: 0.18, ease: 'easeOut' }} />
+          <motion.div layoutId="sidebar-active-pill" className="absolute inset-0 rounded-md" transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}>
+            <span className="absolute inset-0 bg-accent-surface opacity-60 rounded-md" />
+            <span className="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full bg-brand-400" />
+          </motion.div>
         )}
-        <Icon size={14} className={`relative z-10 shrink-0 ${ativo ? 'text-zinc-200' : 'text-zinc-550'}`} />
+        <Icon size={15} className={`relative z-10 shrink-0 ${ativo ? 'text-zinc-100' : 'text-zinc-500'}`} aria-hidden />
         {!collapsed && (
           <div className="relative z-10 flex-1 min-w-0 flex items-center justify-between gap-2">
             <span className="truncate">{item.label}</span>
-            {!!item.contador && item.contador > 0 && (
-              <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded border shrink-0 ${
-                item.id === 'inbox'
-                  ? 'text-white bg-blue-500 border-blue-400/20 font-bold'
-                  : 'text-zinc-400 bg-zinc-800/40 border-zinc-700/30'
-              }`}>
-                {item.contador}
-              </span>
-            )}
+            <span className="flex items-center gap-1.5 shrink-0">
+              {!!item.contador && item.contador > 0 && (
+                <span className={item.id === 'inbox' ? 'badge-brand' : 'badge-neutral'}>
+                  {item.contador}
+                  {item.id === 'my_tasks' && <span className="sr-only"> em aberto</span>}
+                </span>
+              )}
+            </span>
           </div>
         )}
         {collapsed && item.id === 'inbox' && inboxCount > 0 && (
-          <span className="absolute top-1 right-2 w-1.5 h-1.5 rounded-full bg-blue-500" />
+          <span className="absolute top-1 right-2 w-1.5 h-1.5 rounded-full bg-brand-400" />
         )}
       </button>
     );
@@ -166,21 +152,20 @@ export default function Sidebar({
       <div className="appbar-h flex items-center justify-between px-4 border-b border-zinc-900 shrink-0 bg-[#08080a]">
         {!collapsed ? (
           <div className="flex items-center gap-2">
-            <div className="w-5 h-5 rounded bg-zinc-800 flex items-center justify-center text-zinc-200 text-[10px] font-bold font-sans border border-zinc-700/55">
+            <div className="w-5 h-5 rounded bg-zinc-800 flex items-center justify-center text-zinc-200 text-[10px] font-semibold font-sans border border-zinc-700/55">
               O
             </div>
-            <span className="font-semibold text-xs text-zinc-200 tracking-tight font-sans">Orbit Workspace</span>
-            <span className="text-[9px] bg-zinc-900 text-zinc-500 py-0.2 px-1 rounded font-mono">v1.2</span>
+            <span className="font-semibold text-body text-zinc-200 tracking-tight">Orbit Workspace</span>
           </div>
         ) : (
-          <div className="mx-auto w-5 h-5 rounded bg-zinc-800 flex items-center justify-center text-zinc-200 text-[10px] font-bold font-sans border border-zinc-700/55">
+          <div className="mx-auto w-5 h-5 rounded bg-zinc-800 flex items-center justify-center text-zinc-200 text-[10px] font-semibold font-sans border border-zinc-700/55">
             O
           </div>
         )}
 
         <button
           onClick={() => setCollapsed(!collapsed)}
-          className="p-1 rounded text-zinc-650 hover:text-zinc-200 hover:bg-zinc-900/60 transition-colors"
+          className="p-1 rounded text-zinc-500 hover:text-zinc-200 hover:bg-zinc-900/60 transition-colors"
           title={collapsed ? 'Expandir Menu' : 'Recolher Menu'}
         >
           {collapsed ? <ChevronRight size={13} /> : <ChevronLeft size={13} />}
@@ -192,11 +177,12 @@ export default function Sidebar({
         {!collapsed ? (
           <button
             onClick={onOpenCommandBar}
-            className="w-full h-8 flex items-center justify-start px-2.5 bg-zinc-950/80 border border-zinc-900 hover:border-zinc-800 text-xs text-zinc-400 rounded-md transition-all"
+            className="w-full h-8 flex items-center justify-start px-2.5 bg-[#0c0c0e] border border-zinc-900 hover:border-white/10 text-zinc-400 rounded-md transition-colors focus-visible:outline-2 focus-visible:outline-blue-500"
           >
-            <div className="flex items-center gap-1.5">
-              <Search size={11} className="text-zinc-500" />
-              <span className="text-[11px]">Buscar...</span>
+            <div className="flex items-center gap-2 w-full">
+              <Search size={14} className="text-zinc-500" aria-hidden />
+              <span className="text-body">Buscar…</span>
+              <kbd className="ml-auto text-caption text-zinc-500 font-sans">Ctrl K</kbd>
             </div>
           </button>
         ) : (
@@ -220,7 +206,7 @@ export default function Sidebar({
           return (
             <div key={grupo.titulo}>
               {!collapsed ? (
-                <div className="text-[10px] font-semibold text-zinc-500 px-3 py-1.5 uppercase tracking-wider font-sans">
+                <div className="text-caption font-medium text-zinc-500 px-3 py-1.5">
                   {grupo.titulo}
                 </div>
               ) : (
@@ -235,20 +221,20 @@ export default function Sidebar({
       {/* Footer Profile Section */}
       {/* O `pb-8` original era folga para a barra de gestos do mobile; em
           notebook são 20px de tela morta logo abaixo do perfil. */}
-      <div className="p-3 pb-4 short:p-2 short:pb-2.5 border-t border-zinc-900 bg-black shrink-0">
+      <div className="p-3 pb-4 short:p-2 short:pb-2.5 border-t border-zinc-900 bg-[#08080a] shrink-0">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 min-w-0">
             {currentUser?.avatarUrl ? (
               <img src={currentUser.avatarUrl} alt={currentUser.name} className="w-8 h-8 short:w-7 short:h-7 rounded-full object-cover shrink-0 border border-zinc-800 shadow-sm" />
             ) : (
-              <div className="w-8 h-8 short:w-7 short:h-7 rounded-full bg-gradient-to-tr from-purple-500 to-blue-600 flex items-center justify-center text-white text-[11px] font-bold leading-none select-none shrink-0 border border-zinc-800 shadow-sm">
+              <div className="w-8 h-8 short:w-7 short:h-7 rounded-full bg-gradient-to-tr from-purple-600 to-blue-600 flex items-center justify-center text-white text-[10px] font-semibold leading-none select-none shrink-0 border border-zinc-800 shadow-sm">
                 {currentUser?.initials || 'US'}
               </div>
             )}
             {!collapsed && (
               <div className="min-w-0 text-left flex-1 pl-0.5">
-                <div className="text-xs font-semibold text-zinc-200 truncate leading-tight">{currentUser?.name || 'Usuário'}</div>
-                <div className="text-[9px] text-zinc-500 truncate font-mono uppercase tracking-wider mt-0.5">{currentUser?.role || 'Membro'}</div>
+                <div className="text-caption font-semibold text-zinc-200 truncate leading-tight">{currentUser?.name || 'Usuário'}</div>
+                <div className="text-caption text-zinc-500 truncate">{currentUser?.role || 'Membro'}</div>
               </div>
             )}
           </div>
@@ -261,16 +247,18 @@ export default function Sidebar({
                 className={`p-1.5 rounded-md transition-colors ${
                   settingsActive
                     ? 'text-zinc-200 bg-zinc-900/80'
-                    : 'text-zinc-600 hover:text-zinc-300 hover:bg-zinc-900/80'
+                    : 'text-zinc-500 hover:text-zinc-200 hover:bg-zinc-900/80'
                 }`}
                 title="Configurações"
+                aria-label="Configurações"
               >
                 <SettingsIcon size={14} />
               </button>
               <button
                 onClick={logout}
-                className="p-1.5 text-zinc-600 hover:text-red-400 hover:bg-red-500/10 rounded-md transition-colors"
+                className="p-1.5 text-zinc-500 hover:text-red-400 hover:bg-red-500/10 rounded-md transition-colors"
                 title="Sair"
+                aria-label="Sair"
               >
                 <LogOut size={14} />
               </button>

@@ -15,15 +15,23 @@ import {
   Sparkles,
   Loader2,
   Layers,
-  Eye
+  Eye,
+  CheckSquare,
+  FolderOpen,
+  Headset
 } from 'lucide-react';
+import NovoMenu, { OpcaoNovo } from './components/NovoMenu';
+import NotificacoesMenu from './components/NotificacoesMenu';
+
+/** Pedido de criação vindo do "+ Novo": a tela de destino abre o próprio formulário e avisa que atendeu. */
+export type PedidoCriacao = 'projeto' | 'lead';
 
 import { useAuth } from './context/AuthContext';
 import { useNotifications } from './context/NotificationContext';
 import Login from './components/Login';
 
 import { Task, TaskStatus, Project, Label, ViewType, SiengeTitle, SiengeMensalidade, SiengeLote, SiengeFatura, SiengeCategoriaOrcamento, SiengeProjectTotal, SiengeProjectDisplay, SiengeTabelaVendaUnidade, SiengeTabelaVendaColuna, SiengeCalculoRegra, SiengeValidacao } from './types';
-import { fetchTasks, fetchTaskBriefings, fetchProjects, fetchLabels, saveTask, patchTask, deleteTask, saveProject, renameProject, deleteProject, fetchSiengeTitles, saveSiengeTitle, deleteSiengeTitle, fetchSiengeMensalidades, saveSiengeMensalidade, deleteSiengeMensalidade, fetchSiengeLotes, saveSiengeLote, deleteSiengeLote, fetchSiengeFaturas, saveSiengeFatura, deleteSiengeFatura, fetchSiengeAlcadaConfig, saveSiengeAlcadaConfig, SiengeTitleConflictError, fetchSiengeCategoriaOrcamentos, saveSiengeCategoriaOrcamento, deleteSiengeCategoriaOrcamento, fetchSiengeTitleStatusHistory, fetchSiengeProjectTotais, saveSiengeProjectTotal, fetchSiengeProjectDisplays, fetchSiengeTabelaVendas, fetchSiengeTabelaVendaVersoes, saveSiengeTabelaVendaVersao, deleteSiengeTabelaVendaVersao, duplicarSiengeTabelaVendaVersao, definirVersaoPrincipal, fetchSiengeTabelaVendaConfigs, saveSiengeTabelaVendaConfig, saveSiengeTabelaVenda, deleteSiengeTabelaVenda, deleteAllSiengeTabelaVendasByProject, fetchSiengeTabelaVendaColunas, saveSiengeTabelaVendaColuna, deleteSiengeTabelaVendaColuna, fetchSiengeTabelaVendaRevisoes, applySiengeTabelaVendasReajuste, setSiengeTabelaVendasMargem, reverterSiengeTabelaVendasRevisao, alterarSituacaoUnidades, fetchSiengeVendas, fetchSiengeOrcamentoConfig, saveSiengeOrcamentoConfig, fetchSiengeCalculoRegras, saveSiengeCalculoRegra, deleteSiengeCalculoRegra, fetchSiengeValidacoes, saveSiengeValidacao, deleteSiengeValidacao, fetchSiengeCentrosCusto, addSiengeCentroCusto, fetchSiengeCategorias, addSiengeCategoria, renameSiengeCategoria, deleteSiengeCategoria, fetchSiengeSubcategorias, addSiengeSubcategoria, deleteSiengeSubcategoria } from './lib/api';
+import { fetchTasks, fetchTaskBriefings, logTaskFieldHistory, fetchProjects, fetchLabels, saveTask, patchTask, deleteTask, saveProject, renameProject, deleteProject, fetchSiengeTitles, saveSiengeTitle, deleteSiengeTitle, fetchSiengeMensalidades, saveSiengeMensalidade, deleteSiengeMensalidade, fetchSiengeLotes, saveSiengeLote, deleteSiengeLote, fetchSiengeFaturas, saveSiengeFatura, deleteSiengeFatura, fetchSiengeAlcadaConfig, saveSiengeAlcadaConfig, SiengeTitleConflictError, fetchSiengeCategoriaOrcamentos, saveSiengeCategoriaOrcamento, deleteSiengeCategoriaOrcamento, fetchSiengeTitleStatusHistory, fetchSiengeProjectTotais, saveSiengeProjectTotal, fetchSiengeProjectDisplays, fetchSiengeTabelaVendas, fetchSiengeTabelaVendaVersoes, saveSiengeTabelaVendaVersao, deleteSiengeTabelaVendaVersao, duplicarSiengeTabelaVendaVersao, definirVersaoPrincipal, fetchSiengeTabelaVendaConfigs, saveSiengeTabelaVendaConfig, saveSiengeTabelaVenda, deleteSiengeTabelaVenda, deleteAllSiengeTabelaVendasByProject, fetchSiengeTabelaVendaColunas, saveSiengeTabelaVendaColuna, deleteSiengeTabelaVendaColuna, fetchSiengeTabelaVendaRevisoes, applySiengeTabelaVendasReajuste, setSiengeTabelaVendasMargem, reverterSiengeTabelaVendasRevisao, alterarSituacaoUnidades, fetchSiengeVendas, fetchSiengeOrcamentoConfig, saveSiengeOrcamentoConfig, fetchSiengeCalculoRegras, saveSiengeCalculoRegra, deleteSiengeCalculoRegra, fetchSiengeValidacoes, saveSiengeValidacao, deleteSiengeValidacao, fetchSiengeCentrosCusto, addSiengeCentroCusto, fetchSiengeCategorias, addSiengeCategoria, renameSiengeCategoria, deleteSiengeCategoria, fetchSiengeSubcategorias, addSiengeSubcategoria, deleteSiengeSubcategoria } from './lib/api';
 import { buildSiengeTaxonomy } from './lib/siengeCategorias';
 import { supabase } from './lib/supabase';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -31,22 +39,32 @@ import { useSyncManager } from './lib/SyncManager';
 import { USERS } from './lib/users';
 import { startVersionWatcher } from './lib/versionCheck';
 import { usePermissoes, Modulo, MODULOS_COMERCIAL } from './lib/permissoes';
+import { solicitarAberturaTitulo } from './lib/siengeHelpers';
+import { telaInicial, useHistoricoInbox } from './lib/historicoInbox';
 
 import Sidebar from './components/Sidebar';
 import CommandBar from './components/CommandBar';
 import TaskSheet from './components/TaskSheet';
 import KanbanView from './components/KanbanView';
 import ListView from './components/ListView';
-import CalendarView from './components/CalendarView';
+import CronogramaView from './components/CronogramaView';
 import InboxView from './components/InboxView';
 import ConfirmModal from './components/ConfirmModal';
 import { ComercialTabBar, ComercialTab, ComercialDashboardTab, ABAS_COMERCIAL, ABAS_DASHBOARD, ABAS_GRUPO_DASHBOARD } from './components/comercial/ComercialTabs';
 import HomeView from './components/HomeView';
 import TarefasAbas from './components/marketing/TarefasAbas';
 import MembrosProjeto from './components/marketing/MembrosProjeto';
+import PropriedadesProjeto from './components/marketing/PropriedadesProjeto';
 import { ProjetoModal } from './components/marketing/ProjetoModais';
+import { SEM_PROJETO, ROTULO_SEM_PROJETO } from './lib/projetosLista';
 import { useMarketingProjetos, limiteDoProjeto, formatarData } from './lib/marketingProjetos';
+import { antecessorAtrasado, antecessoresPendentes, avancaStatus, liberadasPor } from './lib/antecessores';
+import { useAntecessores } from './hooks/useAntecessores';
+import JustificarDatas, { pedirJustificativa } from './components/JustificarDatas';
+import { useResponsaveisExtras, comResponsaveis, temResponsavel, idsResponsaveis } from './lib/responsaveis';
 import type { NavItemId, FinanceiroSecao, ModoTarefas } from './lib/navegacao';
+import { chaveAlertaCritico, getDueState, estaAtrasada } from './lib/prazo';
+import { conciliarDatas, mudancasDeDatas, textoMudanca } from './lib/dataInicio';
 
 // Módulos carregados sob demanda: o código de cada área só é baixado quando
 // alguém com acesso a abre. A proteção real é o RLS no banco; isto apenas
@@ -60,7 +78,6 @@ const PropostasKanban = lazy(() => import('./components/comercial/PropostasKanba
 const DashboardView = lazy(() => import('./components/DashboardView'));
 const RedeSocialView = lazy(() => import('./components/redeSocial/RedeSocialView'));
 const ProjetosView = lazy(() => import('./components/marketing/ProjetosView'));
-const PortfoliosView = lazy(() => import('./components/marketing/PortfoliosView'));
 
 /** Módulo(s) que liberam cada tela. Telas fora do mapa são de todos. */
 const MODULOS_DA_TELA: Partial<Record<ViewType, Modulo[]>> = {
@@ -70,7 +87,6 @@ const MODULOS_DA_TELA: Partial<Record<ViewType, Modulo[]>> = {
   rede_social: ['tarefas'],
   my_tasks: ['tarefas'],
   marketing_projetos: ['tarefas'],
-  portfolios: ['tarefas'],
   crm: ['crm'],
   projects: ['empreendimentos'],
   sienge: ['financas', 'financas_orcamento'],
@@ -104,6 +120,9 @@ export default function App() {
   currentUserRef.current = currentUser;
 
   // Toast state
+  const [empreendimentoLista, setEmpreendimentoLista] = useState<string | null>(null);
+  /** Cronograma de Minhas tarefas: só as atrasadas (chip do cabeçalho). */
+  const [soAtrasadas, setSoAtrasadas] = useState(false);
   const [toast, setToast] = useState<{ message: string; id: number } | null>(null);
   const toastTimerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -133,13 +152,18 @@ export default function App() {
   }, []);
 
   // Navigation Routing states
-  const [activeView, setActiveView] = useState<ViewType>('home');
+  const [activeView, setActiveView] = useState<ViewType>(() => telaInicial('home'));
+  useHistoricoInbox(activeView, setActiveView);
   const [activeTaskViewType, setActiveTaskViewType] = useState<'board' | 'list'>('board');
   const [comercialTab, setComercialTab] = useState<ComercialTab>('vendas_dashboard');
   // Menu Marketing: vista das telas de tarefas (Minhas tarefas / projeto aberto)
   // e o projeto aberto dentro de Projetos (null = lista de projetos).
   const [modoTarefas, setModoTarefas] = useState<ModoTarefas>('board');
+  // Minhas tarefas tem vista própria (abre em Lista).
+  const [modoMinhas, setModoMinhas] = useState<ModoTarefas>('list');
   const [projetoAbertoId, setProjetoAbertoId] = useState<string | null>(null);
+  // Projeto aberto a partir de uma tarefa: o Kanban mostra as tarefas de todos.
+  const [visita, setVisita] = useState({ projetoId: '', n: 0 });
   const [editandoProjetoAberto, setEditandoProjetoAberto] = useState(false);
   // Menu Financeiro: qual seção a tela de Finanças mostra.
   const [financeiroSecao, setFinanceiroSecao] = useState<FinanceiroSecao>('titulos');
@@ -148,6 +172,11 @@ export default function App() {
   const projetoAberto = activeView === 'marketing_projetos'
     ? marketing.projetos.find(p => p.id === projetoAbertoId) ?? null
     : null;
+  // "Sem projeto alocado", aberto pela lista de Projetos.
+  const semProjetoAberto = activeView === 'marketing_projetos' && projetoAbertoId === SEM_PROJETO;
+  useEffect(() => {
+    if (!projetoAberto) setVisita(v => v.projetoId ? { ...v, projetoId: '' } : v);
+  }, [projetoAberto]);
   // A sidebar expandida come 280px — 20% de um notebook de 1366px, e é o que
   // sobra de largura para o kanban. Abaixo de 1280px ela nasce recolhida e volta
   // sozinha quando a janela cresce. O listener reage só à TRANSIÇÃO do limiar
@@ -234,7 +263,11 @@ export default function App() {
   // primeiro plano (refetchIntervalInBackground é false por padrão no React Query).
   const REALTIME_FALLBACK_POLL_MS = 180_000;
 
-  const { data: tasks = [], isLoading: isTasksLoading } = useQuery({ queryKey: ['tasks'], queryFn: queryFnTasks, enabled: authReady, refetchInterval: REALTIME_FALLBACK_POLL_MS });
+  const { data: tasksBase = [], isLoading: isTasksLoading } = useQuery({ queryKey: ['tasks'], queryFn: queryFnTasks, enabled: authReady, refetchInterval: REALTIME_FALLBACK_POLL_MS });
+  // Responsáveis adicionais (task_responsaveis) juntados em task.responsaveis.
+  const { extras: responsaveisExtras } = useResponsaveisExtras();
+  const tasks = useMemo(() => comResponsaveis(tasksBase, responsaveisExtras), [tasksBase, responsaveisExtras]);
+  const { mapa: antecessores } = useAntecessores();
   const { data: projects = [], isLoading: isProjectsLoading } = useQuery({ queryKey: ['projects'], queryFn: fetchProjects, enabled: authReady, refetchInterval: REALTIME_FALLBACK_POLL_MS });
   const { data: labels = [], isLoading: isLabelsLoading } = useQuery({ queryKey: ['labels'], queryFn: fetchLabels, enabled: authReady, refetchInterval: REALTIME_FALLBACK_POLL_MS });
   const { data: siengeTitles = [], isLoading: isSiengeLoading } = useQuery({ queryKey: ['siengeTitles'], queryFn: fetchSiengeTitles, enabled: authReady, refetchInterval: REALTIME_FALLBACK_POLL_MS });
@@ -310,6 +343,8 @@ export default function App() {
   // Modal togglers
   const [isTaskSheetOpen, setIsTaskSheetOpen] = useState(false);
   const [isCommandBarOpen, setIsCommandBarOpen] = useState(false);
+  const [pedidoCriacao, setPedidoCriacao] = useState<PedidoCriacao | null>(null);
+  const atenderPedido = useCallback(() => setPedidoCriacao(null), []);
   // Theme preference survives reloads; falls back to the OS setting on a first
   // visit so the app doesn't flash the wrong theme at people who run light.
   const [isDarkMode, setIsDarkMode] = useState(() => {
@@ -735,6 +770,7 @@ export default function App() {
             ...(sm.isFieldDirty(id, 'priority')            ? {} : { priority:            raw.priority }),
             ...(sm.isFieldDirty(id, 'title')               ? {} : { title:               raw.title }),
             ...(sm.isFieldDirty(id, 'assigneeId')          ? {} : { assigneeId:          raw.assignee_id }),
+            ...(sm.isFieldDirty(id, 'startDate') || !('start_date' in raw) ? {} : { startDate: raw.start_date ?? undefined }),
             ...(sm.isFieldDirty(id, 'dueDate')             ? {} : { dueDate:             raw.due_date }),
             ...(sm.isFieldDirty(id, 'reminderDate')        ? {} : { reminderDate:        raw.reminder_date }),
             ...(sm.isFieldDirty(id, 'reminderType')        ? {} : { reminderType:        raw.reminder_type }),
@@ -929,15 +965,22 @@ export default function App() {
             details = `A tarefa está 7 dias atrasada`;
             milestone = '-7d';
             deadlineKey = `deadline_${task.id}_-7d_${task.dueDate}`;
-          } else if (diffDays === -15) {
-            message = 'Prazo Atrasado (15 dias)';
-            details = `A tarefa está 15 dias atrasada`;
-            milestone = '-15d';
-            deadlineKey = `deadline_${task.id}_-15d_${task.dueDate}`;
+          } else {
+            // Atraso crítico (> OVERDUE_CRITICAL_DAYS): substitui o antigo aviso de
+            // 15 dias. Vale para qualquer dia acima do limite (não só o exato, que
+            // se perdia com o app fechado), no máximo 1 vez por semana.
+            const chaveCritica = chaveAlertaCritico(task, triggeredReminders);
+            if (chaveCritica) {
+              message = 'Tarefa com atraso crítico';
+              details = `${getDueState(task.dueDate, task.status).daysLate} dias`;
+              milestone = 'critico';
+              deadlineKey = chaveCritica;
+            }
           }
 
           // Only fire each deadline alert once per task+type+dueDate combination
           if (message && deadlineKey && !triggeredReminders.includes(deadlineKey)) {
+            triggeredRemindersRef.current.add(deadlineKey);
             addNotification({
               userId: currentUser.id,
               actorId: 'system',
@@ -950,6 +993,26 @@ export default function App() {
             triggeredReminders = [...triggeredReminders, deadlineKey];
             hasNewTriggers = true;
           }
+        }
+
+        // Antecessor atrasado: avisa quem espera por ele, uma vez por prazo perdido.
+        if (temResponsavel(task, currentUser.id)) {
+          antecessoresPendentes(task.id, antecessores, tasks).filter(a => antecessorAtrasado(a)).forEach(a => {
+            const chave = `antecessor_${task.id}_${a.id}_${a.dueDate}`;
+            if (triggeredReminders.includes(chave)) return;
+            triggeredRemindersRef.current.add(chave);
+            addNotification({
+              userId: currentUser.id,
+              actorId: 'system',
+              taskId: task.id,
+              targetId: 'antecessor',
+              type: 'predecessor_late',
+              message: 'Antecessor atrasado',
+              details: `"${a.title || 'Sem título'}" passou do prazo (${formatarData(a.dueDate!)}) e a sua tarefa depende dela.`
+            });
+            triggeredReminders = [...triggeredReminders, chave];
+            hasNewTriggers = true;
+          });
         }
 
         // Check task reminder — recipient is always the task's assignee
@@ -1081,7 +1144,11 @@ export default function App() {
     };
   // currentUser is intentionally excluded — read via currentUserRef.current
   // to avoid resetting the interval on every updateProfile() call.
-  }, [tasks, siengeTitles]);
+  }, [tasks, siengeTitles, antecessores]);
+
+  // Atalho N: o listener é registrado uma vez, então lê a ação mais recente por ref.
+  const novaTarefaAtalhoRef = useRef<(() => void) | null>(null);
+  const viewRef = useRef<string>('');
 
   // Bind Cmd+K and on-screen toggling listeners
   useEffect(() => {
@@ -1092,6 +1159,19 @@ export default function App() {
       }
       if (e.key === 'Escape') {
         setIsCommandBarOpen(false);
+      }
+      // N = nova tarefa. Só sem modificador, fora de campo editável e sem
+      // modal/folha aberta por cima (ali o N é texto ou não faz sentido).
+      // Em Minhas tarefas o atalho também é C (o botão diz "Nova tarefa (C)").
+      const teclaNova = e.key === 'n' || e.key === 'N' || ((e.key === 'c' || e.key === 'C') && viewRef.current === 'my_tasks');
+      if (teclaNova && !e.metaKey && !e.ctrlKey && !e.altKey && !e.repeat) {
+        const alvo = e.target as HTMLElement | null;
+        const editavel = !!alvo && (alvo.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(alvo.tagName));
+        if (editavel || document.querySelector('[role="dialog"][aria-modal="true"]')) return;
+        if (novaTarefaAtalhoRef.current) {
+          e.preventDefault();
+          novaTarefaAtalhoRef.current();
+        }
       }
     };
     window.addEventListener('keydown', handleGlobalShortcuts);
@@ -1131,6 +1211,8 @@ export default function App() {
   const handleUpdateTask = (updates: Partial<Task> & { id: string }) => {
     const targetTask = tasks.find(t => t.id === updates.id);
     if (!targetTask) return;
+    const { justificativaData: justificativa, ...semJustificativa } = updates;
+    updates = semJustificativa;
     
     // Always set updatedBy so backend triggers know who made the change
     if (currentUser?.id) {
@@ -1156,14 +1238,57 @@ export default function App() {
       if (!hasOtherChanges) return;
     }
 
-    // Hierarquia de datas: o prazo não passa da entrega do projeto (ou do
-    // portfólio, se o projeto não tiver data). O banco também recusa.
+    // A tarefa não segue enquanto houver antecessor em aberto. Só o status é barrado.
+    if (updates.status && avancaStatus(targetTask.status, updates.status)) {
+      const esperando = antecessoresPendentes(targetTask.id, antecessores, tasks);
+      if (esperando.length > 0) {
+        showToast(`Esta tarefa só pode seguir depois de concluir ${esperando.map(t => `"${t.title || 'Sem título'}"`).join(' e ')}.`);
+        delete updates.status;
+        if (!Object.keys(updates).some(k => k !== 'id' && k !== 'updatedBy')) return;
+      }
+    }
+
+    // Hierarquia de datas: o prazo não passa da entrega do projeto. O banco
+    // também recusa.
     if ('dueDate' in updates && updates.dueDate) {
       const limite = marketing.limiteDaTarefa(updates.id);
       if (limite && updates.dueDate.slice(0, 10) > limite.data) {
         showToast(`O prazo não pode passar da entrega do projeto "${limite.projeto}" (${formatarData(limite.data)}).`);
         return;
       }
+    }
+
+    // Início e prazo não se cruzam: mudou o prazo, o início acompanha; mudou o início, recusa.
+    const conciliacao = conciliarDatas(targetTask, {
+      startDate: 'startDate' in updates ? updates.startDate : targetTask.startDate,
+      dueDate: resultingDueDate,
+    });
+    if (conciliacao === 'recusar-inicio') {
+      showToast('O início não pode ser depois do prazo.');
+      delete updates.startDate;
+      if (!Object.keys(updates).some(k => k !== 'id' && k !== 'updatedBy')) return;
+    }
+
+    // Início e prazo já definidos só mudam com justificativa, de qualquer tela.
+    const mudancas = mudancasDeDatas(targetTask, updates);
+    if (mudancas.length > 0) {
+      if (!justificativa) {
+        const pedido = updates;
+        void pedirJustificativa(targetTask.title, mudancas).then(motivo => {
+          if (motivo) handleUpdateTaskRef.current({ ...pedido, justificativaData: motivo });
+        });
+        return;
+      }
+      logTaskFieldHistory(targetTask.id, 'justificativa_data', mudancas.map(textoMudanca).join(' · '), justificativa, currentUser?.id ?? null)
+        .catch(err => {
+          console.error('Falha ao registrar a justificativa:', err);
+          showToast('A data foi alterada, mas a justificativa não foi salva no histórico.');
+        });
+    }
+
+    if (conciliacao === 'ajustar-inicio') {
+      updates.startDate = resultingDueDate!.slice(0, 10);
+      showToast('O início foi ajustado para não passar do novo prazo.');
     }
 
     // Automação: prazo removido de task ativa → volta silenciosamente para 'Sem Previsão'
@@ -1248,11 +1373,31 @@ export default function App() {
     // Queue update via SyncManager
     syncManager.updateTask(updates.id, updates, { debounce: needsDebounce });
 
+    // Concluiu um antecessor: avisa os responsáveis das tarefas que já podem seguir.
+    if (updates.status === 'done' && targetTask.status !== 'done') {
+      for (const liberada of liberadasPor(targetTask.id, antecessores, tasks)) {
+        for (const userId of idsResponsaveis(liberada)) {
+          addNotification({
+            userId,
+            actorId: currentUser?.id || 'system',
+            taskId: liberada.id,
+            targetId: 'antecessor',
+            type: 'predecessor_done',
+            message: 'Você pode seguir com a tarefa',
+            details: `O antecessor "${targetTask.title || 'Sem título'}" foi concluído.`
+          });
+        }
+      }
+    }
+
     // Update selectedTask details live immediately
     if (selectedTask?.id === updates.id) {
        setSelectedTask(prev => prev ? { ...prev, ...updates } as Task : null);
     }
   };
+
+  const handleUpdateTaskRef = useRef(handleUpdateTask);
+  handleUpdateTaskRef.current = handleUpdateTask;
 
   const handleAddTask = (newTask: Task) => {
     // Tarefa criada já em 'in_progress'/'rework' (coluna do Kanban, "Nova Tarefa"
@@ -1260,7 +1405,7 @@ export default function App() {
     // liga o cronômetro em handleUpdateTask — sem isto, ela ficava com
     // timeTracking vazio para sempre e o card não mostrava o tempo trabalhado.
     // Criada dentro de um projeto com prazo além da entrega: fica sem prazo.
-    const limiteNovo = projetoAberto ? limiteDoProjeto(projetoAberto, marketing.portfolios) : null;
+    const limiteNovo = projetoAberto ? limiteDoProjeto(projetoAberto) : null;
     if (limiteNovo && newTask.dueDate && newTask.dueDate.slice(0, 10) > limiteNovo) {
       showToast(`O prazo não pode passar da entrega do projeto (${formatarData(limiteNovo)}). A tarefa foi criada sem prazo.`);
       newTask = { ...newTask, dueDate: undefined, status: newTask.status === 'done' ? 'done' : 'no_forecast' };
@@ -1283,6 +1428,7 @@ export default function App() {
     if (projetoAberto) {
       marketing.vincularTarefa(newTask.id, projetoAberto.id, salvo).catch(console.error);
     }
+    return salvo;
   };
 
   const handleDeleteTask = (taskId: string) => {
@@ -1295,14 +1441,15 @@ export default function App() {
     }
   };
 
-  const handleAddNewTaskPrompt = () => {
+  // Empreendimento único filtrado na Lista: "+ Novo" já nasce com ele.
+  const abrirNovaTarefa = (projectId = '') => {
     const newTask: any = {
       id: crypto.randomUUID(),
       title: '',
       description: '',
       status: 'no_forecast',
       priority: 'medium',
-      projectId: '',
+      projectId,
       labels: [labels.find(l => l.name === 'Tarefa') || labels[0]].filter(Boolean) as Label[],
       subtasks: [],
       createdAt: new Date().toISOString().split('T')[0],
@@ -1314,6 +1461,29 @@ export default function App() {
     setSelectedTask(newTask as Task);
     setIsTaskSheetOpen(true);
   };
+
+  const handleAddNewTaskPrompt = () => abrirNovaTarefa(activeView === 'my_tasks' ? currentProjectFilter || empreendimentoLista || '' : '');
+
+  // "+ Novo" do header: único ponto de criação. Cada opção só aparece para
+  // quem pode criar aquele item; sem nenhuma, o botão some.
+  const podeCriarTarefa = permissoes.nivel('tarefas') === 'editar';
+  const opcoesNovo: OpcaoNovo[] = [
+    ...(podeCriarTarefa ? [{ id: 'tarefa', label: 'Tarefa', icon: CheckSquare, atalho: 'N', onSelect: handleAddNewTaskPrompt }] : []),
+    ...(podeCriarTarefa && podeVerTela('marketing_projetos') ? [{
+      id: 'projeto', label: 'Projeto', icon: FolderOpen,
+      onSelect: () => { setProjetoAbertoId(null); setActiveView('marketing_projetos'); setPedidoCriacao('projeto'); },
+    }] : []),
+    ...(podeVerTela('crm') && permissoes.nivel('crm') === 'editar' ? [{
+      id: 'lead', label: 'Lead', icon: Headset,
+      onSelect: () => { setActiveView('crm'); setPedidoCriacao('lead'); },
+    }] : []),
+  ];
+  const listaDeProjetos = activeView === 'marketing_projetos' && !projetoAberto && !semProjetoAberto;
+  const novoDireto: OpcaoNovo | undefined = activeView === 'my_tasks' && podeCriarTarefa
+    ? { ...opcoesNovo[0], label: 'Nova tarefa', atalho: 'C' }
+    : undefined;
+  viewRef.current = activeView;
+  novaTarefaAtalhoRef.current = podeCriarTarefa && !isTaskSheetOpen && !isCommandBarOpen ? handleAddNewTaskPrompt : null;
 
   // Post do módulo Rede Social: tarefa com a etiqueta "Social Media". Com data,
   // já nasce em 'A fazer' (o prazo é o dia da publicação).
@@ -1338,6 +1508,37 @@ export default function App() {
     setIsTaskSheetOpen(true);
   };
 
+  // Salvar título Sienge: usado pela tela do Sienge e pelas aprovações inline da Caixa de entrada.
+  const salvarTituloSienge = async (title: SiengeTitle) => {
+    // __baseUpdatedAt é transiente (só serve ao compare-and-swap); não vai pro cache.
+    const { __baseUpdatedAt, ...clean } = title as any;
+    queryClient.setQueryData<SiengeTitle[]>(['siengeTitles'], prev => {
+      const exists = (prev || []).find(t => t.id === clean.id);
+      // attachmentsCount vem de coluna gerada, então não volta no objeto salvo:
+      // recalcula pelos anexos enviados ou preserva o que a lista já sabia —
+      // senão o clipe de anexo sumiria da tela até o próximo refetch.
+      const merged: SiengeTitle = {
+        ...clean,
+        attachmentsCount: clean.attachments?.length ?? exists?.attachmentsCount,
+      };
+      return exists
+        ? (prev || []).map(t => t.id === clean.id ? merged : t)
+        : [merged, ...(prev || [])];
+    });
+    // Resolve true/false (nunca rejeita): o Kanban não aguarda, a Caixa de entrada usa o resultado.
+    return saveSiengeTitle(title).then(() => true).catch((e) => {
+      // Em qualquer falha, descarta o otimista e recarrega do servidor.
+      queryClient.invalidateQueries({ queryKey: ['siengeTitles'] });
+      if (e instanceof SiengeTitleConflictError) {
+        // Outro usuário salvou primeiro.
+        showToast('Este título foi alterado por outra pessoa. Sua tela foi atualizada com a versão mais recente.');
+      } else {
+        console.error(e);
+      }
+      return false;
+    });
+  };
+
   const handleSelectTask = useCallback(async (task: Task) => {
     setSelectedTask(task);
     setIsTaskSheetOpen(true);
@@ -1356,6 +1557,19 @@ export default function App() {
       setAreBriefingsLoading(false);
     }
   }, []);
+
+  // Link copiado de uma tarefa (?tarefa=id): abre uma vez, quando os dados chegam.
+  const tarefaDoLink = useRef(new URLSearchParams(window.location.search).get('tarefa'));
+  useEffect(() => {
+    const id = tarefaDoLink.current;
+    if (!id || !authReady || isTasksLoading) return;
+    tarefaDoLink.current = null;
+    const q = new URLSearchParams(window.location.search);
+    q.delete('tarefa');
+    window.history.replaceState(window.history.state, '', `${window.location.pathname}${q.size ? `?${q}` : ''}`);
+    const alvo = tasks.find(t => t.id === id);
+    if (alvo) handleSelectTask(alvo); else showToast('Tarefa não encontrada ou sem acesso.');
+  }, [authReady, isTasksLoading, tasks]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleCloseTaskSheet = (localTaskState?: any) => {
     if (isTaskSheetOpen && selectedTask) {
@@ -1385,7 +1599,7 @@ export default function App() {
              message: formattedMessage,
              missingFields
            });
-           return;
+           return false;
         }
       }
     }
@@ -1472,7 +1686,6 @@ export default function App() {
       case 'inbox': setActiveView('inbox'); break;
       case 'my_tasks': setActiveView('my_tasks'); break;
       case 'projetos': setProjetoAbertoId(null); setActiveView('marketing_projetos'); break;
-      case 'portfolios': setActiveView('portfolios'); break;
       case 'rede_social': setActiveView('rede_social'); break;
       case 'empreendimentos': setActiveView('projects'); break;
       case 'analytics': setActiveView('dashboard'); break;
@@ -1502,7 +1715,6 @@ export default function App() {
       case 'tasks_board':
       case 'tasks_list':
       case 'calendar': return 'projetos';
-      case 'portfolios': return 'portfolios';
       case 'rede_social': return 'rede_social';
       case 'projects': return 'empreendimentos';
       case 'dashboard': return 'analytics';
@@ -1521,12 +1733,16 @@ export default function App() {
   // "Todas as tarefas" reaproveita as telas antigas (tasks_board / calendar),
   // que também atendem a busca (Ctrl+K) e o clique num empreendimento.
   const telaTodasTarefas = activeView === 'tasks_board' || activeView === 'tasks_list' || activeView === 'calendar';
-  const telaDeTarefas = activeView === 'my_tasks' || !!projetoAberto || telaTodasTarefas;
+  const telaDeTarefas = activeView === 'my_tasks' || !!projetoAberto || semProjetoAberto || telaTodasTarefas;
   const modoAtual: ModoTarefas = telaTodasTarefas
     ? (activeView === 'calendar' ? 'calendar' : activeView === 'tasks_list' ? 'list' : activeTaskViewType)
-    : modoTarefas;
+    : activeView === 'my_tasks'
+      ? modoMinhas
+      : modoTarefas;
   const trocarModo = (m: ModoTarefas) => {
-    if (telaTodasTarefas) {
+    if (activeView === 'my_tasks') {
+      setModoMinhas(m);
+    } else if (telaTodasTarefas) {
       if (m === 'calendar') setActiveView('calendar');
       else { setActiveTaskViewType(m); setActiveView('tasks_board'); }
     } else {
@@ -1538,10 +1754,18 @@ export default function App() {
     ? tasks.filter(t => marketing.projetoDaTarefa[t.id] === projetoAberto.id)
     : [];
   const tarefasDaTela = activeView === 'my_tasks'
-    ? visibleTasks.filter(t => t.assigneeId === currentUser?.id)
+    ? visibleTasks.filter(t => !!currentUser && temResponsavel(t, currentUser.id))
     : projetoAberto
       ? visibleTasks.filter(t => marketing.projetoDaTarefa[t.id] === projetoAberto.id)
-      : visibleTasks;
+      : semProjetoAberto
+        ? (marketing.carregando ? [] : visibleTasks.filter(t => !marketing.projetoDaTarefa[t.id]))
+        : visibleTasks;
+  const atrasadasDaTela = tarefasDaTela.filter(t => estaAtrasada(getDueState(t.dueDate, t.status).state)).length;
+  // Em Minhas tarefas o filtro de responsáveis só mostra quem divide alguma
+  // tarefa com o usuário logado (ele incluído).
+  const usuariosFiltroMinhas = activeView === 'my_tasks'
+    ? [...new Set(tarefasDaTela.flatMap(t => idsResponsaveis(t)))]
+    : undefined;
 
   const getBreadcrumbLabel = () => {
     switch (activeView) {
@@ -1552,9 +1776,7 @@ export default function App() {
       case 'my_tasks':
         return 'Minhas tarefas';
       case 'marketing_projetos':
-        return projetoAberto ? `Projetos / ${projetoAberto.nome}` : 'Projetos';
-      case 'portfolios':
-        return 'Portfólios';
+        return projetoAberto ? `Projetos / ${projetoAberto.nome}` : semProjetoAberto ? `Projetos / ${ROTULO_SEM_PROJETO}` : 'Projetos';
       case 'inbox':
         return 'Caixa de entrada';
       case 'dashboard':
@@ -1603,8 +1825,8 @@ export default function App() {
           </div>
           
           <div className="flex flex-col items-center gap-2">
-            <h2 className="text-lg font-semibold text-zinc-200 tracking-tight">Preparando seu Workspace</h2>
-            <p className="text-xs text-zinc-500 font-medium">Sincronizando tarefas, criativos e projetos...</p>
+            <h2 className="text-heading font-semibold text-zinc-200 tracking-tight">Preparando seu Workspace</h2>
+            <p className="text-caption text-zinc-500 font-medium">Sincronizando tarefas, criativos e projetos...</p>
           </div>
           
           <div className="flex gap-1 mt-2">
@@ -1652,24 +1874,30 @@ export default function App() {
         {/* Top Header navbar */}
         <header className="appbar-h border-b border-zinc-900 view-pad-x flex items-center justify-between gap-3 shrink-0 bg-[#08080a]/60 backdrop-blur-md z-10 select-none">
           <div className="flex items-center gap-3 min-w-0">
-            {/* "Workspace /" é redundante quando o espaço aperta — o rótulo da
-                view sozinho já orienta, e a largura vai para o filtro ativo. */}
-            <span className="hidden xl:inline text-zinc-500 text-[11px] font-semibold tracking-wider font-sans uppercase">Workspace</span>
-            <span className="hidden xl:inline text-zinc-500 text-xs">/</span>
+            {/* No Início a saudação já orienta: o breadcrumb seria ruído. */}
+            {/* Minhas tarefas e Projetos têm título e subtítulo na própria tela: o breadcrumb repetiria o H1. */}
+            {activeView !== 'home' && activeView !== 'my_tasks' && !listaDeProjetos && (
+              <>
+                {/* "Workspace /" é redundante quando o espaço aperta — o rótulo da
+                    view sozinho já orienta, e a largura vai para o filtro ativo. */}
+                <span className="hidden xl:inline text-zinc-500 text-caption font-semibold font-sans">Workspace</span>
+                <span className="hidden xl:inline text-zinc-500 text-caption">/</span>
 
-            {/* Breadcrumb indicator */}
-            <span className="text-[11px] font-semibold text-zinc-200 tracking-tight flex items-center gap-1.5 font-sans whitespace-nowrap">
-              {getBreadcrumbLabel()}
-            </span>
+                {/* Breadcrumb indicator */}
+                <span className="text-caption font-semibold text-zinc-200 tracking-tight flex items-center gap-1.5 font-sans whitespace-nowrap">
+                  {getBreadcrumbLabel()}
+                </span>
+              </>
+            )}
 
             {/* Active Project Filter box */}
             {currentProjectFilter && activeProjectObject && (
-              <div className="hidden sm:flex items-center gap-1.5 ml-1 lg:ml-4 min-w-0 bg-zinc-900/60 text-zinc-300 border border-zinc-800/80 px-2 py-0.5 rounded-md text-[10px] font-sans font-medium">
+              <div className="hidden sm:flex items-center gap-1.5 ml-1 lg:ml-4 min-w-0 bg-zinc-900/60 text-zinc-300 border border-zinc-800/80 px-2 py-0.5 rounded-md text-caption font-sans font-medium">
                 <span className={`w-1.5 h-1.5 rounded-full bg-current shrink-0 ${activeProjectObject.color}`} />
                 <span className="truncate max-w-[16ch] lg:max-w-none" title={activeProjectObject.name}>{activeProjectObject.name}</span>
                 <button
                   onClick={() => setCurrentProjectFilter(null)}
-                  className="hover:text-zinc-100 transition-colors ml-1 text-zinc-400 font-bold"
+                  className="hover:text-zinc-100 transition-colors ml-1 text-zinc-400 font-semibold"
                   title="Remover filtro"
                 >
                   <X size={10} />
@@ -1678,23 +1906,25 @@ export default function App() {
             )}
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             {/* Mode switch helper triggers */}
             <button
               onClick={() => setIsDarkMode(!isDarkMode)}
-              className="p-1 text-zinc-500 hover:text-zinc-200 hover:bg-zinc-900 rounded-md transition-colors border border-zinc-900 bg-zinc-950/40"
+              className="size-8 [@media(pointer:coarse)]:size-10 inline-flex items-center justify-center text-zinc-400 hover:text-zinc-100 hover:bg-[#161619] rounded-lg transition-colors border border-zinc-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/60"
               title={isDarkMode ? "Ativar Modo Claro" : "Ativar Modo Escuro"}
+              aria-label={isDarkMode ? "Ativar modo claro" : "Ativar modo escuro"}
             >
-              {isDarkMode ? <Sun size={13} className="text-amber-400" /> : <Moon size={13} />}
+              {isDarkMode ? <Sun size={15} className="text-amber-400" /> : <Moon size={15} />}
             </button>
 
-            {/* Nova Tarefa right button */}
-            <button
-              onClick={handleAddNewTaskPrompt}
-              className="hidden md:flex h-7 items-center gap-1.5 px-2.5 bg-zinc-900/80 hover:bg-zinc-800 border border-zinc-800 text-[11px] font-medium text-zinc-200 hover:text-zinc-100 rounded-md transition-all active:scale-[0.98]"
-            >
-              <span>+ Novo Item</span>
-            </button>
+            <NotificacoesMenu
+              tasks={tasks}
+              onSelectTask={handleSelectTask}
+              onOpenInbox={podeVerTela('inbox') ? () => setActiveView('inbox') : undefined}
+            />
+
+            {/* Único botão primário do app. Na lista de Projetos ele fica na barra da lista. */}
+            {!listaDeProjetos && <NovoMenu opcoes={opcoesNovo} direto={novoDireto} />}
           </div>
         </header>
 
@@ -1710,7 +1940,7 @@ export default function App() {
           className="flex-1 flex flex-col overflow-hidden min-h-0"
         >
           {somenteLeitura && (
-            <div className="shrink-0 flex items-center gap-2 view-pad-x py-1.5 text-[11px] text-sky-300/90 bg-sky-500/10 border-b border-sky-500/20">
+            <div className="shrink-0 flex items-center gap-2 view-pad-x py-1.5 text-caption text-sky-300/90 bg-sky-500/10 border-b border-sky-500/20">
               <Eye size={12} /> Somente leitura: seu perfil pode consultar esta área, mas não alterar.
             </div>
           )}
@@ -1722,6 +1952,9 @@ export default function App() {
               labels={labels}
               onUpdateTask={handleUpdateTask}
               onSelectTask={handleSelectTask}
+              onNewTask={podeCriarTarefa ? handleAddNewTaskPrompt : undefined}
+              onAbrirProjeto={podeVerTela('marketing_projetos') ? (id) => { setProjetoAbertoId(id); setActiveView('marketing_projetos'); } : undefined}
+              onOpenInbox={podeVerTela('inbox') ? () => setActiveView('inbox') : undefined}
             />
           )}
 
@@ -1730,47 +1963,58 @@ export default function App() {
               projects={projects}
               onSelectTask={handleSelectTask}
               tasks={tasks}
+              siengeTitles={siengeTitles}
+              alcadaConfig={siengeAlcadaConfig}
+              onSaveSiengeTitle={salvarTituloSienge}
+              projetosMarketing={marketing.projetos}
+              projetoDaTarefa={marketing.projetoDaTarefa}
+              onOpenSiengeTitle={podeVerTela('sienge') && permissoes.pode('financas') ? (id) => {
+                solicitarAberturaTitulo(id);
+                setFinanceiroSecao('titulos');
+                setActiveView('sienge');
+              } : undefined}
             />
           )}
 
-          {activeView === 'marketing_projetos' && !projetoAberto && (
+          {listaDeProjetos && (
             <ProjetosView
               tasks={tasks}
               podeEditar={permissoes.nivel('tarefas') === 'editar'}
               onAbrirProjeto={(id) => { setProjetoAbertoId(id); }}
               onAbrirTodas={() => { setActiveTaskViewType('board'); setActiveView('tasks_board'); }}
-            />
-          )}
-
-          {activeView === 'portfolios' && (
-            <PortfoliosView
-              tasks={tasks}
-              podeEditar={permissoes.nivel('tarefas') === 'editar'}
-              onAbrirProjeto={(id) => { setProjetoAbertoId(id); setActiveView('marketing_projetos'); }}
+              novoProjeto={pedidoCriacao === 'projeto'}
+              onNovoProjetoAtendido={atenderPedido}
             />
           )}
 
           {telaDeTarefas && (
             <TarefasAbas
-              titulo={activeView === 'my_tasks' ? 'Minhas tarefas' : projetoAberto ? projetoAberto.nome : 'Todas as tarefas'}
-              cor={projetoAberto?.cor}
-              subtitulo={projetoAberto ? (() => {
-                const limite = limiteDoProjeto(projetoAberto, marketing.portfolios);
-                const entrega = limite
-                  ? `Entrega: ${formatarData(limite)}${projetoAberto.dataEntrega ? '' : ' (do portfólio)'}`
-                  : 'Sem data de entrega';
-                return projetoAberto.descricao ? `${entrega} · ${projetoAberto.descricao}` : entrega;
+              titulo={activeView === 'my_tasks' ? 'Minhas tarefas' : projetoAberto ? projetoAberto.nome : semProjetoAberto ? ROTULO_SEM_PROJETO : 'Todas as tarefas'}
+              pasta={!!projetoAberto}
+              subtitulo={activeView === 'my_tasks' ? (() => {
+                const abertas = tarefasDaTela.filter(t => t.status !== 'done');
+                // No Cronograma as atrasadas viram um chip que filtra.
+                return modoAtual === 'calendar' ? `${abertas.length} em aberto` : `${abertas.length} em aberto · ${atrasadasDaTela} ${atrasadasDaTela === 1 ? 'atrasada' : 'atrasadas'}`;
+              })() : projetoAberto ? (projetoAberto.descricao || undefined) : semProjetoAberto ? (() => {
+                const n = tarefasDaTela.filter(t => t.status !== 'done').length;
+                return `${n} em aberto · ${atrasadasDaTela} ${atrasadasDaTela === 1 ? 'atrasada' : 'atrasadas'}`;
               })() : undefined}
-              portfolio={projetoAberto ? marketing.portfolios.find(p => p.id === projetoAberto.portfolioId) ?? null : null}
-              direita={projetoAberto ? (
-                <MembrosProjeto
-                  projetoId={projetoAberto.id}
-                  tarefasDoProjeto={tarefasDoProjetoAberto}
-                  podeEditar={permissoes.nivel('tarefas') === 'editar'}
+              propriedades={projetoAberto ? (
+                <PropriedadesProjeto
+                  projeto={projetoAberto}
+                  onEditar={permissoes.nivel('tarefas') === 'editar' ? () => setEditandoProjetoAberto(true) : undefined}
+                  membros={
+                    <MembrosProjeto
+                      projetoId={projetoAberto.id}
+                      tarefasDoProjeto={tarefasDoProjetoAberto}
+                      podeEditar={permissoes.nivel('tarefas') === 'editar'}
+                    />
+                  }
                 />
               ) : undefined}
               modo={modoAtual}
               onModo={trocarModo}
+              atrasadas={activeView === 'my_tasks' ? { total: atrasadasDaTela, ativo: soAtrasadas, onMudar: setSoAtrasadas } : undefined}
               onVoltar={activeView === 'my_tasks' ? undefined : () => { setProjetoAbertoId(null); setCurrentProjectFilter(null); setActiveView('marketing_projetos'); }}
               onEditar={projetoAberto && permissoes.nivel('tarefas') === 'editar' ? () => setEditandoProjetoAberto(true) : undefined}
             />
@@ -1778,6 +2022,8 @@ export default function App() {
 
           {telaDeTarefas && modoAtual === 'board' && (
             <KanbanView
+              key={`kanban-${visita.n}`}
+              abrirEmTodos={semProjetoAberto || (!!projetoAberto && projetoAberto.id === visita.projetoId)}
               tasks={tarefasDaTela}
               projects={projects}
               labels={labels}
@@ -1788,6 +2034,7 @@ export default function App() {
               socialMediaFilter={socialMediaFilter}
               setSocialMediaFilter={setSocialMediaFilter}
               editingMap={editingMap}
+              usuariosFiltro={usuariosFiltroMinhas}
             />
           )}
 
@@ -1801,20 +2048,30 @@ export default function App() {
               onAddTask={handleAddTask}
               currentProjectFilter={currentProjectFilter}
               editingMap={editingMap}
+              usuariosFiltro={usuariosFiltroMinhas}
+              minhasTarefas={activeView === 'my_tasks'}
+              podeEditar={!somenteLeitura}
+              atalhosAtivos={!isTaskSheetOpen && !isCommandBarOpen}
+              onEmpreendimentoFiltrado={setEmpreendimentoLista}
             />
           )}
 
           {telaDeTarefas && modoAtual === 'calendar' && (
-            <CalendarView
+            <CronogramaView
               tasks={tarefasDaTela}
               projects={projects}
               labels={labels}
               onSelectTask={handleSelectTask}
               onAddTask={handleAddTask}
               onUpdateTask={handleUpdateTask}
+              onDeleteTask={handleDeleteTask}
+              soAtrasadas={activeView === 'my_tasks' && soAtrasadas}
+              onSoAtrasadas={setSoAtrasadas}
               currentProjectFilter={currentProjectFilter}
               socialMediaFilter={socialMediaFilter}
               setSocialMediaFilter={setSocialMediaFilter}
+              usuariosFiltro={usuariosFiltroMinhas}
+              podeEditar={!somenteLeitura}
             />
           )}
 
@@ -1829,7 +2086,7 @@ export default function App() {
           )}
 
           {activeView === 'crm' && (
-            <CrmView projects={projects} />
+            <CrmView projects={projects} novoLead={pedidoCriacao === 'lead'} onNovoLeadAtendido={atenderPedido} />
           )}
 
           {activeView === 'projects' && (
@@ -1900,32 +2157,7 @@ export default function App() {
               }}
               editingMap={editingMap}
               onTitlePresence={(titleId) => presenceTrackRef.current?.(titleId)}
-              onSaveTitle={async (title) => {
-                // __baseUpdatedAt é transiente (só serve ao compare-and-swap); não vai pro cache.
-                const { __baseUpdatedAt, ...clean } = title as any;
-                queryClient.setQueryData<SiengeTitle[]>(['siengeTitles'], prev => {
-                  const exists = (prev || []).find(t => t.id === clean.id);
-                  // attachmentsCount vem de coluna gerada, então não volta no objeto salvo:
-                  // recalcula pelos anexos enviados ou preserva o que a lista já sabia —
-                  // senão o clipe de anexo sumiria da tela até o próximo refetch.
-                  const merged: SiengeTitle = {
-                    ...clean,
-                    attachmentsCount: clean.attachments?.length ?? exists?.attachmentsCount,
-                  };
-                  return exists
-                    ? (prev || []).map(t => t.id === clean.id ? merged : t)
-                    : [merged, ...(prev || [])];
-                });
-                saveSiengeTitle(title).catch((e) => {
-                  if (e instanceof SiengeTitleConflictError) {
-                    // Outro usuário salvou primeiro: descarta a alteração local e recarrega.
-                    queryClient.invalidateQueries({ queryKey: ['siengeTitles'] });
-                    showToast('Este título foi alterado por outra pessoa. Sua tela foi atualizada com a versão mais recente.');
-                  } else {
-                    console.error(e);
-                  }
-                });
-              }}
+              onSaveTitle={salvarTituloSienge}
               onDeleteTitle={async (id) => {
                 queryClient.setQueryData<SiengeTitle[]>(['siengeTitles'], prev => (prev || []).filter(t => t.id !== id));
                 deleteSiengeTitle(id).catch(console.error);
@@ -2171,7 +2403,17 @@ export default function App() {
         cooldown={selectedTask ? cooldownMap[selectedTask.id] : undefined}
         editingMap={editingMap}
         briefingsLoading={areBriefingsLoading}
+        origem={activeView === 'home' ? 'Início' : getBreadcrumbLabel()}
+        onAbrirProjeto={podeVerTela('marketing_projetos') ? id => {
+          // Sem o filtro de empreendimento, que esconderia parte das tarefas.
+          setCurrentProjectFilter(null);
+          setVisita(v => ({ projetoId: id, n: v.n + 1 }));
+          setProjetoAbertoId(id);
+          setActiveView('marketing_projetos');
+        } : undefined}
       />
+
+      <JustificarDatas />
 
       {/* Cmd+K global Command Palette overlay popover */}
       <CommandBar
@@ -2190,9 +2432,9 @@ export default function App() {
       {toast && (
         <div
           key={toast.id}
-          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[9999] flex items-center gap-2.5 bg-zinc-900 border border-red-500/30 text-red-400 text-sm font-medium px-4 py-3 rounded-xl shadow-2xl shadow-black/60 animate-in fade-in slide-in-from-bottom-4 duration-200"
+          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[9999] flex items-center gap-2.5 bg-zinc-900 border border-red-500/30 text-red-400 text-body font-medium px-4 py-3 rounded-xl shadow-2xl shadow-black/60 animate-in fade-in slide-in-from-bottom-4 duration-200"
         >
-          <span className="text-red-500 text-base leading-none">⚠</span>
+          <span className="text-red-500 text-heading leading-none">⚠</span>
           {toast.message}
         </div>
       )}
@@ -2200,7 +2442,6 @@ export default function App() {
       {editandoProjetoAberto && projetoAberto && (
         <ProjetoModal
           projeto={projetoAberto}
-          portfolios={marketing.portfolios}
           tarefas={tasks}
           onClose={() => setEditandoProjetoAberto(false)}
           onSalvo={(id) => {

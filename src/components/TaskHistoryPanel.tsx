@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { X, History as HistoryIcon, Loader2 } from 'lucide-react';
 import { TaskHistoryEntry, Project } from '../types';
 import { fetchTaskHistory } from '../lib/api';
+import { BOTAO_ICONE } from './tarefa/Propriedade';
 
 interface TaskHistoryPanelProps {
   taskId: string;
@@ -16,7 +17,9 @@ const FIELD_LABELS: Record<string, string> = {
   status: 'Status',
   priority: 'Prioridade',
   project_id: 'Projeto',
+  start_date: 'Início',
   due_date: 'Prazo',
+  justificativa_data: 'Justificativa da alteração de data',
   assignee_id: 'Responsável',
   reminder_date: 'Lembrete',
   parent_task_id: 'Tarefa pai',
@@ -116,53 +119,59 @@ export default function TaskHistoryPanel({ taskId, taskCode, projects, users, on
   return (
     <>
       <div className="fixed inset-0 z-[60] bg-black/40 backdrop-blur-[1px]" onMouseDown={onClose} />
-      <div className="fixed top-0 right-0 bottom-0 z-[61] w-full md:w-[420px] bg-[#0c0c0e] border-l border-zinc-900 shadow-2xl flex flex-col animate-slide-in text-zinc-200">
-        <div className="h-14 px-4 border-b border-zinc-900 flex items-center justify-between shrink-0 bg-[#08080a]">
+      <div className="fixed top-0 right-0 bottom-0 z-[61] w-full md:w-[420px] bg-[#08080a] border-l border-zinc-900 shadow-2xl flex flex-col animate-slide-in text-zinc-200">
+        <div className="h-14 px-4 border-b border-zinc-900 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2">
-            <HistoryIcon size={15} className="text-zinc-500" />
-            <span className="text-sm font-semibold text-zinc-200">Histórico</span>
-            {taskCode && <span className="text-[10px] bg-zinc-900 px-2 py-0.5 rounded font-mono text-zinc-500">{taskCode}</span>}
+            <HistoryIcon size={16} className="text-zinc-400" aria-hidden />
+            <span className="text-heading font-semibold text-zinc-100">Histórico</span>
+            {taskCode && <span className="text-body text-zinc-400 tabular-nums">{taskCode}</span>}
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900/40 rounded transition-all"
+            aria-label="Fechar histórico"
+            className={BOTAO_ICONE}
           >
-            <X size={15} />
+            <X size={16} aria-hidden />
           </button>
         </div>
 
         <div className="flex-1 overflow-y-auto scrollbar-thin px-4 py-3">
           {isLoading && (
-            <div className="flex items-center justify-center py-10 text-zinc-500 gap-2 text-xs">
+            <div className="flex items-center justify-center py-10 text-zinc-400 gap-2 text-body">
               <Loader2 size={14} className="animate-spin" /> Carregando...
             </div>
           )}
 
           {!isLoading && error && (
-            <div className="text-xs text-red-400 py-4">{error}</div>
+            <div className="text-body text-red-400 py-4">{error}</div>
           )}
 
           {!isLoading && !error && entries.length === 0 && (
-            <div className="text-xs text-zinc-600 py-4 text-center">Nenhuma alteração registrada ainda.</div>
+            <div className="text-body text-zinc-400 py-4 text-center">Nenhuma alteração registrada ainda.</div>
           )}
 
           {!isLoading && !error && entries.length > 0 && (
-            <div className="flex flex-col gap-2">
+            <div className="flex flex-col divide-y divide-zinc-900">
               {entries.map(entry => (
-                <div key={entry.id} className="border border-zinc-900 rounded-md px-3 py-2.5 bg-[#111113]">
+                <div key={entry.id} className="py-3">
                   <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs font-medium text-zinc-300">{FIELD_LABELS[entry.field] || entry.field}</span>
-                    <span className="text-[10px] text-zinc-600" title={new Date(entry.changedAt).toLocaleString('pt-BR')}>
+                    <span className="text-body font-medium text-zinc-200">{FIELD_LABELS[entry.field] || entry.field}</span>
+                    <span className="text-body text-zinc-500" title={new Date(entry.changedAt).toLocaleString('pt-BR')}>
                       {formatRelativeTime(entry.changedAt)}
                     </span>
                   </div>
-                  <div className="text-[11px] text-zinc-500 mb-1">{userName(entry.changedBy)}</div>
+                  <div className="text-body text-zinc-400 mb-1">{userName(entry.changedBy)}</div>
                   {CONTENT_ONLY_FIELDS.has(entry.field) ? (
-                    <div className="text-xs text-zinc-400">Conteúdo atualizado</div>
+                    <div className="text-body text-zinc-300">Conteúdo atualizado</div>
+                  ) : entry.field === 'justificativa_data' ? (
+                    <div className="flex flex-col gap-0.5 text-body">
+                      <span className="text-zinc-500 tabular-nums">{entry.oldValue}</span>
+                      <span className="text-zinc-200 whitespace-pre-wrap [overflow-wrap:anywhere]">{entry.newValue}</span>
+                    </div>
                   ) : (
-                    <div className="flex items-center gap-1.5 text-xs flex-wrap">
+                    <div className="flex items-center gap-1.5 text-body flex-wrap">
                       <span className="text-zinc-500 line-through decoration-zinc-700">{formatValue(entry.field, entry.oldValue)}</span>
-                      <span className="text-zinc-600">→</span>
+                      <span className="text-zinc-500">→</span>
                       <span className="text-zinc-200">{formatValue(entry.field, entry.newValue)}</span>
                     </div>
                   )}

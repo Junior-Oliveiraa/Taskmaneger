@@ -241,7 +241,7 @@ export default function RedeSocialView({ tasks, projects, onSelectTask, onUpdate
     ? mes.getMonth() === new Date().getMonth() && mes.getFullYear() === new Date().getFullYear()
     : ehSemanaAtual;
 
-  const campo = 'h-8 rounded-md border border-zinc-800 bg-zinc-900/40 hover:border-zinc-700 text-xs text-zinc-200 px-2.5 outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 transition-colors';
+  const campo = 'h-8 rounded-md border border-zinc-800 bg-zinc-900/40 hover:border-zinc-700 text-body text-zinc-200 px-2.5 outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 transition-colors';
 
   return (
     <div className="flex-1 min-h-0 flex flex-col">
@@ -253,7 +253,7 @@ export default function RedeSocialView({ tasks, projects, onSelectTask, onUpdate
             role="tab"
             aria-selected={aba === a.id}
             onClick={() => setAba(a.id)}
-            className={`pb-3 short:pb-2 text-sm short:text-[13px] font-semibold whitespace-nowrap shrink-0 transition-colors border-b-2 ${
+            className={`pb-3 short:pb-2 text-body short:text-body font-semibold whitespace-nowrap shrink-0 transition-colors border-b-2 ${
               aba === a.id ? 'text-zinc-100 border-blue-500' : 'text-zinc-500 border-transparent hover:text-zinc-300'
             }`}
           >
@@ -265,8 +265,8 @@ export default function RedeSocialView({ tasks, projects, onSelectTask, onUpdate
       {/* Cabeçalho e filtros */}
       <div className="view-pad-x pt-4 shrink-0 flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-col gap-0.5 min-w-0">
-          <h1 className="text-lg font-semibold text-zinc-100 tracking-tight">{titulo}</h1>
-          <div className="text-xs text-zinc-500">{aba === 'semanas' ? 'O mês em semanas e o que falta fazer na semana escolhida' : subtitulo}</div>
+          <h1 className="text-title font-semibold text-zinc-100">{titulo}</h1>
+          <div className="text-body text-zinc-400">{aba === 'semanas' ? 'O mês em semanas e o que falta fazer na semana escolhida' : subtitulo}</div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -278,7 +278,7 @@ export default function RedeSocialView({ tasks, projects, onSelectTask, onUpdate
                   type="button"
                   aria-pressed={modo === m}
                   onClick={() => setModo(m)}
-                  className={`h-7 px-3 rounded text-[11px] font-semibold transition-colors ${modo === m ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-500 hover:text-zinc-300'}`}
+                  className={`h-7 px-3 rounded text-body font-medium transition-colors ${modo === m ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-500 hover:text-zinc-300'}`}
                 >
                   {m === 'semana' ? 'Semana' : 'Mês'}
                 </button>
@@ -301,7 +301,7 @@ export default function RedeSocialView({ tasks, projects, onSelectTask, onUpdate
           )}
 
           <label className="sr-only" htmlFor="rs-projeto">Empreendimento</label>
-          <select id="rs-projeto" value={filtroProjeto} onChange={e => setFiltroProjeto(e.target.value)} className={`${campo} max-w-[200px]`}>
+          <select id="rs-projeto" value={filtroProjeto} onChange={e => setFiltroProjeto(e.target.value)} className={`${campo} max-w-[240px]`}>
             <option value="">Todos os empreendimentos</option>
             {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
@@ -316,7 +316,7 @@ export default function RedeSocialView({ tasks, projects, onSelectTask, onUpdate
             <button
               type="button"
               onClick={() => onNewPost()}
-              className="h-8 px-3 flex items-center gap-1.5 rounded-md bg-zinc-100 hover:bg-white text-zinc-900 text-xs font-semibold transition-colors"
+              className="h-8 px-3 flex items-center gap-1.5 rounded-md bg-zinc-100 hover:bg-white text-zinc-900 text-body font-medium transition-colors"
             >
               <Plus size={13} aria-hidden="true" /> Novo post
             </button>

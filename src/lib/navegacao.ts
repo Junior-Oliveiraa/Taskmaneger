@@ -7,7 +7,6 @@ export type NavItemId =
   | 'inbox'
   | 'my_tasks'
   | 'projetos'
-  | 'portfolios'
   | 'rede_social'
   | 'empreendimentos'
   | 'analytics'

@@ -35,6 +35,9 @@ export default function FullscreenImageEditor({
   const [isEraser, setIsEraser] = useState(false);
   const [history, setHistory] = useState<ImageData[]>([]);
   const [imageLoaded, setImageLoaded] = useState(false);
+  // As imagens vêm de outro domínio: sem CORS o navegador não deixa salvar o desenho.
+  const [semCors, setSemCors] = useState<string[]>([]);
+  const [erro, setErro] = useState<string | null>(null);
   
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
@@ -47,6 +50,13 @@ export default function FullscreenImageEditor({
       if (ctx) ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
     }
   }, [currentIndex]);
+
+  // Esc fecha só o editor: sem isto fecharia o painel da tarefa por baixo.
+  useEffect(() => {
+    const esc = (ev: KeyboardEvent) => { if (ev.key === 'Escape') { ev.stopPropagation(); onClose(); } };
+    document.addEventListener('keydown', esc, true);
+    return () => document.removeEventListener('keydown', esc, true);
+  }, [onClose]);
 
   // Initialize canvas when image loads
   useEffect(() => {
@@ -169,19 +179,25 @@ export default function FullscreenImageEditor({
       tCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
       tCtx.drawImage(imageRef.current, 0, 0, tempCanvas.width, tempCanvas.height);
       tCtx.drawImage(canvasRef.current, 0, 0);
-      return tempCanvas.toDataURL('image/jpeg', 0.5);
+      try {
+        return tempCanvas.toDataURL('image/jpeg', 0.8);
+      } catch {
+        return null;
+      }
     }
     return null;
   };
 
   const handleSave = () => {
+    // Sem desenho, a imagem não vira uma anotação.
+    if (history.length <= 1) return onSave(annotations);
     const currentUrl = getCurrentDataUrl();
     if (currentUrl) {
       const newAnnotations = [...annotations];
       newAnnotations[currentIndex] = currentUrl;
       onSave(newAnnotations);
     } else {
-      onSave(annotations);
+      setErro('Não foi possível salvar o desenho: o site desta imagem não permite. Descreva o ajuste na justificativa.');
     }
   };
 
@@ -197,6 +213,7 @@ export default function FullscreenImageEditor({
 
   return createPortal(
     <div className="fixed inset-0 z-[9999] bg-black/95 flex flex-col animate-fade-in" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0 }}>
+      {erro && <p role="alert" className="px-4 py-2 text-body text-red-300 bg-red-950">{erro}</p>}
       {/* Top Toolbar */}
       <div className="flex items-center justify-between p-4 bg-zinc-950/80 border-b border-zinc-800/50 backdrop-blur-sm">
         <div className="flex items-center gap-4">
@@ -277,7 +294,10 @@ export default function FullscreenImageEditor({
         <div className="relative max-w-full max-h-full inline-flex justify-center items-center">
           <img 
             ref={imageRef}
+            key={`${imageUrls[currentIndex]}-${semCors.includes(imageUrls[currentIndex])}`}
             src={imageUrls[currentIndex]} 
+            crossOrigin={semCors.includes(imageUrls[currentIndex]) ? undefined : 'anonymous'}
+            onError={() => setSemCors(v => v.includes(imageUrls[currentIndex]) ? v : [...v, imageUrls[currentIndex]])}
             alt={`Tela cheia ${currentIndex + 1}`} 
             className="max-w-full max-h-[calc(100vh-100px)] object-contain pointer-events-none shadow-2xl"
             onLoad={() => setImageLoaded(true)}

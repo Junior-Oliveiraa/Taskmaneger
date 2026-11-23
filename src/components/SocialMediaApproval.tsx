@@ -5,6 +5,7 @@ import TaskChat from './TaskChat';
 import RichTextEditor from './RichTextEditor';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
+import { aprovarPublicacao, reprovarPublicacao } from '../lib/aprovacoes';
 import { UPLOAD_LIMITS, uploadToStorage, sanitizeFileName } from '../lib/storage';
 import { CANAIS, FORMATOS } from '../lib/redeSocial';
 
@@ -334,49 +335,11 @@ export default function SocialMediaApproval({ task, allTasks, saveChange, curren
     });
   };
 
-  const handleApprove = () => {
-    saveChange({
-      status: 'done',
-      socialMediaApproval: {
-        ...approvalData,
-        status: 'approved'
-      }
-    });
-    if (approvalData.requesterId) {
-      addNotification({
-        userId: approvalData.requesterId,
-        taskId: task.id,
-        targetId: 'socialMediaProps',
-        type: 'approved',
-        actorId: currentUser?.id || '',
-        message: 'Publicação Aprovada',
-        details: `Sua publicação de "${task.title}" foi aprovada e a tarefa foi concluída.`
-      });
-    }
-  };
-
-  const handleReject = () => {
-    saveChange({
-      socialMediaApproval: {
-        ...approvalData,
-        status: 'rejected'
-      }
-    });
-    if (approvalData.requesterId) {
-      addNotification({
-        userId: approvalData.requesterId,
-        taskId: task.id,
-        targetId: 'socialMediaProps',
-        type: 'rejected',
-        actorId: currentUser?.id || '',
-        message: 'Publicação Reprovada',
-        details: `Sua publicação de "${task.title}" foi reprovada e precisa de ajustes.`
-      });
-    }
-  };
+  const handleApprove = () => aprovarPublicacao(task, currentUser?.id || '', saveChange, addNotification);
+  const handleReject = () => reprovarPublicacao(task, currentUser?.id || '', saveChange, addNotification);
 
   return (
-    <div className="flex flex-col lg:flex-row view-gap w-full h-full p-2 overflow-y-auto bg-transparent">
+    <div className="flex flex-col lg:flex-row view-gap w-full h-full overflow-y-auto bg-transparent">
       {/* LEFT COLUMN: IMAGE PREVIEW */}
       <div className="flex-1 min-w-[300px] flex flex-col rounded-md border border-zinc-800/60 overflow-hidden bg-transparent">
         <div className="p-0 border-b border-zinc-800/60 flex-1 flex flex-col bg-zinc-950/30">
@@ -417,7 +380,7 @@ export default function SocialMediaApproval({ task, allTasks, saveChange, curren
                  <button
                    onClick={(e) => { e.stopPropagation(); removeCustomImage(displayUrls[safeSlideIndex]); }}
                    title="Remover este print"
-                   className="absolute top-2 right-2 p-1.5 bg-black/60 hover:bg-red-500/80 text-white rounded-full transition-colors z-20 opacity-0 group-hover:opacity-100"
+                   className="absolute top-2 right-2 p-1.5 bg-black/60 hover:bg-black/80 text-white hover:text-red-300 rounded-full transition-colors z-20 opacity-0 group-hover:opacity-100"
                  >
                    <X size={14} />
                  </button>
@@ -569,7 +532,7 @@ export default function SocialMediaApproval({ task, allTasks, saveChange, curren
           </div>
 
           {/* Agenda da publicação: alimenta o módulo Rede Social. A data é o prazo da tarefa. */}
-          <div className="mb-4 grid grid-cols-[1fr_1fr_auto] gap-2 relative z-40">
+          <div className="mb-4 grid grid-cols-2 2xl:grid-cols-[1fr_1fr_auto] gap-2 relative z-40">
             <MinimalSelect
               value={approvalData.canal || ''}
               onChange={(val: string) => patch({ canal: val || undefined })}
@@ -701,8 +664,8 @@ export default function SocialMediaApproval({ task, allTasks, saveChange, curren
       </div>
 
       {/* RIGHT COLUMN: CHAT */}
-      <div className="flex-1 min-w-[300px] flex flex-col bg-transparent rounded-md border border-zinc-800/60 overflow-hidden relative">
-        <div className="h-full relative opacity-90 hover:opacity-100 transition-opacity">
+      <div className="flex-1 min-w-[300px] flex flex-col relative">
+        <div className="h-full relative">
           <TaskChat task={task} onUpdate={(messages) => saveChange({ chatMessages: messages })} />
         </div>
       </div>

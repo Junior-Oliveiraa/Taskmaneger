@@ -19,6 +19,9 @@ type CrmTab = 'dashboard' | 'leads' | 'cadencias' | 'config';
 
 interface Props {
   projects: Project[];
+  /** "+ Novo → Lead" do header: abre a folha de lead novo ao montar. */
+  novoLead?: boolean;
+  onNovoLeadAtendido?: () => void;
 }
 
 /** Lead ainda não gravado — a folha abre com estes valores. */
@@ -35,7 +38,7 @@ function novoLeadVazio(etapa: CrmEtapa): CrmLead {
   };
 }
 
-export default function CrmView({ projects }: Props) {
+export default function CrmView({ projects, novoLead, onNovoLeadAtendido }: Props) {
   const queryClient = useQueryClient();
   const { currentUser, allUsers, refreshUsers } = useAuth();
 
@@ -54,6 +57,16 @@ export default function CrmView({ projects }: Props) {
 
   const podeEditar = role === 'administrador' || role === 'sdr';
   const isAdmin = role === 'administrador';
+
+  useEffect(() => {
+    if (!novoLead) return;
+    if (podeEditar) {
+      setTab('leads');
+      setLeadAbertoId(null);
+      setLeadNovo(novoLeadVazio('novo'));
+    }
+    onNovoLeadAtendido?.();
+  }, [novoLead, podeEditar, onNovoLeadAtendido]);
 
   // Uma query por domínio. Todas com o mesmo staleTime: o realtime abaixo é quem
   // realmente mantém a tela em dia, o refetch é só a rede de segurança.

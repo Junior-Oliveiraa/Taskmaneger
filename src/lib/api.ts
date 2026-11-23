@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
-import { Task, Project, Label, AppNotification, SiengeTitle, SiengeMensalidade, SiengeLote, SiengeFatura, SiengeAlcadaConfig, DesignBriefing, CopyBriefing, PlanningBriefing, TaskHistoryEntry, SiengeProjectMeta, SiengeCategoriaOrcamento, SiengeTitleStatusHistoryEntry, SiengeProjectTotal, SiengeProjectDisplay, SiengeTabelaVendaUnidade, SiengeTabelaVendaVersao, SiengeTabelaVendaConfig, SiengeTabelaVendaColuna, SiengeTabelaVendaRevisao, SiengeVenda, SiengeOrcamentoConfig, SiengeCalculoRegra, SiengeValidacao, SiengeCentroCustoDef, SiengeCategoriaDef, SiengeSubcategoriaDef, WhatsAppConfig, WhatsAppOutboxItem, LpCorretorConfig, LpCorretorPublicData, SiengeVendaSituacao, UserDocument } from '../types';
+import { colunaInicioAusente, dataInicio } from './dataInicio';
+import { Task, Project, Label, AppNotification, SiengeTitle, SiengeMensalidade, SiengeLote, SiengeFatura, SiengeAlcadaConfig, DesignBriefing, CopyBriefing, PlanningBriefing, TaskHistoryEntry, SiengeProjectMeta, SiengeCategoriaOrcamento, SiengeTitleStatusHistoryEntry, SiengeProjectTotal, SiengeProjectDisplay, SiengeTabelaVendaUnidade, SiengeTabelaVendaVersao, SiengeTabelaVendaConfig, SiengeTabelaVendaColuna, SiengeTabelaVendaRevisao, SiengeVenda, SiengeOrcamentoConfig, SiengeCalculoRegra, SiengeValidacao, SiengeCentroCustoDef, SiengeCategoriaDef, SiengeSubcategoriaDef, WhatsAppConfig, WhatsAppOutboxItem, LpCorretorConfig, LpCorretorPublicData, SiengeVendaSituacao } from '../types';
 
 export async function fetchProjects(): Promise<Project[]> {
   const { data, error } = await supabase.from('projects').select('*');
@@ -25,7 +26,7 @@ export async function fetchLabels(): Promise<Label[]> {
 
 export async function logTaskFieldHistory(
   taskId: string,
-  field: 'description' | 'copy_briefing',
+  field: 'description' | 'copy_briefing' | 'justificativa_data',
   oldValue: string | null,
   newValue: string | null,
   changedBy: string | null
@@ -69,17 +70,23 @@ const TASKS_LIST_COLS = [
 ].join(', ');
 
 export async function fetchTasks(): Promise<Task[]> {
-  const { data, error } = await supabase.from('tasks').select(`
-    ${TASKS_LIST_COLS},
+  const buscar = (colunas: string) => supabase.from('tasks').select(`
+    ${colunas},
     subtasks(*),
     task_labels(
       labels(*)
     )
   `);
 
+  let { data, error } = await buscar(dataInicio.ativa ? `${TASKS_LIST_COLS}, start_date` : TASKS_LIST_COLS);
+  // Migração da data de início pendente: segue sem ela.
+  if (error && dataInicio.ativa && colunaInicioAusente(error.message)) {
+    dataInicio.ativa = false;
+    ({ data, error } = await buscar(TASKS_LIST_COLS));
+  }
   if (error) throw error;
 
-  return data.map((t: any): Task => {
+  return (data || []).map((t: any): Task => {
     // Safely extract labels, handling cases where the join might be empty
     const extractedLabels = (t.task_labels || [])
       .map((tl: any) => tl.labels)
@@ -94,6 +101,7 @@ export async function fetchTasks(): Promise<Task[]> {
       priority: t.priority,
       projectId: t.project_id,
       createdAt: t.created_at,
+      startDate: t.start_date ?? undefined,
       dueDate: t.due_date,
       reminderDate: t.reminder_date,
       reminderType: t.reminder_type,
@@ -181,6 +189,7 @@ export async function saveTask(task: Task) {
     priority: task.priority,
     project_id: task.projectId || null,
     created_at: task.createdAt,
+    ...(dataInicio.ativa ? { start_date: task.startDate || null } : {}),
     due_date: task.dueDate || null,
     reminder_date: task.reminderDate || null,
     reminder_type: task.reminderType || null,
@@ -291,6 +300,7 @@ export async function patchTask(taskId: string, updates: Partial<Task>, opts: Pa
     if (updates.priority !== undefined) dbUpdates.priority = updates.priority;
     if (updates.projectId !== undefined) dbUpdates.project_id = updates.projectId || null;
     if (updates.createdAt !== undefined) dbUpdates.created_at = updates.createdAt;
+    if ('startDate' in updates && dataInicio.ativa) dbUpdates.start_date = updates.startDate || null;
     if (updates.dueDate !== undefined) dbUpdates.due_date = updates.dueDate || null;
     if ('reminderDate' in updates) dbUpdates.reminder_date = updates.reminderDate ?? null;
     if ('reminderType' in updates) dbUpdates.reminder_type = updates.reminderType ?? null;
@@ -513,55 +523,6 @@ export async function deleteArchivedNotifications(userId: string) {
     .delete()
     .eq('user_id', userId)
     .eq('status', 'viewed');
-  if (error) throw error;
-}
-
-// ─── Meus Documentos (privado por usuário) ───────────────────────────
-
-export async function fetchUserDocuments(userId: string): Promise<UserDocument[]> {
-  const { data, error } = await supabase
-    .from('user_documents')
-    .select('*')
-    .eq('user_id', userId)
-    .order('created_at', { ascending: false });
-
-  if (error) throw error;
-
-  return (data || []).map((d: any): UserDocument => ({
-    id: d.id,
-    userId: d.user_id,
-    kind: d.kind,
-    title: d.title,
-    url: d.url || undefined,
-    content: d.content || undefined,
-    fileName: d.file_name || undefined,
-    fileSize: d.file_size ?? undefined,
-    createdAt: d.created_at,
-    updatedAt: d.updated_at
-  }));
-}
-
-export async function saveUserDocument(doc: UserDocument) {
-  const { error } = await supabase.from('user_documents').upsert({
-    id: doc.id,
-    user_id: doc.userId,
-    kind: doc.kind,
-    title: doc.title,
-    url: doc.url || null,
-    content: doc.content || null,
-    file_name: doc.fileName || null,
-    file_size: doc.fileSize ?? null,
-    created_at: doc.createdAt,
-    updated_at: new Date().toISOString()
-  });
-  if (error) {
-    console.error('Error saving user document', error);
-    throw error;
-  }
-}
-
-export async function deleteUserDocument(id: string) {
-  const { error } = await supabase.from('user_documents').delete().eq('id', id);
   if (error) throw error;
 }
 

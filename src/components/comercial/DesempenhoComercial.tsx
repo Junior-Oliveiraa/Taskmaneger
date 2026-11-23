@@ -159,7 +159,7 @@ function faixaDaMeta(atingido: number): FaixaMeta {
   return 'andamento';
 }
 const CLASSE_FAIXA: Record<FaixaMeta, string> = {
-  critica: 'bg-red-500',
+  critica: 'bg-danger-400/70',
   andamento: 'bg-blue-500',
   perto: 'bg-amber-400',
   batida: 'bg-emerald-500',

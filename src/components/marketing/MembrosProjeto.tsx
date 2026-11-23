@@ -3,6 +3,7 @@ import { UserPlus, X, Check } from 'lucide-react';
 import { Task } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { useMarketingProjetos } from '../../lib/marketingProjetos';
+import { pilula } from '../tarefa/Propriedade';
 
 interface Membro {
   id: string;
@@ -38,12 +39,15 @@ export function useMembrosProjeto(projetoId: string, tarefasDoProjeto: Task[]): 
   }, [allUsers, membrosDoProjeto, projetoId, tarefasDoProjeto]);
 }
 
-function Avatar({ m, tamanho = 22 }: { m: { name: string; avatarUrl?: string; initials?: string }; tamanho?: number }) {
-  const estilo = { width: tamanho, height: tamanho };
+/** Anel na cor do card, para separar os avatares empilhados nos dois temas. */
+const ANEL = 'var(--t-card)';
+
+export function Avatar({ m, tamanho = 24 }: { m: { name: string; avatarUrl?: string; initials?: string }; tamanho?: number }) {
+  const estilo = { width: tamanho, height: tamanho, borderColor: ANEL };
   return m.avatarUrl ? (
-    <img src={m.avatarUrl} alt={m.name} title={m.name} style={estilo} className="rounded-full object-cover border-2 border-[#08080a] shrink-0" />
+    <img src={m.avatarUrl} alt={m.name} title={m.name} style={estilo} className="rounded-full object-cover border-2 shrink-0" />
   ) : (
-    <div title={m.name} style={estilo} className="rounded-full bg-gradient-to-tr from-purple-500 to-blue-600 border-2 border-[#08080a] flex items-center justify-center text-white text-[9px] font-bold shrink-0">
+    <div title={m.name} style={estilo} className="rounded-full bg-zinc-800 border-2 flex items-center justify-center text-zinc-200 text-[10px] leading-none font-semibold shrink-0">
       {m.initials || m.name.slice(0, 2).toUpperCase()}
     </div>
   );
@@ -51,13 +55,13 @@ function Avatar({ m, tamanho = 22 }: { m: { name: string; avatarUrl?: string; in
 
 /** Pilha de avatares (card do projeto). */
 export function AvataresMembros({ membros, max = 5 }: { membros: Membro[]; max?: number }) {
-  if (membros.length === 0) return <span className="text-[11px] text-zinc-600">Sem membros</span>;
+  if (membros.length === 0) return <span className="text-caption text-zinc-500">Sem membros</span>;
   const extra = membros.length - max;
   return (
-    <div className="flex items-center -space-x-1.5">
+    <div className="flex items-center -space-x-1">
       {membros.slice(0, max).map(m => <Avatar key={m.id} m={m} />)}
       {extra > 0 && (
-        <div className="w-[22px] h-[22px] rounded-full bg-zinc-800 border-2 border-[#08080a] flex items-center justify-center text-[9px] font-semibold text-zinc-300">
+        <div style={{ borderColor: ANEL }} className="size-6 shrink-0 rounded-full bg-zinc-800 border-2 flex items-center justify-center text-[10px] leading-none font-semibold text-zinc-300">
           +{extra}
         </div>
       )}
@@ -101,16 +105,17 @@ export default function MembrosProjeto({ projetoId, tarefasDoProjeto, podeEditar
     <div ref={ref} className="relative">
       <button
         onClick={() => setAberto(!aberto)}
-        className="flex items-center gap-2 px-1.5 py-1 rounded-md hover:bg-zinc-900 transition-colors"
+        className={`${pilula(membros.length ? 'cheia' : 'vazia')} !pl-1.5`}
         title="Membros do projeto"
+        aria-expanded={aberto}
       >
-        <AvataresMembros membros={membros} max={6} />
-        {podeEditar && <UserPlus size={13} className="text-zinc-500" />}
+        {membros.length > 0 ? <AvataresMembros membros={membros} max={6} /> : <span className="pl-1.5">Membros</span>}
+        {podeEditar && <UserPlus size={14} className="shrink-0 text-zinc-400" aria-hidden />}
       </button>
 
       {aberto && (
-        <div className="absolute right-0 top-full mt-1.5 w-72 bg-[#121214] border border-zinc-800 rounded-lg shadow-2xl z-50">
-          <div className="px-3 py-2.5 border-b border-zinc-800/80 text-[12px] font-semibold text-zinc-200">
+        <div className="absolute left-0 top-full mt-1.5 w-72 bg-[#121214] border border-zinc-800 rounded-lg shadow-2xl z-50">
+          <div className="px-3 py-2.5 border-b border-zinc-800/80 text-caption font-semibold text-zinc-200">
             Membros ({membros.length})
           </div>
           <div className="max-h-56 overflow-y-auto scrollbar-thin py-1">
@@ -118,8 +123,8 @@ export default function MembrosProjeto({ projetoId, tarefasDoProjeto, podeEditar
               <div key={m.id} className="flex items-center gap-2.5 px-3 py-1.5">
                 <Avatar m={m} tamanho={24} />
                 <div className="flex-1 min-w-0">
-                  <div className="text-[12px] text-zinc-200 truncate">{m.name}</div>
-                  <div className="text-[10px] text-zinc-500">
+                  <div className="text-caption text-zinc-200 truncate">{m.name}</div>
+                  <div className="text-caption text-zinc-500">
                     {m.cadastrado ? 'Membro' : 'Com tarefa'}
                     {m.tarefas > 0 && ` · ${m.tarefas} tarefa${m.tarefas > 1 ? 's' : ''}`}
                   </div>
@@ -135,7 +140,7 @@ export default function MembrosProjeto({ projetoId, tarefasDoProjeto, podeEditar
                 ))}
               </div>
             ))}
-            {membros.length === 0 && <p className="px-3 py-2 text-[11px] text-zinc-600">Ninguém neste projeto ainda.</p>}
+            {membros.length === 0 && <p className="px-3 py-2 text-caption text-zinc-600">Ninguém neste projeto ainda.</p>}
           </div>
 
           {podeEditar && (
@@ -144,7 +149,7 @@ export default function MembrosProjeto({ projetoId, tarefasDoProjeto, podeEditar
                 value={busca}
                 onChange={e => setBusca(e.target.value)}
                 placeholder="Adicionar pessoa..."
-                className="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1.5 text-[12px] text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-600"
+                className="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1.5 text-caption text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-600"
               />
               <div className="max-h-40 overflow-y-auto scrollbar-thin mt-1">
                 {candidatos.map(u => (
@@ -154,13 +159,13 @@ export default function MembrosProjeto({ projetoId, tarefasDoProjeto, podeEditar
                     className="w-full flex items-center gap-2 px-1.5 py-1.5 rounded hover:bg-zinc-800/60 text-left"
                   >
                     <Avatar m={u} tamanho={20} />
-                    <span className="text-[12px] text-zinc-300 truncate">{u.name}</span>
+                    <span className="text-caption text-zinc-300 truncate">{u.name}</span>
                   </button>
                 ))}
               </div>
             </div>
           )}
-          {erro && <p className="px-3 pb-2 text-[11px] text-red-400">{erro}</p>}
+          {erro && <p className="px-3 pb-2 text-caption text-red-400">{erro}</p>}
         </div>
       )}
     </div>

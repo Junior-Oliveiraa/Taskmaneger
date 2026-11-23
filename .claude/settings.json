@@ -25,7 +25,9 @@
       "Bash(curl -s \"http://localhost:5199/src/components/DeliveryApproval.tsx\" -o /dev/null -w \"DeliveryApproval: %{http_code}\\\\n\")",
       "Bash(curl -s \"http://localhost:5199/src/components/CopyProperties.tsx\" -o /dev/null -w \"CopyProperties: %{http_code}\\\\n\")",
       "Bash(curl -s \"http://localhost:5199/src/components/DeliveryForm.tsx\" -o /dev/null -w \"DeliveryForm: %{http_code}\\\\n\")",
-      "Bash(pkill -f \"vite --port 5199\")"
+      "Bash(pkill -f \"vite --port 5199\")",
+      "Bash(npx supabase db push *)",
+      "Bash(npx -y supabase db push *)"
     ]
   },
   "mcpServers": {

@@ -6,10 +6,16 @@ import { isNotificationTypeEnabled } from '../lib/notificationTypes';
 
 interface NotificationContextType {
   notifications: AppNotification[];
+  /** Primeira carga ainda em andamento (lista vazia não quer dizer "sem notificações"). */
+  carregando: boolean;
   addNotification: (notification: Omit<AppNotification, 'id' | 'createdAt' | 'status'>) => void;
   markAsRead: (id: string) => void;
   markAsViewed: (id: string) => void;
   markAllAsViewed: () => void;
+  /** Arquiva várias de uma vez (itens colapsados/agrupados e seleção em lote). */
+  markManyAsViewed: (ids: string[]) => void;
+  /** Desfaz o arquivamento de várias de uma vez. */
+  unarchiveMany: (ids: string[]) => void;
   unarchive: (id: string) => void;
   postpone: (id: string) => void;
   markAsImportant: (id: string) => void;
@@ -25,6 +31,7 @@ import { patchTask } from '../lib/api';
 export function NotificationProvider({ children }: { children: React.ReactNode }) {
   const { currentUser, allUsers } = useAuth();
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [carregando, setCarregando] = useState(true);
 
   useEffect(() => {
     if (currentUser) {
@@ -74,6 +81,8 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       setNotifications(data);
     } catch (e) {
       console.error("Erro ao buscar notificações", e);
+    } finally {
+      setCarregando(false);
     }
   };
 
@@ -131,6 +140,22 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       await saveNotification(newNotif);
     } catch (e) {
       console.error("Erro ao adicionar notificação", e);
+    }
+  };
+
+  // Arquivar um lembrete também marca o lembrete de origem como visto.
+  const marcarLembreteVisto = (notif: AppNotification) => {
+    if (notif.targetId === 'sienge_reminder') {
+      supabase.from('sienge_titles').update({ reminder_type: 'seen' }).eq('id', notif.siengeTitleId).then(({ error }) => {
+        if (error) console.error(error);
+      });
+    } else if (notif.targetId === 'reminder' || notif.targetId === notif.taskId) {
+      patchTask(notif.taskId!, { reminderType: 'seen' as any, updatedBy: currentUser?.id }).catch(console.error);
+    } else if (notif.targetId && notif.targetId !== 'deadline') {
+      // Lembrete de subtarefa
+      supabase.from('subtasks').update({ reminder_type: 'seen' }).eq('id', notif.targetId).then(({ error }) => {
+        if (error) console.error(error);
+      });
     }
   };
 
@@ -193,6 +218,30 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     }
   };
 
+  const markManyAsViewed = (ids: string[]) => {
+    const alvo = new Set(ids);
+    const afetadas = notifications.filter(n => alvo.has(n.id) && n.status !== 'viewed');
+    if (afetadas.length === 0) return;
+    const now = new Date().toISOString();
+    setNotifications(prev => prev.map(n => alvo.has(n.id) && n.status !== 'viewed' ? { ...n, status: 'viewed', viewedAt: now } : n));
+    afetadas.forEach(n => {
+      if (n.type === 'reminder') marcarLembreteVisto(n);
+      saveNotification({ ...n, status: 'viewed', viewedAt: now }).catch(e => console.error('Erro ao arquivar notificação', e));
+    });
+  };
+
+  const unarchiveMany = (ids: string[]) => {
+    const alvo = new Set(ids);
+    const afetadas = notifications.filter(n => alvo.has(n.id) && n.status === 'viewed');
+    if (afetadas.length === 0) return;
+    const restauradas = new Map(afetadas.map(n => {
+      const { viewedAt, ...rest } = n;
+      return [n.id, { ...rest, status: 'read' as const }];
+    }));
+    setNotifications(prev => prev.map(n => restauradas.get(n.id) ?? n));
+    restauradas.forEach(n => saveNotification(n).catch(e => console.error('Erro ao restaurar notificação', e)));
+  };
+
   const unarchive = (id: string) => {
     const notif = notifications.find(n => n.id === id);
     if (notif && notif.status === 'viewed') {
@@ -234,7 +283,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   };
 
   return (
-    <NotificationContext.Provider value={{ notifications, addNotification, markAsRead, markAsViewed, markAllAsViewed, unarchive, postpone, markAsImportant, clearAll, clearArchived }}>
+    <NotificationContext.Provider value={{ notifications, carregando, addNotification, markAsRead, markAsViewed, markAllAsViewed, markManyAsViewed, unarchiveMany, unarchive, postpone, markAsImportant, clearAll, clearArchived }}>
       {children}
     </NotificationContext.Provider>
   );

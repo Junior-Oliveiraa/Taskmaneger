@@ -1,24 +1,30 @@
-import React, { useState, useEffect } from 'react';
-import { Task, DesignBriefing } from '../types';
-import { Edit2, Check, ChevronDown, ChevronUp, Plus, X, ExternalLink } from 'lucide-react';
-import RichTextEditor from './RichTextEditor';
-import DeliveryApproval from './DeliveryApproval';
-import DeliveryForm from './DeliveryForm';
+// Design da tarefa: briefing, textos da peça, criativos (com a aprovação de cada um) e histórico.
+import React, { useEffect, useState } from 'react';
+import { ExternalLink, FileInput, Plus, Trash2, X } from 'lucide-react';
+import { CopyEditorItem, Delivery, DesignBriefing, Task } from '../types';
 import ConfirmModal from './ConfirmModal';
 import { useAuth } from '../context/AuthContext';
-import { useNotifications } from '../context/NotificationContext';
 import { fetchTaskBriefings } from '../lib/api';
+import { criativosAprovados, editarCriativo, entregaDoTexto, enviarCriativo, entregaTravada, imagensDe, rodadasDe, situacaoDe } from '../lib/aprovacao';
 import { uploadDeliveryImages } from '../lib/deliveryImages';
-import { useSyncManager } from '../lib/SyncManager';
+import { Abas, EditoresTexto } from './tarefa/Abas';
+import { HistoricoAprovacao, IconeSituacao } from './tarefa/Aprovacao';
+import { EscolhasBriefing, LinhaBriefing, SecaoBriefing, TextoBriefing } from './tarefa/Briefing';
+import Criativo from './tarefa/Criativo';
+import { BOTAO_BORDA, BOTAO_GHOST, BOTAO_ICONE, CAMPO, FOCO, ItemMenu, Menu, TituloSecao } from './tarefa/Propriedade';
+import { listaDe, useBriefing, useDecisoes } from './tarefa/useBriefing';
 
 interface DesignPropertiesProps {
   task: Task;
   allTasks?: Task[];
   saveChange: (updates: Partial<Task>) => void;
-  themeColor?: string;
+  /** Cor da classe nos títulos das seções. */
+  cor?: string;
   disabled?: boolean;
-  /** Briefing columns still loading from the DB — creatives are not known yet. */
-  briefingsLoading?: boolean;
+  /** Motivo pelo qual ainda não dá para enviar para aprovação. */
+  bloqueio?: string;
+  /** O conteúdo ainda está vindo do banco: não dá para escrever por cima. */
+  carregando?: boolean;
 }
 
 const OBJETIVOS_OPTIONS = [
@@ -36,25 +42,21 @@ const FORMATOS_DINAMICOS: Record<string, string[]> = {
   "Feed": [
     "1:1 (Quadrado) - 1080x1080px",
     "4:5 (Retrato) - 1080x1350px",
-    "16:9 (Paisagem) - 1080x566px",
-    "Personalizado"
+    "16:9 (Paisagem) - 1080x566px"
   ],
   "Stories": [
-    "9:16 (Vertical) - 1080x1920px",
-    "Personalizado"
+    "9:16 (Vertical) - 1080x1920px"
   ],
   "Cartão": [
     "Físico Padrão - 9x5cm",
     "Físico Europeu - 8.5x5.5cm",
-    "Digital Interativo - 1080x1920px",
-    "Personalizado"
+    "Digital Interativo - 1080x1920px"
   ],
   "Anúncio Meta": [
     "Feed/Carrossel (1:1) - 1080x1080px",
     "Feed Vídeo/Imagem (4:5) - 1080x1350px",
     "Stories/Reels/Audience Network (9:16) - 1080x1920px",
-    "Resultados de Pesquisa/In-Stream (1.91:1) - 1200x628px",
-    "Personalizado"
+    "Resultados de Pesquisa/In-Stream (1.91:1) - 1200x628px"
   ],
   "Anúncio Google": [
     "Retângulo Médio - 300x250px",
@@ -65,26 +67,22 @@ const FORMATOS_DINAMICOS: Record<string, string[]> = {
     "Arranha-céu Inteligente - 300x600px",
     "Outdoor - 970x250px",
     "Banner para Vídeo (YouTube) - 300x60px",
-    "Quadrado Padrão - 250x250px",
-    "Personalizado"
+    "Quadrado Padrão - 250x250px"
   ],
   "Banner site": [
     "Hero Desktop - 1920x1080px",
-    "Mobile - 360x640px",
-    "Personalizado"
+    "Mobile - 360x640px"
   ],
   "Landing page": [
     "Hero Desktop - 1920x1080px",
-    "Mobile - 360x640px",
-    "Personalizado"
+    "Mobile - 360x640px"
   ],
   "Vídeo": [
     "Quadrado (1:1) - 1080x1080px",
     "Vertical (9:16) - 1080x1920px",
     "Paisagem (16:9) - 1920x1080px",
     "Stories/Reels (9:16) - 1080x1920px",
-    "YouTube (16:9) - 1920x1080px",
-    "Personalizado"
+    "YouTube (16:9) - 1920x1080px"
   ],
   "Impresso": [
     "A4 - 210x297mm",
@@ -92,17 +90,15 @@ const FORMATOS_DINAMICOS: Record<string, string[]> = {
     "A5 - 148x210mm",
     "Flyer - 150x210mm",
     "Banner Roll-up - 800x2000mm",
-    "Outdoor - 9000x3000mm",
-    "Personalizado"
+    "Outdoor - 9000x3000mm"
   ],
   "E-mail marketing": [
     "Desktop - 600px de largura",
-    "Mobile - 320px de largura",
-    "Personalizado"
+    "Mobile - 320px de largura"
   ]
 };
 
-// Pieces that support focus direction (mobile first / desktop first)
+// Peças em que a direção de foco faz sentido.
 const DIRECAO_FOCO_PIECES = ['Landing page', 'E-mail marketing', 'Banner site'];
 
 const DIRECAO_FOCO_OPTIONS = [
@@ -115,971 +111,393 @@ const DIRECAO_CRIATIVA_OPTIONS = [
   'Visual Leve', 'Técnico', 'Chamativo', 'Dramático'
 ];
 
-type TabId = 'copy' | 'aprovacao';
+function formularioDaTarefa(task: Task): DesignBriefing {
+  const b = task.designBriefing || {} as Partial<DesignBriefing>;
+  return {
+    ...b,
+    isFilled: b.isFilled || false,
+    objetivos: listaDe(b.objetivos),
+    tipoPeca: listaDe(b.tipoPeca),
+    formatosEspecificos: b.formatosEspecificos || {},
+    formatosPersonalizados: b.formatosPersonalizados || {},
+    mensagemPrincipal: b.mensagemPrincipal || '',
+    direcaoCriativa: listaDe(b.direcaoCriativa),
+    direcaoFoco: listaDe(b.direcaoFoco),
+    inspiracoes: listaDe(b.inspiracoes).filter(s => s.trim()),
+    copyContent: b.copyContent || '',
+    copyEditors: b.copyEditors?.length ? b.copyEditors
+      : b.copyContent ? [{ id: 'legacy-copy', name: 'Copy', content: b.copyContent }] : [],
+    deliveries: b.deliveries || [],
+  };
+}
 
-export default function DesignProperties({ task, allTasks = [], saveChange, themeColor = 'text-blue-500', disabled = false, briefingsLoading = false }: DesignPropertiesProps) {
-  const [isCreatingDelivery, setIsCreatingDelivery] = useState(false);
-  const [editingDeliveryId, setEditingDeliveryId] = useState<string | null>(null);
-  
-  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
-  
-  const [isEditing, setIsEditing] = useState(false);
-  const [isCopyEditorVisible, setIsCopyEditorVisible] = useState(!!task.designBriefing?.copyContent);
-  const [isBriefingCollapsed, setIsBriefingCollapsed] = useState(false);
-  const [isCopyDropdownOpen, setIsCopyDropdownOpen] = useState(false);
-  const { allUsers: USERS, currentUser } = useAuth();
-  const { getPendingField, saveImmediately } = useSyncManager();
-  const [isSavingDelivery, setIsSavingDelivery] = useState(false);
-  const [deliverySaveError, setDeliverySaveError] = useState<string | null>(null);
-  const sortedUsers = currentUser
-    ? [currentUser, ...USERS.filter(u => u.id !== currentUser.id)]
-    : USERS;
-  const { addNotification } = useNotifications();
-  const [briefingForm, setBriefingForm] = useState<DesignBriefing>(task.designBriefing || {
-    isFilled: false,
-    objetivos: [],
-    tipoPeca: [],
-    formatosEspecificos: {},
-    formatosPersonalizados: {},
-    mensagemPrincipal: '',
-    direcaoCriativa: [],
-    direcaoFoco: [],
-    inspiracoes: [''],
-    copyContent: '',
-    copyEditors: []
+// O primeiro texto também fica no campo antigo, que outras telas leem.
+const primeiroTexto = (textos: CopyEditorItem[]) => ({ copyContent: textos[0]?.content || '' });
+const temTexto = (html: string) => !!html.replace(/<[^>]*>|&nbsp;/g, '').trim();
+const nomeDoCriativo = (d: Delivery, entregas: Delivery[]) => d.name || `Criativo ${Math.max(0, entregas.findIndex(e => e.id === d.id)) + 1}`;
+const novoCriativo = (id: string): Delivery => ({ id, status: 'draft', thread: [], createdAt: new Date().toISOString() });
+
+const SECOES = { briefing: false, textos: true, criativos: true, historico: false };
+
+export default function DesignProperties({ task, allTasks = [], saveChange, cor, bloqueio, disabled = false, carregando = false }: DesignPropertiesProps) {
+  const { currentUser } = useAuth();
+  const [aberto, setAberto] = useState(SECOES);
+  const alternar = (k: keyof typeof aberto) => setAberto(a => ({ ...a, [k]: !a[k] }));
+  const [textoAtivo, setTextoAtivo] = useState('');
+  const [criativoAtivo, setCriativoAtivo] = useState('');
+  const [excluindo, setExcluindo] = useState<{ tipo: 'texto' | 'criativo'; id: string; nome: string } | null>(null);
+  // Entrega aberta por uma notificação, até os criativos carregarem.
+  const [alvo, setAlvo] = useState<string | null>(null);
+  const [enviandoId, setEnviandoId] = useState<string | null>(null);
+
+  const b = useBriefing({
+    campo: 'designBriefing', task, disabled, saveChange, formulario: formularioDaTarefa, derivado: primeiroTexto,
+    prepararEntregas: async (id, entregas) => (await uploadDeliveryImages(id, entregas)) ?? entregas,
+    aoTrocarTarefa: () => { setTextoAtivo(''); setCriativoAtivo(''); setExcluindo(null); setAlvo(null); setEnviandoId(null); setAberto(SECOES); },
+  });
+  const { form, textos, salvando } = b;
+  const { decidir, cancelarEnvio, pedirAprovacao } = useDecisoes<'designBriefing'>({
+    tipo: 'criativo', task, gravar: b.gravar, nomeDe: nomeDoCriativo, tudoAprovado: criativosAprovados,
   });
 
-  const normalizedEditors = briefingForm.copyEditors?.length 
-    ? briefingForm.copyEditors 
-    : (briefingForm.copyContent ? [{ id: 'legacy-copy', name: 'Copy', content: briefingForm.copyContent }] : []);
-
-  const [activeEditorId, setActiveEditorId] = useState<string | null>(normalizedEditors[0]?.id || null);
-  const [editingTabNameId, setEditingTabNameId] = useState<string | null>(null);
-
   useEffect(() => {
-    if (!activeEditorId && normalizedEditors.length > 0) {
-      setActiveEditorId(normalizedEditors[0].id);
-    }
-  }, [normalizedEditors.length, activeEditorId]);
-
-  useEffect(() => {
-    if (task) {
-      setBriefingForm(task.designBriefing || {
-        isFilled: false,
-        objetivos: [],
-        tipoPeca: [],
-        formatosEspecificos: {},
-        formatosPersonalizados: {},
-        mensagemPrincipal: '',
-        direcaoCriativa: [],
-        direcaoFoco: [],
-        inspiracoes: [''],
-        copyContent: '',
-        copyEditors: task.designBriefing?.copyEditors || []
-      });
-      setIsEditing(false);
-      setIsCopyEditorVisible(!!task.designBriefing?.copyContent || (task.designBriefing?.copyEditors || []).length > 0);
-    }
-  }, [task.id, task.designBriefing, disabled]);
-
-  useEffect(() => {
-    const handleOpenSection = (e: CustomEvent<{ section: string, targetId?: string }>) => {
+    const abrir = (e: CustomEvent<{ section: string, targetId?: string }>) => {
+      if (e.detail.section === 'designProps' && e.detail.targetId?.startsWith('design-delivery-')) {
+        setAlvo(e.detail.targetId.replace('design-delivery-', ''));
+      }
     };
-    window.addEventListener('openTaskSection', handleOpenSection as EventListener);
-    return () => window.removeEventListener('openTaskSection', handleOpenSection as EventListener);
+    window.addEventListener('openTaskSection', abrir as EventListener);
+    return () => window.removeEventListener('openTaskSection', abrir as EventListener);
   }, []);
 
-  const toggleArrayItem = (array: string[], item: string) => {
-    if (array.includes(item)) return array.filter(i => i !== item);
-    return [...array, item];
-  };
-
-  // Re-fetches the latest designBriefing from the server and applies only the
-  // fields the recipe intends to change, so a save from this (possibly stale)
-  // screen never clobbers deliveries/fields that changed elsewhere meanwhile.
-  const saveDesignBriefing = async (
-    recipe: (base: DesignBriefing) => { partial: Partial<DesignBriefing>; taskUpdates?: Partial<Task> }
-  ) => {
-    let base: DesignBriefing = briefingForm;
-    try {
-      const fresh = await fetchTaskBriefings(task.id);
-      if (fresh?.designBriefing) base = fresh.designBriefing;
-    } catch {
-      // If the refetch fails, fall back to local state rather than blocking the save.
-    }
-    // A previous saveDesignBriefing call may still be sitting in SyncManager's
-    // debounce queue, not yet flushed to the DB. If we based this save purely on
-    // the DB SELECT above, it would be stale and this save would overwrite that
-    // pending write when it flushes (dropping whatever it added, e.g. a delivery).
-    const pending = getPendingField(task.id, 'designBriefing');
-    if (pending) base = pending;
-    const { partial, taskUpdates } = recipe(base);
-    const merged = { ...base, ...partial };
-    setBriefingForm(merged);
-    saveChange({ designBriefing: merged, ...(taskUpdates || {}) });
-    return merged;
-  };
-
-  // Used for delivery (creative) changes: approval, rejection, and new
-  // submissions all hinge on this actually landing in the DB, so unlike
-  // saveDesignBriefing this awaits the real write and only calls `notify`
-  // (used to fire approval notifications) after it succeeds. This closes the
-  // window where a notification was sent for a creative that was still
-  // sitting in a debounced, not-yet-persisted save.
-  const saveDeliveryChange = async (
-    recipe: (base: DesignBriefing) => { partial: Partial<DesignBriefing>; taskUpdates?: Partial<Task>; notify?: () => void }
-  ): Promise<boolean> => {
-    let base: DesignBriefing = briefingForm;
-    try {
-      const fresh = await fetchTaskBriefings(task.id);
-      if (fresh?.designBriefing) base = fresh.designBriefing;
-    } catch {
-      // If the refetch fails, fall back to local state rather than blocking the save.
-    }
-    const pending = getPendingField(task.id, 'designBriefing');
-    if (pending) base = pending;
-
-    const { partial, taskUpdates, notify } = recipe(base);
-
-    setIsSavingDelivery(true);
-    setDeliverySaveError(null);
-    try {
-      // Pasted screenshots and rejection annotations come in as base64 data URLs.
-      // Push them to Storage first so the briefing column only ever stores links —
-      // otherwise it grows to megabytes and stalls the approval screen on open.
-      const deliveries = await uploadDeliveryImages(task.id, partial.deliveries);
-      const merged = { ...base, ...partial, ...(deliveries ? { deliveries } : {}) };
-
-      await saveImmediately(task.id, { designBriefing: merged, ...(taskUpdates || {}) });
-      setBriefingForm(merged);
-      notify?.();
-      return true;
-    } catch (err) {
-      console.error('Failed to save delivery change:', err);
-      setDeliverySaveError('Falha ao salvar. Verifique sua conexão e tente novamente.');
-      return false;
-    } finally {
-      setIsSavingDelivery(false);
-    }
-  };
-
-  const handleSaveBriefing = () => {
-    setIsEditing(false);
-    const { deliveries, ...briefingFields } = briefingForm;
-    saveDesignBriefing(() => ({ partial: { ...briefingFields, isFilled: true } }));
-  };
-
+  // A aprovação fica junto do criativo: abre a aba dele.
   useEffect(() => {
-    if (!task) return;
-    if (JSON.stringify(briefingForm.copyEditors) === JSON.stringify(task.designBriefing?.copyEditors) &&
-        briefingForm.copyContent === task.designBriefing?.copyContent) return;
-    const timer = setTimeout(() => {
-      saveDesignBriefing(() => ({ 
-        partial: { 
-          copyContent: briefingForm.copyContent,
-          copyEditors: briefingForm.copyEditors 
-        } 
-      }));
-    }, 800);
-    return () => clearTimeout(timer);
-  }, [briefingForm.copyContent, briefingForm.copyEditors]);
+    if (!alvo || !form.deliveries?.some(d => d.id === alvo)) return;
+    setAberto(a => ({ ...a, criativos: true }));
+    setCriativoAtivo(alvo);
+    setAlvo(null);
+  }, [alvo, form.deliveries]);
 
-  const relatedCopyTasks = React.useMemo(() => {
-    return allTasks.filter(t => 
-      t.labels.some(l => l.name === 'Copy') && (
-        t.parentTaskId === task.id || 
-        (task.parentTaskId && t.id === task.parentTaskId)
-      )
-    );
-  }, [allTasks, task]);
-
-  const approvedCopies = React.useMemo(() => {
-    const copies: { taskId: string; editorId: string; content: string; title: string }[] = [];
-    relatedCopyTasks.forEach(ct => {
-      if (ct.copyBriefing?.copyEditors) {
-        ct.copyBriefing.copyEditors.forEach(editor => {
-          if (editor.content) {
-             copies.push({
-               taskId: ct.id,
-               editorId: editor.id,
-               content: editor.content,
-               title: `${ct.title} - ${editor.name}`
-             });
-          }
-        });
-      }
-    });
-    return copies;
-  }, [relatedCopyTasks]);
-
-  const handleImportCopy = (editorId: string) => {
-    if (!editorId) return;
-    const selectedCopy = approvedCopies.find(c => c.editorId === editorId);
-    if (selectedCopy) {
-      setBriefingForm(prev => ({ ...prev, copyContent: selectedCopy.content }));
-      saveDesignBriefing(() => ({ partial: { copyContent: selectedCopy.content } }));
-    }
-    setIsCopyDropdownOpen(false);
+  // ── Briefing ──
+  const formatos = form.formatosEspecificos || {};
+  const mudarFormato = (peca: string, formato: string, soAdicionar = false) => {
+    const todos = b.atual('formatosEspecificos') || {};
+    const lista = listaDe(todos[peca]);
+    if (soAdicionar && lista.includes(formato)) return;
+    b.mudarCampos({ formatosEspecificos: { ...todos, [peca]: lista.includes(formato) ? lista.filter(f => f !== formato) : [...lista, formato] } });
   };
-
-  const handleCopyChange = (newCopy: string) => {
-    if (!activeEditorId) return;
-    const newEditors = normalizedEditors.map(e => e.id === activeEditorId ? { ...e, content: newCopy } : e);
-    // Maintain backwards compatibility with copyContent for the first tab
-    const firstContent = newEditors[0]?.content || '';
-    setBriefingForm(prev => ({ ...prev, copyEditors: newEditors, copyContent: firstContent }));
+  // Medida dos briefings antigos, guardada à parte.
+  const mostrarFormato = (peca: string) => (f: string) => {
+    const m = form.formatosPersonalizados?.[peca];
+    return f === 'Personalizado' && m?.width && m?.height ? `${m.width} x ${m.height} ${m.unit}` : f;
   };
+  const comFoco = form.tipoPeca.some(p => DIRECAO_FOCO_PIECES.includes(p)) || listaDe(form.direcaoFoco).length > 0;
+  const inspiracoes = form.inspiracoes || [];
+  const camposPreenchidos = [
+    form.objetivos.length > 0, !!form.mensagemPrincipal.trim(), form.direcaoCriativa.length > 0, form.tipoPeca.length > 0, inspiracoes.length > 0,
+    ...(comFoco ? [listaDe(form.direcaoFoco).length > 0] : []),
+  ];
+  const escolhas = (chave: 'objetivos' | 'direcaoCriativa' | 'direcaoFoco' | 'tipoPeca', rotulo: string, opcoes: string[]) => (
+    <EscolhasBriefing
+      key={`${task.id}-${chave}`}
+      rotulo={rotulo}
+      opcoes={opcoes}
+      valores={listaDe(form[chave])}
+      disabled={disabled}
+      onAlternar={op => b.mudarOpcao(chave, op)}
+      onAdicionar={t => b.mudarOpcao(chave, t, true)}
+    />
+  );
 
-  const handleRenameTab = (id: string, newName: string) => {
-    if (!newName.trim()) return;
-    const newEditors = normalizedEditors.map(e => e.id === id ? { ...e, name: newName.trim() } : e);
-    setBriefingForm(prev => ({ ...prev, copyEditors: newEditors }));
-    setEditingTabNameId(null);
-  };
+  // ── Textos ──
+  const textoAberto = textos.find(t => t.id === textoAtivo) ?? textos[0];
+  const tarefasDeCopy = allTasks.filter(t =>
+    t.labels.some(l => l.name === 'Copy') && (t.parentTaskId === task.id || (task.parentTaskId && t.id === task.parentTaskId)));
+  const importar = tarefasDeCopy.length > 0 && !disabled && (
+    <Menu
+      rotulo="Importar texto de uma tarefa de Copy"
+      largura="w-80"
+      alinhar="right"
+      classe={BOTAO_GHOST}
+      gatilho={<><FileInput size={15} aria-hidden /> Importar copy</>}
+    >
+      {fechar => <TextosDeCopy tarefas={tarefasDeCopy} onEscolher={t => { fechar(); setAberto(a => ({ ...a, textos: true })); setTextoAtivo(b.adicionarTexto(t.name || 'Copy', t.content)); }} />}
+    </Menu>
+  );
+  const adicionarTexto = () => { setAberto(a => ({ ...a, textos: true })); setTextoAtivo(b.adicionarTexto(`Texto ${textos.length + 1}`)); };
 
-  const handleAddTab = () => {
-    const newId = Date.now().toString();
-    const newEditors = [...normalizedEditors, { id: newId, name: `Card ${normalizedEditors.length + 1}`, content: '' }];
-    setBriefingForm(prev => ({ ...prev, copyEditors: newEditors }));
-    setActiveEditorId(newId);
-  };
+  // ── Criativos ──
+  // Sem nenhum criativo, um rascunho local já aparece pronto; só vai ao banco quando recebe algo.
+  const entregas = form.deliveries?.length ? form.deliveries : disabled ? [] : [novoCriativo(`criativo-${task.id}`)];
+  const criativo = entregas.find(d => d.id === criativoAtivo)
+    ?? entregas.find(d => situacaoDe(d) === 'pendente' && d.approverId === currentUser?.id)
+    ?? entregas[0];
+  const rodadas = rodadasDe(entregas, d => nomeDoCriativo(d, entregas));
+  const rodadaDe = (id?: string) => rodadas.find(r => r.entregaId === id);
+  const enviados = entregas.filter(d => imagensDe(d).length > 0);
 
-  const handleRemoveTab = (e: React.MouseEvent, id: string) => {
-    e.stopPropagation();
-    const newEditors = normalizedEditors.filter(e => e.id !== id);
-    setBriefingForm(prev => ({ ...prev, copyEditors: newEditors }));
-    if (activeEditorId === id) {
-      setActiveEditorId(newEditors[0]?.id || null);
-    }
-    if (newEditors.length === 0) {
-      setIsCopyEditorVisible(false);
-    }
-  };
+  const comCriativo = (lista: Delivery[], id: string) =>
+    lista.some(d => d.id === id) ? lista : [...lista, entregas.find(d => d.id === id) ?? novoCriativo(id)];
 
-  const handleFormatChange = (peca: string, formato: string) => {
-    const currentFormats = briefingForm.formatosEspecificos?.[peca] || [];
-    const newFormats = toggleArrayItem(currentFormats, formato);
-    setBriefingForm({
-      ...briefingForm,
-      formatosEspecificos: {
-        ...briefingForm.formatosEspecificos,
-        [peca]: newFormats
-      }
+  const mudarCriativo = (id: string, mudar: (d: Delivery) => Partial<Delivery>) => {
+    b.setForm(prev => ({ ...prev, deliveries: editarCriativo(comCriativo(prev.deliveries || [], id), id, mudar) ?? prev.deliveries }));
+    void b.salvar(base => {
+      // Enviado em outra tela: vale o que foi enviado.
+      const deliveries = editarCriativo(comCriativo(base.deliveries || [], id), id, mudar);
+      return deliveries ? { deliveries } : {};
     });
   };
 
-  const handleCustomFormatChange = (peca: string, field: 'width' | 'height' | 'unit', value: string) => {
-    const currentCustom = briefingForm.formatosPersonalizados?.[peca] || { width: '', height: '', unit: 'px' };
-    setBriefingForm({
-      ...briefingForm,
-      formatosPersonalizados: {
-        ...briefingForm.formatosPersonalizados,
-        [peca]: { ...currentCustom, [field]: value }
-      }
+  const adicionarCriativo = () => {
+    const novo = novoCriativo(Date.now().toString());
+    const atuais = entregas;
+    const juntar = (lista: Delivery[]) => [...(lista.length ? lista : atuais), novo];
+    setAberto(a => ({ ...a, criativos: true }));
+    setCriativoAtivo(novo.id);
+    b.setForm(prev => ({ ...prev, deliveries: juntar(prev.deliveries || []) }));
+    void b.salvar(base => ({ deliveries: juntar(base.deliveries || []) }));
+  };
+
+  const excluirCriativo = (id: string) => {
+    // Só rascunhos: o que já foi enviado fica no histórico.
+    const sem = (lista: Delivery[]) => lista.filter(d => d.id !== id || d.status !== 'draft');
+    b.setForm(prev => ({ ...prev, deliveries: sem(prev.deliveries || []) }));
+    void b.salvar(base => ({ deliveries: sem(base.deliveries || []) }));
+  };
+
+  const enviar = async (id: string, aprovadorId: string) => {
+    if (salvando) return;
+    setEnviandoId(id);
+    await b.gravar(base => {
+      const deliveries = enviarCriativo(comCriativo(base.deliveries || [], id), id, aprovadorId, currentUser);
+      if (!deliveries) return null;
+      const nome = nomeDoCriativo(deliveries.find(d => d.id === id)!, deliveries);
+      return {
+        partial: { deliveries },
+        taskUpdates: task.status === 'approval' ? {} : { status: 'approval' },
+        avisar: () => pedirAprovacao(aprovadorId, id, nome),
+      };
     });
+    if (b.naTarefa()) setEnviandoId(null);
   };
 
-  const renderChipGroup = (
-    options: string[], 
-    selected: string[], 
-    onChange: (newSelected: string[]) => void
-  ) => {
-    return (
-      <div className="flex flex-wrap gap-2">
-        {options.map(opt => {
-          const isSelected = selected.includes(opt);
-          return (
-            <button
-              key={opt}
-              disabled={disabled}
-              onClick={() => onChange(toggleArrayItem(selected, opt))}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
-                isSelected
-                  ? 'bg-yellow-500/15 text-yellow-300 border border-yellow-500/30 shadow-[0_0_8px_rgba(234,179,8,0.15)]'
-                  : 'bg-[#1f2937]/30 text-zinc-400 hover:text-zinc-200 hover:bg-[#1f2937]/60 border border-transparent'
-              }`}
-            >
-              {opt}
-            </button>
-          );
-        })}
-      </div>
-    );
-  };
-
-  const renderReadonlyBriefing = () => {
-    const validInspiracoes = (briefingForm.inspiracoes || []).filter(s => s.trim());
-    return (
-      <div className="flex flex-col gap-4">
-        <div className="flex items-center justify-between border-b border-zinc-800/40 pb-3">
-          <div 
-            className="flex items-center gap-2 cursor-pointer group select-none"
-            onClick={() => setIsBriefingCollapsed(!isBriefingCollapsed)}
-          >
-            <h3 className={`text-xs font-semibold font-sans uppercase tracking-wider flex items-center gap-1.5 ${themeColor}`}>
-              Briefing da Peça
-            </h3>
-            <button className="text-zinc-500 group-hover:text-zinc-300 transition-colors p-1">
-              {isBriefingCollapsed ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
-            </button>
-          </div>
-          {!disabled && (
-            <button
-              onClick={() => setIsEditing(true)}
-              className="flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-medium bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-zinc-800 rounded transition-colors"
-            >
-              <Edit2 size={10} /> Editar
-            </button>
-          )}
-        </div>
-        
-        {!isBriefingCollapsed && (
-          <div className="flex flex-col gap-3 animate-fade-in">
-          <div className="flex flex-wrap gap-x-12 gap-y-3">
-            <div className="flex flex-col gap-0.5">
-              <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Objetivo da Peça</span>
-              <span className="text-xs text-zinc-200">{briefingForm.objetivos.join(', ') || 'Não definido'}</span>
-            </div>
-            <div className="flex flex-col gap-0.5">
-              <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Direção Criativa</span>
-              <span className="text-xs text-zinc-200">{briefingForm.direcaoCriativa.join(', ') || 'Não definido'}</span>
-            </div>
-            {(briefingForm.direcaoFoco || []).length > 0 && (
-              <div className="flex flex-col gap-0.5">
-                <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Direção de Foco</span>
-                <span className="text-xs text-zinc-200">{(briefingForm.direcaoFoco || []).join(', ')}</span>
-              </div>
-            )}
-          </div>
-
-          {briefingForm.mensagemPrincipal && (
-            <div className="flex flex-col gap-0.5 mt-1">
-              <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Mensagem Principal</span>
-              <span className="text-xs text-zinc-200 whitespace-pre-wrap leading-relaxed">{briefingForm.mensagemPrincipal}</span>
-            </div>
-          )}
-
-          {validInspiracoes.length > 0 && (
-            <div className="flex flex-col gap-1.5 mt-1">
-              <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Inspirações</span>
-              <div className="flex flex-wrap gap-2">
-                {validInspiracoes.map((url, idx) => (
-                  <a
-                    key={idx}
-                    href={url.startsWith('http') ? url : `https://${url}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-medium bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-zinc-100 border border-zinc-800 hover:border-zinc-600 transition-all group"
-                  >
-                    <ExternalLink size={10} className="opacity-50 group-hover:opacity-100 transition-opacity" />
-                    Inspiração {idx + 1}
-                  </a>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <div className="flex flex-col gap-1.5 mt-2 border-t border-zinc-800/40 pt-3">
-            <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Tipo da Peça</span>
-            {briefingForm.tipoPeca.length > 0 ? (
-              <div className="flex flex-wrap gap-3">
-                {briefingForm.tipoPeca.map(peca => {
-                  const formatos = briefingForm.formatosEspecificos?.[peca] || [];
-                  const custom = briefingForm.formatosPersonalizados?.[peca];
-                  
-                  return (
-                    <div key={peca} className="flex flex-col bg-zinc-900/40 px-3 py-2 rounded-md border border-zinc-800/40">
-                      <span className="text-xs font-semibold text-zinc-300">{peca}</span>
-                      {formatos.length > 0 && (
-                        <div className="flex flex-col mt-1 space-y-0.5">
-                          {formatos.map(f => (
-                            <div key={f} className="flex items-center gap-1.5 text-[10px] text-zinc-400">
-                              <span className="w-1 h-1 rounded-full bg-yellow-500/50" />
-                              {f === 'Personalizado' && custom 
-                                ? `${custom.width} x ${custom.height} ${custom.unit}`
-                                : f}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <span className="text-xs text-zinc-200">Não definido</span>
-            )}
-          </div>
-        </div>
-        )}
-      </div>
-    );
-  };
+  if (carregando && !task.designBriefing) return <p role="status" className="text-body text-zinc-500">Carregando o design…</p>;
 
   return (
-    <div className="flex flex-col bg-[#08080a]/40 rounded-md border border-zinc-900/40 animate-slide-down overflow-hidden mt-2">
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 xl:gap-8 view-pad">
-        
-        <div className="flex flex-col gap-4">
-          {!task.designBriefing?.isFilled && !isEditing ? (
-            <div className="flex flex-col items-center justify-center py-6 border border-dashed border-zinc-800/60 rounded-xl bg-zinc-900/10">
-              <span className="text-zinc-500 text-xs mb-2">Nenhum briefing criado para esta peça</span>
-              {!disabled && (
-                <button
-                  onClick={() => setIsEditing(true)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider rounded border border-yellow-500/30 text-yellow-500/80 hover:bg-yellow-500/10 hover:border-yellow-500/50 hover:text-yellow-400 transition-colors"
-                >
-                  <Plus size={12} /> Adicionar Briefing
-                </button>
-              )}
-            </div>
-          ) : isEditing ? (
-            <div className="flex flex-col gap-4 bg-[#08080a] p-5 rounded-xl border border-zinc-900/50">
-              <div className="flex items-center justify-between border-b border-zinc-800/40 pb-3">
-                <h3 className={`text-xs font-semibold font-sans uppercase tracking-wider flex items-center gap-1.5 ${themeColor}`}>
-                  Briefing da Peça
-                </h3>
-              </div>
-              <div className="flex flex-col gap-8 animate-fade-in">
-              <div className="flex flex-col gap-3">
-                <span className="text-[10px] font-medium text-zinc-500 font-sans uppercase tracking-widest">Objetivo:</span>
-                {renderChipGroup(OBJETIVOS_OPTIONS, briefingForm.objetivos, (val) => setBriefingForm({ ...briefingForm, objetivos: val }))}
-              </div>
-
-              <div className="flex flex-col gap-3">
-                <span className="text-[10px] font-medium text-zinc-500 font-sans uppercase tracking-widest">Mensagem Principal</span>
-                <textarea
-                  value={briefingForm.mensagemPrincipal}
-                  disabled={disabled}
-                  onChange={(e) => setBriefingForm({ ...briefingForm, mensagemPrincipal: e.target.value })}
-                  placeholder="Escreva a mensagem principal..."
-                  className="w-full bg-[#121214] border border-zinc-800/80 rounded-lg p-3 text-xs text-zinc-200 placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-yellow-500/50 focus:border-yellow-500/50 resize-y min-h-[80px] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                />
-              </div>
-
-              <div className="flex flex-col gap-3">
-                <span className="text-[10px] font-medium text-zinc-500 font-sans uppercase tracking-widest">Direção Criativa:</span>
-                {renderChipGroup(DIRECAO_CRIATIVA_OPTIONS, briefingForm.direcaoCriativa, (val) => setBriefingForm({ ...briefingForm, direcaoCriativa: val }))}
-              </div>
-
-              {briefingForm.tipoPeca.some(p => DIRECAO_FOCO_PIECES.includes(p)) && (
-                <div className="flex flex-col gap-3">
-                  <span className="text-[10px] font-medium text-zinc-500 font-sans uppercase tracking-widest">Direção de Foco:</span>
-                  {renderChipGroup(DIRECAO_FOCO_OPTIONS, briefingForm.direcaoFoco || [], (val) => setBriefingForm({ ...briefingForm, direcaoFoco: val }))}
-                </div>
-              )}
-
-              <div className="flex flex-col gap-3">
-                <span className="text-[10px] font-medium text-zinc-500 font-sans uppercase tracking-widest">Tipo da Peça:</span>
-                {renderChipGroup(TIPO_PECA_OPTIONS, briefingForm.tipoPeca, (val) => setBriefingForm({ ...briefingForm, tipoPeca: val }))}
-                
-                <div className="flex flex-col gap-3 mt-1">
-                  {briefingForm.tipoPeca.map(peca => {
-                    const formatsForPeca = FORMATOS_DINAMICOS[peca];
-                    if (!formatsForPeca) return null;
-
-                    const selectedFormats = briefingForm.formatosEspecificos?.[peca] || [];
-                    const isCustomSelected = selectedFormats.includes('Personalizado');
-                    const customData = briefingForm.formatosPersonalizados?.[peca] || { width: '', height: '', unit: 'px' };
-
-                    return (
-                      <div key={peca} className="p-3 bg-[#0d1117]/50 border-l-2 border-yellow-500/50 rounded-r-lg animate-fade-in flex flex-col gap-2 ml-1">
-                        <span className="text-[10px] text-zinc-500 uppercase tracking-wider">Formatos Específicos - {peca}:</span>
-                        {renderChipGroup(formatsForPeca, selectedFormats, (newSelected) => {
-                          const newFormatos = { ...briefingForm.formatosEspecificos, [peca]: newSelected };
-                          setBriefingForm({ ...briefingForm, formatosEspecificos: newFormatos });
-                        })}
-                        
-                        {isCustomSelected && (
-                          <div className="flex items-center gap-2 mt-2 animate-fade-in bg-zinc-900/50 p-2 rounded-md border border-zinc-800">
-                            <input
-                              type="number"
-                              placeholder="Largura"
-                              disabled={disabled}
-                              value={customData.width}
-                              onChange={(e) => handleCustomFormatChange(peca, 'width', e.target.value)}
-                              className="w-20 bg-[#121214] border border-zinc-700 rounded px-2 py-1 text-xs text-zinc-200 outline-none focus:border-yellow-500/50 disabled:opacity-50"
-                            />
-                            <span className="text-zinc-500 text-[10px]">x</span>
-                            <input
-                              type="number"
-                              placeholder="Altura"
-                              disabled={disabled}
-                              value={customData.height}
-                              onChange={(e) => handleCustomFormatChange(peca, 'height', e.target.value)}
-                              className="w-20 bg-[#121214] border border-zinc-700 rounded px-2 py-1 text-xs text-zinc-200 outline-none focus:border-yellow-500/50 disabled:opacity-50"
-                            />
-                            <select
-                              value={customData.unit}
-                              disabled={disabled}
-                              onChange={(e) => handleCustomFormatChange(peca, 'unit', e.target.value)}
-                              className="bg-[#121214] border border-zinc-700 rounded px-2 py-1 text-xs text-zinc-200 outline-none focus:border-yellow-500/50 disabled:opacity-50"
-                            >
-                              <option value="px">px</option>
-                              <option value="cm">cm</option>
-                              <option value="mm">mm</option>
-                            </select>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="flex flex-col gap-3">
-                <span className="text-[10px] font-medium text-zinc-500 font-sans uppercase tracking-widest">Inspirações:</span>
-                <div className="flex flex-col gap-2">
-                  {(briefingForm.inspiracoes || ['']).map((url, idx) => (
-                    <div key={idx} className="flex items-center gap-2 group">
-                      <div className="flex-1 flex items-center gap-2 bg-[#121214] border border-zinc-800/80 hover:border-zinc-700 focus-within:border-yellow-500/50 rounded-lg px-3 py-2 transition-all">
-                        <ExternalLink size={11} className="text-zinc-600 shrink-0" />
-                        <input
-                          type="text"
-                          value={url}
-                          disabled={disabled}
-                          onChange={(e) => {
-                            const newList = [...(briefingForm.inspiracoes || [''])];
-                            newList[idx] = e.target.value;
-                            setBriefingForm({ ...briefingForm, inspiracoes: newList });
-                          }}
-                          placeholder={`https://... (link de inspiração ${idx + 1})`}
-                          className="flex-1 bg-transparent text-xs text-zinc-200 placeholder-zinc-600 outline-none disabled:opacity-50"
-                        />
-                      </div>
-                      {(briefingForm.inspiracoes || ['']).length > 1 && (
-                        <button
-                          type="button"
-                          disabled={disabled}
-                          onClick={() => {
-                            const newList = (briefingForm.inspiracoes || ['']).filter((_, i) => i !== idx);
-                            setBriefingForm({ ...briefingForm, inspiracoes: newList.length > 0 ? newList : [''] });
-                          }}
-                          className="p-1.5 text-zinc-600 hover:text-red-400 hover:bg-red-500/10 rounded transition-colors opacity-0 group-hover:opacity-100 disabled:opacity-50"
-                          title="Remover"
-                        >
-                          <X size={12} />
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                  <button
-                    type="button"
-                    disabled={disabled}
-                    onClick={() => {
-                      const newList = [...(briefingForm.inspiracoes || ['']), ''];
-                      setBriefingForm({ ...briefingForm, inspiracoes: newList });
-                    }}
-                    className="self-start flex items-center gap-1.5 text-[11px] font-medium text-zinc-500 hover:text-zinc-200 py-1 px-2 rounded hover:bg-zinc-900 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <Plus size={12} />
-                    Adicionar mais uma inspiração
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex justify-end pt-4 border-t border-zinc-900/50">
-              <button
-                onClick={handleSaveBriefing}
-                disabled={disabled}
-                className="flex items-center gap-1.5 px-4 py-1.5 text-xs font-bold uppercase tracking-wider rounded border border-yellow-500/50 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <Check size={14} /> Salvar Briefing
-              </button>
-            </div>
-          </div>
-          ) : (
-            renderReadonlyBriefing()
-          )}
+    <div className="flex flex-col gap-8">
+      <SecaoBriefing
+        cor={cor}
+        aberta={aberto.briefing}
+        onAlternar={() => alternar('briefing')}
+        preenchidos={camposPreenchidos.filter(Boolean).length}
+        total={camposPreenchidos.length}
+        resumo="Objetivo, mensagem, direção criativa e peças"
+        disabled={disabled}
+      >
+        <div className="flex flex-col gap-2 min-w-0">
+          {escolhas('objetivos', 'Objetivo', OBJETIVOS_OPTIONS)}
+          <TextoBriefing
+            rotulo="Mensagem principal"
+            valor={form.mensagemPrincipal}
+            placeholder="Escrever"
+            disabled={disabled}
+            onMudar={t => b.mudarCampos({ mensagemPrincipal: t })}
+          />
+          {escolhas('direcaoCriativa', 'Direção criativa', DIRECAO_CRIATIVA_OPTIONS)}
         </div>
-
-        <div className="flex flex-col gap-4 h-full">
-
-          {!isCopyEditorVisible ? (
-            <div className="flex flex-col items-center justify-center py-6 border border-dashed border-zinc-800/60 rounded-xl bg-zinc-900/10">
-              <span className="text-zinc-500 text-xs mb-2">Nenhum copy criado para esta peça</span>
-              {!disabled && (
-                <button
-                  onClick={() => {
-                    setIsCopyEditorVisible(true);
-                    if (normalizedEditors.length === 0) {
-                      handleAddTab();
-                    }
-                  }}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider rounded border border-yellow-500/30 text-yellow-500/80 hover:bg-yellow-500/10 hover:border-yellow-500/50 hover:text-yellow-400 transition-colors"
-                >
-                  <Plus size={12} /> Adicionar Copy
-                </button>
-              )}
-            </div>
-          ) : (
-          <div className="flex-1 flex flex-col animate-fade-in bg-[#08080a] border border-zinc-900/60 rounded-xl resize-y overflow-hidden min-h-[300px]" style={{ height: '450px' }}>
-            <div className="flex items-center gap-6 px-5 pt-4 pb-2 bg-transparent border-b border-zinc-800/40 overflow-x-auto overflow-y-hidden custom-scrollbar">
-              {normalizedEditors.map((editor) => {
-                const isActive = activeEditorId === editor.id;
-                return (
-                  <div 
-                    key={editor.id}
-                    onClick={() => {
-                      if (isActive && !disabled) {
-                        setEditingTabNameId(editor.id);
-                      } else {
-                        setActiveEditorId(editor.id);
-                      }
-                    }}
-                    className={`group flex items-center justify-between pb-1 cursor-pointer transition-colors border-b-2 relative -bottom-[9px] ${
-                      isActive 
-                        ? `border-yellow-500/50 text-zinc-100 active` 
-                        : 'border-transparent text-zinc-500 hover:text-zinc-300 hover:border-zinc-700'
-                    }`}
-                  >
-                    {editingTabNameId === editor.id && !disabled ? (
-                      <input
-                        autoFocus
-                        defaultValue={editor.name}
-                        onBlur={(e) => handleRenameTab(editor.id, e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') handleRenameTab(editor.id, e.currentTarget.value);
-                          if (e.key === 'Escape') setEditingTabNameId(null);
-                        }}
-                        className="w-full min-w-[120px] bg-transparent outline-none text-sm text-zinc-100 font-medium"
-                        onClick={(e) => e.stopPropagation()}
-                      />
-                    ) : (
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium truncate select-none tracking-wide">
-                          {editor.name}
-                        </span>
-                        {!disabled && (
-                          <button
-                            onClick={(e) => handleRemoveTab(e, editor.id)}
-                            className="flex items-center justify-center w-4 h-4 rounded hover:bg-zinc-800 text-zinc-600 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100 group-[.active]:opacity-100"
-                            title="Excluir"
-                          >
-                            <X size={12} />
-                          </button>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-              {!disabled && (
-                <button
-                  onClick={handleAddTab}
-                  className="flex items-center justify-center w-6 h-6 rounded-md hover:bg-zinc-800/50 text-zinc-500 hover:text-zinc-300 transition-colors ml-1 relative -bottom-[4px]"
-                  title="Novo Copy"
-                >
-                  <Plus size={16} />
-                </button>
-              )}
-            </div>
-            
-            <div className="flex-1 flex flex-col p-5 relative h-full">
-            {approvedCopies.length > 0 && (
-              <div className="mb-3 border-b border-zinc-800/40 pb-2 relative">
-                <button
-                  onClick={() => !disabled && setIsCopyDropdownOpen(!isCopyDropdownOpen)}
-                  disabled={disabled}
-                  className="w-full flex items-center justify-between bg-transparent text-zinc-500 hover:text-zinc-300 text-xs py-1 cursor-pointer focus:outline-none focus:ring-0 border-none transition-colors outline-none font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <span>Importar Copy...</span>
-                  <ChevronDown size={12} className={`transition-transform ${isCopyDropdownOpen ? 'rotate-180' : ''}`} />
-                </button>
-                
-                {isCopyDropdownOpen && !disabled && (
-                  <>
-                    <div className="fixed inset-0 z-40" onClick={() => setIsCopyDropdownOpen(false)}></div>
-                    <div className="absolute top-full left-0 right-0 mt-1 bg-[#1a1b1e] border border-zinc-800 rounded-lg shadow-xl z-50 flex flex-col overflow-hidden animate-fade-in py-1">
-                      {approvedCopies.map(copy => (
-                        <button
-                          key={copy.editorId}
-                          onClick={() => handleImportCopy(copy.editorId)}
-                          className="w-full text-left px-3 py-2 text-xs text-zinc-300 hover:text-zinc-100 hover:bg-zinc-800/80 transition-colors"
-                        >
-                          {copy.title}
-                        </button>
-                      ))}
-                    </div>
-                  </>
-                )}
-              </div>
-            )}
-            <div className="flex-1 relative min-h-0 max-h-[350px] overflow-y-auto custom-scrollbar">
-              <RichTextEditor
-              taskId={`copy-${task.id}-${activeEditorId}`}
-              content={normalizedEditors.find(e => e.id === activeEditorId)?.content || ''}
-              onChange={handleCopyChange}
-              variant="borderless"
-              wrapperClassName="max-h-[350px]"
-              readOnly={disabled}
+        <div className="flex flex-col gap-2 min-w-0">
+          {escolhas('tipoPeca', 'Tipo da peça', TIPO_PECA_OPTIONS)}
+          {form.tipoPeca.map(peca => (
+            <EscolhasBriefing
+              key={`${task.id}-${peca}`}
+              rotulo={`Formato · ${peca}`}
+              opcoes={FORMATOS_DINAMICOS[peca] || []}
+              valores={listaDe(formatos[peca])}
+              mostrar={mostrarFormato(peca)}
+              disabled={disabled}
+              onAlternar={f => mudarFormato(peca, f)}
+              onAdicionar={f => mudarFormato(peca, f, true)}
             />
-            </div>
-            </div>
-          </div>
-          )}
-        </div>
-      </div>
-
-      {/* Seção de Aprovação (Full Width) */}
-      <div className="px-5 py-6 mt-6 border-t border-zinc-900/50">
-        <div className="flex items-center justify-between border-b border-zinc-800/40 pb-4 mb-6">
-          <h3 className={`text-xs font-semibold font-sans uppercase tracking-wider flex items-center gap-1.5 ${themeColor}`}>
-            Aprovação de Criativos
-          </h3>
-        </div>
-
-        <div className="flex flex-col gap-6 animate-fade-in">
-
-            {/* Formulário de Criação / Edição */}
-            {(isCreatingDelivery || editingDeliveryId) && (
-              <>
-              <DeliveryForm
-                users={sortedUsers}
-                initialData={briefingForm.deliveries?.find(d => d.id === editingDeliveryId)}
-                onCancel={() => {
-                  setIsCreatingDelivery(false);
-                  setEditingDeliveryId(null);
-                }}
-                onSave={async (data) => {
-                  const wasEditing = !!editingDeliveryId;
-                  const success = await saveDeliveryChange((base) => {
-                    let newDeliveries = [...(base.deliveries || [])];
-                    let notify: (() => void) | undefined;
-                    if (editingDeliveryId) {
-                      newDeliveries = newDeliveries.map(d =>
-                        d.id === editingDeliveryId ? { ...d, ...data } : d
-                      );
-                    } else {
-                      const now = new Date().toISOString();
-                      const newId = Date.now().toString();
-                      newDeliveries.push({
-                        id: newId,
-                        ...data,
-                        status: 'pending',
-                        thread: [{
-                          id: newId + '-sub',
-                          role: 'designer',
-                          type: 'submission',
-                          content: data.creativeDefense || 'Nova entrega',
-                          authorId: currentUser?.id,
-                          authorName: currentUser?.name,
-                          createdAt: now
-                        }],
-                        createdAt: now
-                      } as any);
-
-                      if (data.approverId) {
-                        // Deferred: only actually sent once saveDeliveryChange confirms
-                        // the delivery was persisted, so an approver never gets pinged
-                        // for a creative that isn't in the DB yet.
-                        notify = () => addNotification({
-                          userId: data.approverId!,
-                          actorId: currentUser?.id || 'system',
-                          taskId: task.id,
-                          type: 'review_requested',
-                          message: 'Aprovação de Criativo',
-                          details: `Você foi selecionado para aprovar um criativo na tarefa "${task.title}".`,
-                          targetId: `design-delivery-${newId}`
-                        });
-                      }
-                    }
-
-                    const taskUpdates: Partial<Task> = {};
-                    if (!wasEditing && task.status !== 'approval') {
-                      taskUpdates.status = 'approval';
-                    }
-
-                    return { partial: { deliveries: newDeliveries }, taskUpdates, notify };
-                  });
-
-                  if (success) {
-                    setIsCreatingDelivery(false);
-                    setEditingDeliveryId(null);
-                  }
-                  return success;
-                }}
-              />
-              {isSavingDelivery && (
-                <div className="flex items-center gap-2 text-xs text-yellow-400/80 -mt-4">
-                  <span className="w-3 h-3 border-2 border-yellow-400/40 border-t-yellow-400 rounded-full animate-spin" />
-                  Salvando criativo...
-                </div>
-              )}
-              {deliverySaveError && (
-                <div className="text-xs text-red-400 -mt-4">{deliverySaveError}</div>
-              )}
-              </>
-            )}
-
-            {/* Lista de Criativos Detalhados */}
-            {!isCreatingDelivery && !editingDeliveryId && (
-              // The creatives live in design_briefing, which is fetched on demand and
-              // carries base64 images — it can take seconds. Until it lands we must not
-              // render "nenhum criativo", which reads as "there is nothing to approve".
-              briefingsLoading && !(briefingForm.deliveries && briefingForm.deliveries.length > 0) ? (
-                <div className="flex flex-col gap-4">
-                  <div className="flex items-center gap-2 text-xs text-zinc-500">
-                    <span className="w-3 h-3 border-2 border-zinc-700 border-t-yellow-500 rounded-full animate-spin" />
-                    Carregando criativos...
-                  </div>
-                  <div className="h-[280px] rounded-xl border border-zinc-800/60 bg-zinc-900/20 animate-pulse" />
-                </div>
-              ) : briefingForm.deliveries && briefingForm.deliveries.length > 0 ? (
-                <div className="flex flex-col gap-6">
-                  {isSavingDelivery && (
-                    <div className="flex items-center gap-2 text-xs text-yellow-400/80">
-                      <span className="w-3 h-3 border-2 border-yellow-400/40 border-t-yellow-400 rounded-full animate-spin" />
-                      Salvando alterações...
-                    </div>
-                  )}
-                  {deliverySaveError && (
-                    <div className="text-xs text-red-400">{deliverySaveError}</div>
-                  )}
-                  {briefingForm.deliveries.map((delivery, i) => (
-                    <div key={delivery.id} id={`target-design-delivery-${delivery.id}`}>
-                      <DeliveryApproval
-                        delivery={delivery}
-                        index={i + 1}
-                        requesterFallbackId={task.assigneeId}
-                        disabled={disabled || isSavingDelivery}
-                        onUpdate={(id, updates) => {
-                        saveDeliveryChange((base) => {
-                          const oldDelivery = base.deliveries?.find(d => d.id === id);
-                          const newDeliveries = (base.deliveries || []).map(d =>
-                            d.id === id ? { ...d, ...updates } : d
-                          );
-
-                          const taskUpdates: Partial<Task> = {};
-                          if (updates.status) {
-                            let newTaskStatus = task.status;
-                            if (updates.status === 'pending' || updates.status === 'review_requested') {
-                              newTaskStatus = 'approval';
-                            } else if (updates.status === 'rejected' || updates.status === 'reworking') {
-                              newTaskStatus = 'rework';
-                            }
-
-                            if (updates.status === 'approved') {
-                              const allApproved = newDeliveries.length > 0 && newDeliveries.every(d => d.status === 'approved');
-                              if (allApproved) {
-                                newTaskStatus = 'implementation';
-                              }
-                            }
-
-                            if (newTaskStatus !== task.status) {
-                              taskUpdates.status = newTaskStatus;
-                            }
-                          }
-
-                          const notifications: (() => void)[] = [];
-
-                          if (updates.status === 'rejected' && oldDelivery?.status !== 'rejected') {
-                            if (task.assigneeId) {
-                              notifications.push(() => addNotification({
-                                userId: task.assigneeId!,
-                                actorId: currentUser?.id || '',
-                                message: 'Reprovação de Criativo',
-                                details: `O criativo da tarefa "${task.title}" foi reprovado e precisa de ajustes.`,
-                                type: 'rejected',
-                                taskId: task.id,
-                                targetId: `design-delivery-${id}`
-                              }));
-                            }
-                          }
-
-                          if (updates.status === 'approved' && oldDelivery?.status !== 'approved') {
-                            if (task.assigneeId) {
-                              notifications.push(() => addNotification({
-                                userId: task.assigneeId!,
-                                actorId: currentUser?.id || '',
-                                message: 'Criativo Aprovado! 🎉',
-                                details: `O criativo da tarefa "${task.title}" foi aprovado.`,
-                                type: 'approved',
-                                taskId: task.id,
-                                targetId: `design-delivery-${id}`
-                              }));
-                            }
-                          }
-
-                          if ((updates.status === 'reworking' && oldDelivery?.status !== 'reworking') ||
-                              (updates.status === 'review_requested' && oldDelivery?.status !== 'review_requested')) {
-
-                            const rejectMsg = [...(oldDelivery?.thread || [])].reverse().find(t => t.action === 'rejected');
-                            const targetUserId = oldDelivery?.approverId || rejectMsg?.authorId;
-
-                            if (targetUserId) {
-                              notifications.push(() => addNotification({
-                                userId: targetUserId,
-                                actorId: currentUser?.id || '',
-                                message: updates.status === 'reworking' ? 'Em Refação' : 'Revisão Solicitada',
-                                details: updates.status === 'reworking'
-                                  ? `O designer concordou em refazer o criativo da tarefa "${task.title}".`
-                                  : `O designer solicitou uma revisão da reprovação do criativo na tarefa "${task.title}".`,
-                                type: 'review_requested',
-                                taskId: task.id,
-                                targetId: `design-delivery-${id}`
-                              }));
-                            }
-                          }
-
-                          return {
-                            partial: { deliveries: newDeliveries },
-                            taskUpdates,
-                            notify: notifications.length > 0 ? () => notifications.forEach(n => n()) : undefined
-                          };
-                        });
-                      }}
-                      onDelete={(id) => {
-                        setDeleteConfirmId(id);
-                      }}
-                    />
-                  </div>
-                  ))}
-                  {!isCreatingDelivery && !editingDeliveryId && !disabled && (
-                    <div className="flex flex-col items-center justify-center py-6 border border-dashed border-zinc-800/60 rounded-xl bg-zinc-900/10">
-                      <button
-                        onClick={() => setIsCreatingDelivery(true)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider rounded border border-yellow-500/30 text-yellow-500/80 hover:bg-yellow-500/10 hover:border-yellow-500/50 hover:text-yellow-400 transition-colors"
-                      >
-                        <Plus size={12} /> Adicionar Criativo
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="flex flex-col items-center justify-center py-6 border border-dashed border-zinc-800/60 rounded-xl bg-zinc-900/10">
-                  <span className="text-zinc-500 text-xs mb-2">Nenhum criativo foi adicionado ainda.</span>
+          ))}
+          {comFoco && escolhas('direcaoFoco', 'Direção de foco', DIRECAO_FOCO_OPTIONS)}
+          <LinhaBriefing rotulo="Inspirações">
+            <div className="flex flex-col gap-1 min-w-0">
+              {inspiracoes.map((url, i) => (
+                <div key={url + i} className="flex items-center gap-1 min-w-0">
+                  <a href={/^https?:\/\//i.test(url) ? url : `https://${url}`} target="_blank" rel="noopener noreferrer" title={url} className={`min-w-0 min-h-8 inline-flex items-center gap-1.5 text-body text-zinc-200 hover:text-blue-400 rounded ${FOCO}`}>
+                    <ExternalLink size={14} className="shrink-0 text-zinc-500" aria-hidden />
+                    <span className="truncate">{url.replace(/^https?:\/\/(www\.)?/i, '')}</span>
+                  </a>
                   {!disabled && (
-                    <button
-                      onClick={() => setIsCreatingDelivery(true)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider rounded border border-yellow-500/30 text-yellow-500/80 hover:bg-yellow-500/10 hover:border-yellow-500/50 hover:text-yellow-400 transition-colors"
-                    >
-                      <Plus size={12} /> Adicionar Criativo
+                    <button type="button" aria-label={`Remover inspiração ${i + 1}`} title="Remover" onClick={() => b.mudarCampos({ inspiracoes: inspiracoes.filter((_, n) => n !== i) })} className={`${BOTAO_ICONE} !size-7`}>
+                      <X size={14} aria-hidden />
                     </button>
                   )}
                 </div>
-              )
+              ))}
+              {disabled ? inspiracoes.length === 0 && <span className="min-h-8 flex items-center text-body text-zinc-500">—</span> : (
+                <input
+                  key={`${task.id}-${inspiracoes.length}`}
+                  onBlur={e => { const url = e.target.value.trim(); if (url) b.mudarCampos({ inspiracoes: [...inspiracoes, url] }); }}
+                  onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+                  placeholder={inspiracoes.length ? 'Colar outro link' : 'Colar um link'}
+                  aria-label="Adicionar inspiração"
+                  className={`${CAMPO} h-9 [@media(pointer:coarse)]:h-10`}
+                />
+              )}
+            </div>
+          </LinhaBriefing>
+        </div>
+      </SecaoBriefing>
+
+      {/* Textos da peça */}
+      <div className="flex flex-col gap-3">
+        <TituloSecao
+          cor={cor}
+          aberta={aberto.textos}
+          onAlternar={() => alternar('textos')}
+          extra={textos.length > 1 && <span className="text-caption text-zinc-500 tabular-nums">{textos.length}</span>}
+          acoes={!disabled && aberto.textos && textos.length > 0 && <>
+            {importar}
+            <button type="button" onClick={adicionarTexto} className={BOTAO_GHOST}><Plus size={15} aria-hidden /> Adicionar texto</button>
+          </>}
+        >
+          Textos da peça
+        </TituloSecao>
+        {aberto.textos && (textos.length === 0 ? (
+          disabled ? <p className="text-body text-zinc-500">Nenhum texto.</p> : (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2 p-3 rounded-xl border border-dashed border-zinc-700">
+              <button type="button" onClick={adicionarTexto} className={BOTAO_BORDA}><Plus size={15} aria-hidden /> Adicionar texto</button>
+              {importar}
+              <span className="text-body text-zinc-500">O que vai escrito na arte</span>
+            </div>
+          )
+        ) : <>
+          <div className="flex items-start gap-2">
+            <div className="flex-1 min-w-0">
+              <Abas rotulo={{ grupo: 'Textos da peça', item: 'texto' }} itens={textos} ativoId={textoAberto?.id} disabled={disabled} onAtivar={setTextoAtivo} onRenomear={b.renomearTexto} />
+            </div>
+            {!disabled && textoAberto && (
+              <button
+                type="button"
+                onClick={() => (temTexto(textoAberto.content) ? setExcluindo({ tipo: 'texto', id: textoAberto.id, nome: textoAberto.name }) : b.removerTexto(textoAberto.id))}
+                aria-label={`Excluir ${textoAberto.name || 'texto'}`}
+                title="Excluir texto"
+                className={`${BOTAO_ICONE} hover:!text-red-400`}
+              >
+                <Trash2 size={15} aria-hidden />
+              </button>
             )}
           </div>
+          <EditoresTexto taskId={task.id} briefing={b} ativoId={textoAberto?.id} disabled={disabled} />
+        </>)}
       </div>
 
-      <ConfirmModal 
-        isOpen={!!deleteConfirmId}
-        title="Excluir Criativo"
-        message="Tem certeza que deseja excluir este criativo? Esta ação não pode ser desfeita."
+      {/* Criativos */}
+      <div className="flex flex-col gap-3">
+        <TituloSecao
+          cor={cor}
+          aberta={aberto.criativos}
+          onAlternar={() => alternar('criativos')}
+          extra={enviados.length > 1 && <span className="text-caption text-zinc-500 tabular-nums">{enviados.length}</span>}
+          acoes={!disabled && aberto.criativos && (
+            <button type="button" onClick={adicionarCriativo} className={BOTAO_GHOST}><Plus size={15} aria-hidden /> Adicionar criativo</button>
+          )}
+        >
+          Criativos
+        </TituloSecao>
+        {aberto.criativos && (!criativo ? <p className="text-body text-zinc-500">Nenhum criativo.</p> : <>
+          <Abas
+            rotulo={{ grupo: 'Criativos', item: 'criativo' }}
+            itens={entregas.map(d => ({ id: d.id, name: nomeDoCriativo(d, entregas) }))}
+            ativoId={criativo.id}
+            disabled={disabled}
+            travado={id => enviandoId === id || entregaTravada(entregas.find(d => d.id === id))}
+            icone={id => <IconeSituacao entrega={entregas.find(d => d.id === id)} />}
+            onAtivar={setCriativoAtivo}
+            onRenomear={(id, name) => mudarCriativo(id, () => ({ name }))}
+          />
+          <Criativo
+            key={`${task.id}-${criativo.id}-${rodadaDe(criativo.id)?.id}-${situacaoDe(criativo)}`}
+            taskId={task.id}
+            nome={nomeDoCriativo(criativo, entregas)}
+            criativo={criativo}
+            rodada={rodadaDe(criativo.id)}
+            cor={cor}
+            bloqueio={bloqueio}
+            disabled={disabled}
+            salvando={salvando}
+            enviando={enviandoId === criativo.id}
+            solicitanteId={task.assigneeId}
+            onMudar={mudar => mudarCriativo(criativo.id, mudar)}
+            onExcluir={criativo.status === 'draft' && form.deliveries?.some(d => d.id === criativo.id)
+              ? () => setExcluindo({ tipo: 'criativo', id: criativo.id, nome: nomeDoCriativo(criativo, entregas) })
+              : undefined}
+            onEnviar={id => void enviar(criativo.id, id)}
+            onDecidir={(decisao, motivo, anotadas) => decidir(criativo.id, decisao, motivo, anotadas)}
+            onCancelar={() => cancelarEnvio(criativo.id)}
+          />
+          {b.erro && <p role="alert" className="text-body text-red-400">{b.erro}</p>}
+        </>)}
+      </div>
+
+      {/* Histórico de aprovação */}
+      <div className="flex flex-col gap-3">
+        <TituloSecao
+          cor={cor}
+          aberta={aberto.historico}
+          onAlternar={() => alternar('historico')}
+          extra={rodadas.length > 0 && <span className="text-caption text-zinc-500 tabular-nums">{rodadas.length}</span>}
+        >
+          Histórico de aprovação
+        </TituloSecao>
+        {aberto.historico && <HistoricoAprovacao tipo="criativo" rodadas={rodadas} />}
+      </div>
+
+      <ConfirmModal
+        isOpen={!!excluindo}
+        title={excluindo?.tipo === 'texto' ? 'Excluir texto?' : 'Excluir criativo?'}
+        message={`“${excluindo?.nome}” será excluído. Esta ação não pode ser desfeita.`}
         confirmText="Excluir"
         onConfirm={() => {
-          if (deleteConfirmId) {
-            const idToDelete = deleteConfirmId;
-            saveDeliveryChange((base) => ({
-              partial: { deliveries: (base.deliveries || []).filter(d => d.id !== idToDelete) }
-            }));
-          }
-          setDeleteConfirmId(null);
+          if (excluindo?.tipo === 'texto') b.removerTexto(excluindo.id);
+          else if (excluindo) excluirCriativo(excluindo.id);
+          setExcluindo(null);
         }}
-        onCancel={() => setDeleteConfirmId(null)}
+        onCancel={() => setExcluindo(null)}
       />
     </div>
+  );
+}
+
+/** Textos das tarefas de Copy ligadas a esta. O conteúdo não vem na listagem: é lido ao abrir. */
+function TextosDeCopy({ tarefas, onEscolher }: { tarefas: Task[]; onEscolher: (texto: CopyEditorItem) => void }) {
+  const [grupos, setGrupos] = useState<{ tarefa: Task; textos: CopyEditorItem[]; entregas: Delivery[] }[] | null>(null);
+
+  useEffect(() => {
+    let ativo = true;
+    void Promise.all(tarefas.map(async tarefa => {
+      const copy = (await fetchTaskBriefings(tarefa.id).catch(() => null))?.copyBriefing ?? tarefa.copyBriefing;
+      return { tarefa, textos: (copy?.copyEditors || []).filter(t => temTexto(t.content)), entregas: copy?.deliveries || [] };
+    })).then(g => { if (ativo) setGrupos(g.filter(x => x.textos.length > 0)); });
+    return () => { ativo = false; };
+  }, []);
+
+  if (!grupos) return <p role="status" className="px-2 py-1.5 text-body text-zinc-500">Carregando…</p>;
+  if (grupos.length === 0) return <p className="px-2 py-1.5 text-body text-zinc-500">Nenhum texto escrito nas tarefas de Copy ligadas.</p>;
+  return (
+    <>
+      {grupos.map(({ tarefa, textos, entregas }) => (
+        <div key={tarefa.id} className="flex flex-col">
+          <p className="px-2 pt-1 pb-1.5 text-caption text-zinc-500 truncate">{tarefa.title}</p>
+          {textos.map(t => (
+            <ItemMenu key={t.id} onClick={() => onEscolher(t)}>
+              <span className="min-w-0 truncate">{t.name || 'Texto sem nome'}</span>
+              <span className="ml-auto"><IconeSituacao entrega={entregaDoTexto(entregas, t)} /></span>
+            </ItemMenu>
+          ))}
+        </div>
+      ))}
+    </>
   );
 }

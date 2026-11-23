@@ -105,8 +105,8 @@ export default function CommandBar({
     },
     {
       id: 'v-calendar',
-      title: 'Ir para Calendário',
-      subtitle: 'Ver prazos das tarefas',
+      title: 'Ir para Cronograma',
+      subtitle: 'Tarefas por semana ou mês',
       category: 'Vistas',
       icon: <Calendar size={15} />,
       action: () => {
@@ -248,7 +248,7 @@ export default function CommandBar({
               setSelectedIndex(0);
             }}
             placeholder="Digite para buscar tarefas, ex. 'Cmd+K' ou 'Tema'..."
-            className="w-full h-full bg-transparent border-0 ring-0 focus:ring-0 focus:outline-none outline-none text-sm text-gray-200 placeholder-gray-500"
+            className="w-full h-full bg-transparent border-0 ring-0 focus:ring-0 focus:outline-none outline-none text-body text-gray-200 placeholder-gray-500"
           />
           <button 
             onClick={onClose}
@@ -263,8 +263,8 @@ export default function CommandBar({
           {filteredItems.length === 0 ? (
             <div className="py-12 text-center text-gray-500 flex flex-col items-center justify-center gap-1">
               <Search size={22} className="text-gray-600 mb-2" />
-              <p className="text-sm font-medium">Nenhum resultado encontrado</p>
-              <p className="text-xs text-gray-600">Com base na busca '{search}' no workspace</p>
+              <p className="text-body font-medium">Nenhum resultado encontrado</p>
+              <p className="text-caption text-gray-600">Com base na busca '{search}' no workspace</p>
             </div>
           ) : (
             categories.map(category => {
@@ -272,7 +272,7 @@ export default function CommandBar({
               
               return (
                 <div key={category} className="space-y-1">
-                  <div className="text-[10px] font-bold text-gray-500 uppercase tracking-widest pl-3 py-1 font-mono">
+                  <div className="text-caption font-semibold text-gray-500 pl-3 py-1 tabular-nums">
                     {category}
                   </div>
                   <div className="space-y-0.5">
@@ -295,17 +295,17 @@ export default function CommandBar({
                             {item.icon}
                           </div>
                           <div className="min-w-0 flex-1">
-                            <div className={`text-xs font-medium truncate ${isSelected ? 'text-white' : 'text-gray-200'}`}>
+                            <div className={`text-caption font-medium truncate ${isSelected ? 'text-white' : 'text-gray-200'}`}>
                               {item.title}
                             </div>
                             {item.subtitle && (
-                              <div className={`text-[10px] truncate ${isSelected ? 'text-blue-200' : 'text-gray-500'}`}>
+                              <div className={`text-caption truncate ${isSelected ? 'text-blue-200' : 'text-gray-500'}`}>
                                 {item.subtitle}
                               </div>
                             )}
                           </div>
                           {isSelected && (
-                            <span className="text-[10px] bg-blue-500 text-blue-100 font-mono px-2 py-0.5 rounded leading-none shrink-0 uppercase select-none">
+                            <span className="text-caption bg-blue-500 text-blue-100 tabular-nums px-2 py-0.5 rounded leading-none shrink-0 select-none">
                               Ir para
                             </span>
                           )}
@@ -320,17 +320,17 @@ export default function CommandBar({
         </div>
 
         {/* Footer info bars */}
-        <div className="h-9 border-t border-[#30363d] px-4 flex items-center justify-between text-[11px] text-gray-500 bg-[#0d1117] uppercase shrink-0 font-mono select-none">
+        <div className="h-9 border-t border-[#30363d] px-4 flex items-center justify-between text-caption text-gray-500 bg-[#0d1117] shrink-0 tabular-nums select-none">
           <div className="flex items-center gap-4">
             <span className="flex items-center gap-1">
-              <span className="bg-[#1f2937] px-1 rounded border border-[#30363d] text-[10px]">↑  ↓  </span> Navegar
+              <span className="bg-[#1f2937] px-1 rounded border border-[#30363d] text-caption">↑  ↓  </span> Navegar
             </span>
             <span className="flex items-center gap-1">
-              <span className="bg-[#1f2937] px-1.5 rounded border border-[#30363d] text-[10px]">Enter</span> Executar
+              <span className="bg-[#1f2937] px-1.5 rounded border border-[#30363d] text-caption">Enter</span> Executar
             </span>
           </div>
           <div>
-            <span>Atalho Global: <kbd className="bg-[#1f2937] px-1 py-0.5 rounded border border-[#30363d] text-[10px]">⌘ + K</kbd></span>
+            <span>Atalho Global: <kbd className="bg-[#1f2937] px-1 py-0.5 rounded border border-[#30363d] text-caption">⌘ + K</kbd></span>
           </div>
         </div>
       </div>

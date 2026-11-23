@@ -207,7 +207,7 @@ function MenuEmpreendimento({ emp, nomesExistentes, cv, projetos, idVinculado, p
           <p className="text-[11px] text-red-200">Remover {emp.nome} e as metas dele em todos os anos?</p>
           <div className="flex gap-1.5 mt-2">
             <button type="button" onClick={() => remover.mutate()} disabled={remover.isPending}
-              className="h-7 px-2 text-[11px] font-semibold rounded-md bg-red-500/80 text-white hover:bg-red-500 disabled:opacity-50">Remover</button>
+              className="h-7 px-2 text-[11px] font-semibold rounded-md btn-danger-soft disabled:opacity-50">Remover</button>
             <button type="button" onClick={() => setConfirmarRemocao(false)}
               className="h-7 px-2 text-[11px] font-semibold rounded-md text-zinc-300 hover:bg-zinc-800">Cancelar</button>
           </div>
@@ -597,7 +597,7 @@ function PainelMetas({ metas, cv, projetos }: { metas: Metas; cv: Empreendimento
 
         <div className="flex items-center gap-x-4 gap-y-1 flex-wrap text-[11px] text-zinc-500">
           <span>Faixas pelo realizado ÷ meta:</span>
-          <span><span className="inline-block w-2 h-2 rounded-full bg-red-500 mr-1.5" />{ROTULO_FAIXA.sub} abaixo de 1</span>
+          <span><span className="inline-block w-2 h-2 rounded-full bg-danger-400 mr-1.5" />{ROTULO_FAIXA.sub} abaixo de 1</span>
           <span><span className="inline-block w-2 h-2 rounded-full bg-blue-500 mr-1.5" />{ROTULO_FAIXA.meta} de 1 a {fmtFator(fator)}</span>
           <span><span className="inline-block w-2 h-2 rounded-full bg-emerald-500 mr-1.5" />{ROTULO_FAIXA.super} a partir de {fmtFator(fator)}</span>
           <span className="sm:ml-auto">

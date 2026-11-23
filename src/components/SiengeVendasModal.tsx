@@ -3129,7 +3129,7 @@ export default function SiengeVendasModal({
                 onClick={handleLimparTabela}
                 disabled={limpando || !limparConfirmado}
                 title={limparConfirmado ? undefined : `Digite "${PALAVRA_LIMPAR}" para liberar`}
-                className="px-3 py-2 text-xs font-semibold text-white bg-red-600 hover:bg-red-500 disabled:bg-zinc-800 disabled:text-zinc-600 rounded-lg transition-colors"
+                className="px-3 py-2 text-xs font-semibold btn-danger-soft disabled:opacity-40 rounded-lg transition-colors"
               >
                 {limpando ? 'Limpando...' : 'Limpar tabela'}
               </button>

@@ -198,11 +198,10 @@ export default function TaskChat({ task, siengeTitle, onUpdate, baseColor = 'blu
   };
 
   return (
-    <div className="flex flex-col h-full bg-[#121214] border border-zinc-800/40 rounded-lg overflow-hidden font-sans">
+    <div className="flex flex-col h-full bg-[#0c0c0e] border border-zinc-900 rounded-xl overflow-hidden font-sans">
       {!hideHeader && (
-        <div className="flex items-center gap-1.5 px-4 py-2 border-b border-zinc-900 bg-[#08080a]">
-          {!customTitle && <MessageSquareIcon size={10} className={theme ? theme.text : "text-zinc-500"} opacity={0.7} />}
-          <h3 className={`text-[9px] font-medium uppercase tracking-wider opacity-70 ${theme ? theme.text : "text-zinc-500"}`}>{customTitle || 'Chat'}</h3>
+        <div className="flex items-center gap-1.5 px-4 h-10 shrink-0 border-b border-zinc-900">
+          <h3 className="text-body font-medium text-zinc-300">{customTitle || 'Chat'}</h3>
         </div>
       )}
 
@@ -211,9 +210,9 @@ export default function TaskChat({ task, siengeTitle, onUpdate, baseColor = 'blu
         className="flex-1 overflow-y-auto p-4 flex flex-col gap-4 min-h-0"
       >
         {chatMessages.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-zinc-600">
-            <MessageSquareIcon size={24} className="opacity-20 mb-2" />
-            <p className="text-[11px] text-center">Nenhuma mensagem ainda.</p>
+          <div className="flex flex-col items-center justify-center h-full text-center px-4">
+            <p className="text-body font-medium text-zinc-200">Comece a conversa</p>
+            <p className="mt-1 text-body text-zinc-400 max-w-[28ch]">Use @ para marcar alguém: a pessoa recebe um aviso.</p>
           </div>
         ) : (
           chatMessages.map((msg, index) => {
@@ -238,12 +237,12 @@ export default function TaskChat({ task, siengeTitle, onUpdate, baseColor = 'blu
                     sender?.avatarUrl ? (
                       <img src={sender.avatarUrl} alt={sender.name} className="w-6 h-6 rounded-full object-cover shadow-sm" />
                     ) : (
-                      <div className="w-6 h-6 rounded-full bg-zinc-800 flex items-center justify-center text-[9px] font-bold text-zinc-300 shadow-sm border border-zinc-700/50">
+                      <div className="w-6 h-6 rounded-full bg-zinc-800 flex items-center justify-center text-[10px] font-semibold text-zinc-300 shadow-sm border border-zinc-700/50">
                         {sender?.initials || 'US'}
                       </div>
                     )
                   ) : (
-                    <span className="text-[9px] text-zinc-600 opacity-0 group-hover/msg:opacity-100 transition-opacity whitespace-nowrap">
+                    <span className="text-caption text-zinc-600 opacity-0 group-hover/msg:opacity-100 transition-opacity whitespace-nowrap">
                       {timeStr}
                     </span>
                   )}
@@ -253,16 +252,16 @@ export default function TaskChat({ task, siengeTitle, onUpdate, baseColor = 'blu
                 <div className="flex flex-col min-w-0 flex-1">
                   {!groupMessages && (
                     <div className="flex items-baseline gap-2 mb-0.5">
-                      <span className="text-xs font-semibold text-zinc-200">
+                      <span className="text-body font-semibold text-zinc-200">
                         {sender?.name || 'Usuário Desconhecido'}
                       </span>
-                      <span className="text-[10px] text-zinc-500 font-mono whitespace-nowrap">
+                      <span className="text-caption text-zinc-500 tabular-nums whitespace-nowrap">
                         {timeStr}
                       </span>
                     </div>
                   )}
                   <div className="flex items-start justify-between gap-2">
-                    <p className={`text-[13px] ${msg.resolved ? 'text-zinc-500 opacity-60' : 'text-zinc-300'} whitespace-pre-wrap break-words leading-relaxed flex-1`}>
+                    <p className={`text-body ${msg.resolved ? 'text-zinc-500' : 'text-zinc-300'} whitespace-pre-wrap break-words leading-relaxed flex-1`}>
                       {(() => {
                         if (!allUsers || allUsers.length === 0) return msg.text;
                         const names = allUsers.map(u => u.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
@@ -279,7 +278,7 @@ export default function TaskChat({ task, siengeTitle, onUpdate, baseColor = 'blu
                     {canResolve && !readOnly && (
                       <button
                         onClick={() => handleResolveMessage(msg)}
-                        className="opacity-0 group-hover/msg:opacity-100 transition-opacity flex items-center gap-1 px-2 py-0.5 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/20 rounded text-[10px] font-medium shrink-0"
+                        className="opacity-0 group-hover/msg:opacity-100 transition-opacity flex items-center gap-1 px-2 py-0.5 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/20 rounded text-caption font-medium shrink-0"
                         title="Marcar como resolvido"
                       >
                         <Check size={12} />
@@ -287,7 +286,7 @@ export default function TaskChat({ task, siengeTitle, onUpdate, baseColor = 'blu
                       </button>
                     )}
                     {msg.resolved && (
-                       <span className="flex items-center gap-1 text-[10px] text-emerald-500/50 shrink-0 select-none" title={`Resolvido por ${allUsers.find(u => u.id === msg.resolvedBy)?.name || 'alguém'}`}>
+                       <span className="flex items-center gap-1 text-caption text-emerald-500/50 shrink-0 select-none" title={`Resolvido por ${allUsers.find(u => u.id === msg.resolvedBy)?.name || 'alguém'}`}>
                          <Check size={12} /> Resolvido
                        </span>
                     )}
@@ -307,13 +306,13 @@ export default function TaskChat({ task, siengeTitle, onUpdate, baseColor = 'blu
                 <button
                   key={u.id}
                   onClick={() => handleMentionSelect(u)}
-                  className={`flex items-center gap-2 px-3 py-2 text-xs rounded transition-colors text-left ${
+                  className={`flex items-center gap-2 px-3 py-2 text-caption rounded transition-colors text-left ${
                     i === mentionIndex || (mentionIndex === -1 && i === 0)
                       ? `bg-zinc-800 ${theme ? theme.text : 'text-blue-300'}` 
                       : 'text-zinc-300 hover:bg-zinc-800/50'
                   }`}
                 >
-                  <div className="w-5 h-5 rounded-full bg-zinc-800 flex items-center justify-center text-[10px] font-bold overflow-hidden shrink-0">
+                  <div className="w-5 h-5 rounded-full bg-zinc-800 flex items-center justify-center text-[10px] font-semibold overflow-hidden shrink-0">
                     {u.avatarUrl ? <img src={u.avatarUrl} alt="" className="w-full h-full object-cover" /> : u.initials}
                   </div>
                   <span className="truncate">{u.name}</span>
@@ -328,8 +327,8 @@ export default function TaskChat({ task, siengeTitle, onUpdate, baseColor = 'blu
               value={text}
               onChange={handleInputChange}
               onKeyDown={handleKeyDown}
-              placeholder="Responder... (@ para marcar)"
-              className="flex-1 bg-transparent border-0 px-1 py-1.5 text-[13px] text-zinc-200 placeholder-zinc-600 focus:outline-none resize-none transition-colors"
+              placeholder={chatMessages.length ? 'Responder… (@ para marcar)' : 'Escreva uma mensagem… (@ para marcar)'}
+              className="flex-1 bg-transparent border-0 px-1 py-1.5 text-body text-zinc-200 placeholder-zinc-500 focus:outline-none resize-none transition-colors"
               rows={1}
               style={{
                 height: '32px',
@@ -355,21 +354,4 @@ export default function TaskChat({ task, siengeTitle, onUpdate, baseColor = 'blu
   );
 }
 
-function MessageSquareIcon(props: any) {
-  return (
-    <svg
-      {...props}
-      xmlns="http://www.w3.org/2000/svg"
-      width="24"
-      height="24"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-    </svg>
-  );
-}
+

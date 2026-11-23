@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ArrowDown, ArrowUp, AlertTriangle } from 'lucide-react';
+import { Ellipsis } from 'lucide-react';
 import { TaskPriority } from '../types';
+import { PRIORIDADE_INFO, ORDEM_PRIORIDADE } from './TarefaBadges';
 
 interface PriorityPickerProps {
   value: TaskPriority;
@@ -8,13 +9,17 @@ interface PriorityPickerProps {
   trigger?: React.ReactNode;
 }
 
-const priorities: { value: TaskPriority; label: string; badgeStyle: string; icon: React.ReactNode }[] = [
-  { value: 'no_priority', label: 'Sem Prioridade', badgeStyle: 'text-zinc-400 bg-zinc-500/10 border-zinc-500/15 hover:bg-zinc-500/20', icon: null },
-  { value: 'low', label: 'Baixa', badgeStyle: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/15 hover:bg-emerald-500/20', icon: <ArrowDown size={10} className="shrink-0" /> },
-  { value: 'medium', label: 'Média', badgeStyle: 'text-blue-400 bg-blue-500/10 border-blue-500/15 hover:bg-blue-500/20', icon: null },
-  { value: 'high', label: 'Alta', badgeStyle: 'text-orange-400 bg-orange-500/10 border-orange-500/15 hover:bg-orange-500/20', icon: <ArrowUp size={10} className="shrink-0" /> },
-  { value: 'urgent', label: 'Urgente', badgeStyle: 'text-red-400 bg-red-500/10 border-red-500/15 hover:bg-red-500/20', icon: <AlertTriangle size={10} className="shrink-0" /> },
-];
+// Visual vindo de TarefaBadges; ordem do menu: sem prioridade → urgente.
+const priorities = [...ORDEM_PRIORIDADE].reverse().map(value => {
+  const info = PRIORIDADE_INFO[value];
+  const Icon = info.icon ?? Ellipsis;
+  return {
+    value,
+    label: info.label,
+    badgeStyle: `${info.cls} hover:brightness-125`,
+    icon: <Icon size={14} className={`shrink-0 ${info.cor}`} aria-hidden />,
+  };
+});
 
 export default function PriorityPicker({ value, onChange, trigger }: PriorityPickerProps) {
   const [isOpen, setIsOpen] = useState(false);
@@ -68,36 +73,34 @@ export default function PriorityPicker({ value, onChange, trigger }: PriorityPic
         <button
           type="button"
           onClick={handleOpen}
-          className={`inline-flex items-center justify-between gap-1.5 text-[10px] font-sans font-medium px-2 py-1 rounded border min-h-[26px] transition-colors ${currentPrio.badgeStyle} w-full`}
+          className={`inline-flex items-center justify-between gap-1.5 text-caption font-sans font-medium px-2 py-1 rounded border min-h-[26px] transition-colors ${currentPrio.badgeStyle} w-full`}
         >
           <div className="flex items-center gap-1.5">
             {currentPrio.icon}
             <span>{currentPrio.label}</span>
           </div>
-          <span className="text-[9px] opacity-60 ml-1">▼</span>
+          <span className="text-caption opacity-60 ml-1">▼</span>
         </button>
       )}
 
       {isOpen && (
         <div className={`absolute left-0 ${popoverPosition === 'top' ? 'bottom-full mb-1' : 'top-full mt-1'} w-44 bg-[#18181b] border border-zinc-800 rounded-md shadow-xl z-50 overflow-hidden animate-fade-in flex flex-col p-1`}>
           <div className="px-2 py-1.5 mb-1 border-b border-zinc-800/80">
-            <span className="text-[10px] font-semibold text-zinc-500 uppercase">Prioridade</span>
+            <span className="text-caption font-semibold text-zinc-500">Prioridade</span>
           </div>
           {priorities.map(p => (
             <button
               key={p.value}
               type="button"
               onClick={(e) => handleSelect(e, p.value)}
-              className={`flex items-center gap-2 px-2 py-1.5 text-xs font-medium rounded-md transition-colors ${
+              className={`flex items-center gap-2 px-2 py-1.5 text-caption font-medium rounded-md transition-colors ${
                 value === p.value 
                   ? 'bg-zinc-800 text-zinc-200' 
                   : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60'
               }`}
             >
-              <div className={`flex items-center gap-1.5 px-1.5 py-0.5 rounded border ${p.badgeStyle.split(' hover:')[0]}`}>
-                 {p.icon}
-                 <span className="text-[9px] uppercase tracking-wider">{p.label}</span>
-              </div>
+              {p.icon}
+              <span>{p.label}</span>
             </button>
           ))}
         </div>

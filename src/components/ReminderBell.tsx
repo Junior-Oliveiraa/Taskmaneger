@@ -83,7 +83,7 @@ export default function ReminderBell({
       ? 'text-yellow-400'
       : reminderType === 'custom'
       ? 'text-orange-400'
-      : 'text-zinc-600 hover:text-zinc-400';
+      : 'text-zinc-400 hover:text-zinc-100';
 
   const formattedDateTime = reminderDate ? (() => {
     const [datePart, timePart] = reminderDate.split('T');

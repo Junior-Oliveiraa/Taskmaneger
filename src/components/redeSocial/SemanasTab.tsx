@@ -116,24 +116,24 @@ export default function SemanasTab(props: Props) {
                 }`}
               >
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-[13px] font-bold text-zinc-100">Semana {numeroSemana(s.inicio)}</span>
-                  <span className={`text-[10px] font-semibold rounded-full px-2 py-0.5 ${atual ? 'bg-zinc-100 text-zinc-900' : 'bg-zinc-800/80 text-zinc-300'}`}>{tag}</span>
+                  <span className="text-body font-semibold text-zinc-100">Semana {numeroSemana(s.inicio)}</span>
+                  <span className={`text-caption font-semibold rounded-full px-2 py-0.5 ${atual ? 'bg-zinc-100 text-zinc-900' : 'bg-zinc-800/80 text-zinc-300'}`}>{tag}</span>
                 </div>
-                <span className="text-[11px] text-zinc-500">{rotuloIntervalo(s.inicio)}</span>
+                <span className="text-caption text-zinc-500">{rotuloIntervalo(s.inicio)}</span>
                 <div className="h-2 rounded-full bg-zinc-900 flex overflow-hidden" aria-hidden="true">
                   {ETAPAS.map(e => {
                     const k = s.posts.filter(p => p.etapa === e.id).length;
                     return k > 0 ? <div key={e.id} style={{ flexGrow: k, background: e.cor }} /> : null;
                   })}
                 </div>
-                <span className="text-[11px] text-zinc-400">
+                <span className="text-caption text-zinc-400">
                   {n === 0 ? 'Nenhum post planejado' : `${n} ${n === 1 ? 'post' : 'posts'} · ${feitos} ${feitos === 1 ? 'concluído' : 'concluídos'}`}
                 </span>
               </button>
             );
           })}
         </div>
-        <div className="flex flex-wrap gap-x-4 gap-y-1 mt-3 text-[11px] text-zinc-500">
+        <div className="flex flex-wrap gap-x-4 gap-y-1 mt-3 text-caption text-zinc-500">
           {ETAPAS.map(e => (
             <span key={e.id} className="flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-sm" style={{ background: e.cor }} aria-hidden="true" />{e.label}
@@ -146,8 +146,8 @@ export default function SemanasTab(props: Props) {
         {/* O que fazer */}
         <section className="flex-[999_1_460px] min-w-0 flex flex-col gap-3 p-4 rounded-xl border border-zinc-800/60 bg-zinc-950/40">
           <header className="flex items-baseline justify-between gap-3">
-            <h2 className="text-sm font-semibold text-zinc-100">O que fazer · Semana {numeroSemana(semanaSelecionada)}</h2>
-            <span className="text-[11px] text-zinc-500">{totalPendencias} {totalPendencias === 1 ? 'pendência' : 'pendências'}</span>
+            <h2 className="text-body font-semibold text-zinc-100">O que fazer · Semana {numeroSemana(semanaSelecionada)}</h2>
+            <span className="text-caption text-zinc-500">{totalPendencias} {totalPendencias === 1 ? 'pendência' : 'pendências'}</span>
           </header>
 
           {grupos.length === 0 && concluidos.length === 0 && (
@@ -156,7 +156,7 @@ export default function SemanasTab(props: Props) {
 
           {grupos.map(([dia, itens]) => (
             <div key={dia} className="flex flex-col gap-1.5">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 pt-1.5">
+              <div className="text-caption font-semibold text-zinc-500 pt-1.5">
                 {dia === 'sem-data' ? 'Sem data' : rotuloDia(dia)}{dia === hoje ? ' · hoje' : dia < hoje ? ' · atrasado' : ''}
               </div>
               {itens.map(it => (
@@ -178,8 +178,8 @@ export default function SemanasTab(props: Props) {
                     <span className={`w-1.5 h-1.5 mx-[7px] shrink-0 rounded-full ${it.destaque ? 'bg-amber-400' : 'bg-zinc-600'}`} aria-hidden="true" />
                   )}
                   <button type="button" onClick={() => acoes.abrir(it.abrir)} className="flex-1 min-w-0 text-left flex flex-col gap-0.5">
-                    <span className={`text-[13px] font-medium truncate ${it.destaque ? 'text-amber-200' : 'text-zinc-200'}`}>{it.texto}</span>
-                    <span className="text-[11px] text-zinc-500 truncate">{it.contexto}</span>
+                    <span className={`text-body font-medium truncate ${it.destaque ? 'text-amber-200' : 'text-zinc-200'}`}>{it.texto}</span>
+                    <span className="text-caption text-zinc-500 truncate">{it.contexto}</span>
                   </button>
                   <Avatar pessoa={pessoa(it.pessoaId)} size={22} />
                 </div>
@@ -189,7 +189,7 @@ export default function SemanasTab(props: Props) {
 
           {concluidos.length > 0 && (
             <div className="flex flex-col gap-1.5">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 pt-1.5">Concluído esta semana</div>
+              <div className="text-caption font-semibold text-zinc-500 pt-1.5">Concluído esta semana</div>
               {concluidos.map(p => (
                 <button
                   key={p.task.id}
@@ -200,8 +200,8 @@ export default function SemanasTab(props: Props) {
                   <span className="w-5 h-5 shrink-0 rounded-md bg-emerald-500/80 flex items-center justify-center" aria-hidden="true">
                     <Check size={12} className="text-zinc-950" />
                   </span>
-                  <span className="flex-1 min-w-0 text-[13px] text-zinc-500 line-through truncate">{p.task.title}</span>
-                  {p.data && <span className="text-[11px] text-zinc-500 shrink-0">{rotuloDiaCurto(p.data)}</span>}
+                  <span className="flex-1 min-w-0 text-body text-zinc-500 line-through truncate">{p.task.title}</span>
+                  {p.data && <span className="text-caption text-zinc-500 shrink-0">{rotuloDiaCurto(p.data)}</span>}
                 </button>
               ))}
             </div>
@@ -211,9 +211,9 @@ export default function SemanasTab(props: Props) {
         {/* Lateral */}
         <aside className="flex-[1_1_280px] min-w-0 flex flex-col gap-5">
           <section className="flex flex-col gap-2.5 p-4 rounded-xl border border-zinc-800/60 bg-zinc-950/40">
-            <h2 className="text-sm font-semibold text-zinc-100">Aguardando sua aprovação</h2>
+            <h2 className="text-body font-semibold text-zinc-100">Aguardando sua aprovação</h2>
             {aguardandoMinha.length === 0 ? (
-              <p className="text-xs text-zinc-500">Nada pendente com você.</p>
+              <p className="text-caption text-zinc-500">Nada pendente com você.</p>
             ) : aguardandoMinha.map(p => (
               <button
                 key={p.task.id}
@@ -222,8 +222,8 @@ export default function SemanasTab(props: Props) {
                 className="flex items-center gap-2 p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20 hover:bg-amber-500/15 text-left transition-colors"
               >
                 <div className="flex-1 min-w-0 flex flex-col gap-0.5">
-                  <span className="text-[13px] font-semibold text-amber-100 truncate">{p.task.title}</span>
-                  <span className="text-[11px] text-amber-300/80 truncate">
+                  <span className="text-body font-semibold text-amber-100 truncate">{p.task.title}</span>
+                  <span className="text-caption text-amber-300/80 truncate">
                     {[p.canal, p.data ? `publica ${rotuloDiaCurto(p.data)}` : 'sem data'].filter(Boolean).join(' · ')}
                   </span>
                 </div>
@@ -233,7 +233,7 @@ export default function SemanasTab(props: Props) {
           </section>
 
           <section className="flex flex-col gap-3 p-4 rounded-xl border border-zinc-800/60 bg-zinc-950/40">
-            <h2 className="text-sm font-semibold text-zinc-100">Resumo da semana</h2>
+            <h2 className="text-body font-semibold text-zinc-100">Resumo da semana</h2>
             <div className="grid grid-cols-2 gap-3">
               {[
                 [postsDaSemana.length, 'posts planejados'],
@@ -242,15 +242,15 @@ export default function SemanasTab(props: Props) {
                 [conta('refacao'), 'em refação'],
               ].map(([n, l]) => (
                 <div key={l as string} className="flex flex-col">
-                  <span className="text-2xl font-bold text-zinc-100 tabular-nums">{n}</span>
-                  <span className="text-[11px] text-zinc-500">{l}</span>
+                  <span className="text-title font-semibold text-zinc-100 tabular-nums">{n}</span>
+                  <span className="text-caption text-zinc-500">{l}</span>
                 </div>
               ))}
             </div>
             {porCanal.length > 0 && (
               <div className="flex flex-col gap-1.5 pt-2 border-t border-zinc-900">
                 {porCanal.map(([canal, n]) => (
-                  <div key={canal} className="flex items-center justify-between text-xs">
+                  <div key={canal} className="flex items-center justify-between text-caption">
                     <span className="text-zinc-400">{canal}</span>
                     <span className="text-zinc-200 font-semibold tabular-nums">{n}</span>
                   </div>
@@ -261,7 +261,7 @@ export default function SemanasTab(props: Props) {
               <button
                 type="button"
                 onClick={() => props.onAbrirProducao(semanaSelecionada)}
-                className="text-xs font-semibold text-blue-400 hover:text-blue-300 text-left"
+                className="text-caption font-semibold text-blue-400 hover:text-blue-300 text-left"
               >
                 Abrir no quadro de produção
               </button>

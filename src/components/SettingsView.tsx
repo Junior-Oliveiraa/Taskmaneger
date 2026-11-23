@@ -44,8 +44,8 @@ export default function SettingsView({ isDarkMode, onToggleDarkMode }: SettingsV
       <div className="flex items-center gap-2.5 bg-zinc-950/50 p-4 rounded-lg border border-zinc-900">
         <Settings size={15} className="text-zinc-400" />
         <div>
-          <h2 className="text-xs font-semibold text-zinc-350 uppercase tracking-widest font-mono">Configurações Gerais</h2>
-          <p className="text-[10px] text-zinc-550 font-sans">
+          <h2 className="text-caption font-semibold text-zinc-350 tabular-nums">Configurações Gerais</h2>
+          <p className="text-caption text-zinc-550 font-sans">
             Perfil, aparência, gestão de usuários e integrações do workspace.
           </p>
         </div>
@@ -61,7 +61,7 @@ export default function SettingsView({ isDarkMode, onToggleDarkMode }: SettingsV
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`w-full flex items-center gap-2 px-3 py-2 text-xs rounded-md transition-colors text-left ${
+                className={`w-full flex items-center gap-2 px-3 py-2 text-caption rounded-md transition-colors text-left ${
                   isActive
                     ? 'bg-zinc-900 text-zinc-100 font-medium'
                     : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900/40'
@@ -72,6 +72,8 @@ export default function SettingsView({ isDarkMode, onToggleDarkMode }: SettingsV
               </button>
             );
           })}
+          {/* Versão do app: saiu do topo da sidebar (ruído permanente) para cá. */}
+          <p className="px-3 pt-4 text-caption text-zinc-500 tabular-nums">Orbit Workspace · v1.2</p>
         </nav>
 
         <div className="flex-1 min-w-0">
@@ -121,22 +123,22 @@ function AppearanceTab({ isDarkMode, onToggleDarkMode }: { isDarkMode: boolean; 
       }`}
     >
       <span className="font-semibold text-zinc-200">{title}</span>
-      <span className="text-[9px] text-zinc-555">{subtitle}</span>
+      <span className="text-caption text-zinc-555">{subtitle}</span>
     </button>
   );
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 view-gap-sm">
       <div className="bg-zinc-950/30 border border-zinc-900 rounded-lg p-5 space-y-4">
-        <h3 className="text-xs font-bold font-mono text-zinc-200 uppercase tracking-widest flex items-center gap-1.5 pb-2 border-b border-zinc-900">
+        <h3 className="text-caption font-semibold tabular-nums text-zinc-200 flex items-center gap-1.5 pb-2 border-b border-zinc-900">
           <Palette size={12} className="text-zinc-450" />
           <span>Aparência & Tema</span>
         </h3>
 
         <div className="flex items-center justify-between">
           <div>
-            <span className="text-xs font-medium block text-zinc-300">Modo Escuro</span>
-            <span className="text-[10px] text-zinc-650">
+            <span className="text-caption font-medium block text-zinc-300">Modo Escuro</span>
+            <span className="text-caption text-zinc-650">
               {isDarkMode ? 'Superfícies escuras, texto claro' : 'Superfícies claras, texto escuro'}
             </span>
           </div>
@@ -154,8 +156,8 @@ function AppearanceTab({ isDarkMode, onToggleDarkMode }: { isDarkMode: boolean; 
         </div>
 
         <div className="space-y-2">
-          <span className="text-xs font-medium block text-zinc-350">Tema do Workspace</span>
-          <div className="grid grid-cols-3 gap-2 text-xs font-sans font-medium">
+          <span className="text-caption font-medium block text-zinc-350">Tema do Workspace</span>
+          <div className="grid grid-cols-3 gap-2 text-caption font-sans font-medium">
             {presetButton('linear', 'Linear Dark', 'Grafite Subtil')}
             {presetButton('notion', 'Notion Light', 'Cinza & quase-branco')}
             {presetButton('oled', 'OLED Pure', 'Preto Absoluto')}
@@ -164,12 +166,12 @@ function AppearanceTab({ isDarkMode, onToggleDarkMode }: { isDarkMode: boolean; 
       </div>
 
       <div className="bg-zinc-950/30 border border-zinc-900 rounded-lg p-5 space-y-4">
-        <h3 className="text-xs font-bold font-mono text-zinc-200 uppercase tracking-widest flex items-center gap-1.5 pb-2 border-b border-zinc-900">
+        <h3 className="text-caption font-semibold tabular-nums text-zinc-200 flex items-center gap-1.5 pb-2 border-b border-zinc-900">
           <Keyboard size={12} className="text-zinc-450" />
           <span>Produtividade (Hotkeys)</span>
         </h3>
 
-        <div className="space-y-3 font-mono text-[10px] text-zinc-500 select-none">
+        <div className="space-y-3 tabular-nums text-caption text-zinc-500 select-none">
           <div className="flex items-center justify-between border-b border-zinc-900 pb-2">
             <span>Paleta de Comandos</span>
             <kbd className="bg-zinc-950 px-1.5 py-0.5 rounded border border-zinc-900 text-zinc-400">Ctrl + K</kbd>
@@ -189,7 +191,7 @@ function AppearanceTab({ isDarkMode, onToggleDarkMode }: { isDarkMode: boolean; 
 
           <button
             onClick={() => setShortcutModalOpen(true)}
-            className="w-full mt-2 h-7 bg-zinc-900 border border-zinc-800 hover:border-zinc-700 text-[10px] rounded text-zinc-300 flex items-center justify-center gap-1.5 font-semibold transition-colors"
+            className="w-full mt-2 h-7 bg-zinc-900 border border-zinc-800 hover:border-zinc-700 text-caption rounded text-zinc-300 flex items-center justify-center gap-1.5 font-semibold transition-colors"
           >
             <span>Testar Evento Ctrl+K</span>
           </button>
@@ -197,11 +199,11 @@ function AppearanceTab({ isDarkMode, onToggleDarkMode }: { isDarkMode: boolean; 
       </div>
 
       <div className="bg-zinc-950/30 border border-zinc-900 rounded-lg p-5 md:col-span-2">
-        <h3 className="text-xs font-bold font-mono text-zinc-200 uppercase tracking-widest flex items-center gap-1.5 pb-2 border-b border-zinc-900 mb-3">
+        <h3 className="text-caption font-semibold tabular-nums text-zinc-200 flex items-center gap-1.5 pb-2 border-b border-zinc-900 mb-3">
           <Sparkles size={12} className="text-zinc-450" />
           <span>Identidade Visual</span>
         </h3>
-        <p className="text-[11px] text-zinc-500 font-sans leading-relaxed">
+        <p className="text-caption text-zinc-500 font-sans leading-relaxed">
           Inspirado pela simplicidade e velocidade do Linear App. Focado em tipografia balanceada,
           cantos arredondados discretos e interação simplificada para maximizar o foco.
         </p>

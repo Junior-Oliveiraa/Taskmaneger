@@ -1,15 +1,16 @@
 import React from 'react';
 import {
-  Bell, Flag, Calendar, Search, Plus, ChevronLeft, ChevronRight,
-  CheckCircle2, AlertTriangle, AlertCircle, Edit, Clock, Target, ArrowUpRight, Bookmark,
-  PenTool, Type, CheckSquare, DollarSign, Share2, TagIcon, Star,
-  ChevronsUp, ChevronUp, Minus, ChevronDown
+  CheckCircle2, AlertTriangle, Calendar, Layers, ArrowRight, ArrowUpRight, ArrowUp, ArrowDown, Equal,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { useNotifications } from '../context/NotificationContext';
 import { Task, Project, Label } from '../types';
-import MyDocuments from './MyDocuments';
-import DatePicker from './DatePicker';
+import { temResponsavel } from '../lib/responsaveis';
+import MinhasTarefasQuadro, { separarTarefas, AbaTarefas, FiltroStatus } from './MinhasTarefasQuadro';
+import KpiCard, { LINK_KPI as LINK, BOTAO_KPI } from './KpiCard';
+import MeusProjetosQuadro from './MeusProjetosQuadro';
+import { PainelNotificacoes } from './NotificacoesMenu';
+import { Sparkline, BarraStatus, SegmentoStatus } from './HomeGraficos';
+import { hojeLocal, somarDias, inicioDaSemana } from '../lib/datas';
 
 interface HomeViewProps {
   tasks?: Task[];
@@ -17,6 +18,49 @@ interface HomeViewProps {
   labels?: Label[];
   onUpdateTask?: (updates: Partial<Task> & { id: string }) => void;
   onSelectTask?: (task: Task) => void;
+  /** Criação de tarefa (estado vazio da tabela). O CTA principal fica no header do app. */
+  onNewTask?: () => void;
+  /** Abre um projeto de Marketing. Sem ela (sem permissão), "Meus projetos" não aparece. */
+  onAbrirProjeto?: (projetoId: string) => void;
+  /** "Ver todas" das notificações → Caixa de entrada. */
+  onOpenInbox?: () => void;
+}
+
+const FOCO = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/60';
+const EASE = 'duration-150 ease-[cubic-bezier(0.16,1,0.3,1)]';
+
+const SEMANAS = 8;
+const DIA_MS = 864e5;
+const LINHAS_VISIVEIS = 8;
+
+function saudacao(hora: number) {
+  if (hora < 12) return 'Bom dia';
+  if (hora < 18) return 'Boa tarde';
+  return 'Boa noite';
+}
+
+const ddmm = (d: Date) => d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+const concluida = (t: Task) => t.status === 'done' || t.status === 'implementation';
+const dataLocal = (iso: string) => {
+  const [y, m, d] = iso.slice(0, 10).split('-').map(Number);
+  return new Date(y, m - 1, d);
+};
+
+/** Momentos em que a tarefa chegou em implementação/concluído. */
+function datasDeConclusao(t: Task): string[] {
+  if (t.statusHistory && t.statusHistory.length > 0) {
+    return t.statusHistory
+      .filter(h => h.status === 'implementation' || h.status === 'done')
+      .map(h => h.enteredAt);
+  }
+  // Tarefas antigas, sem histórico mapeado.
+  const datas: string[] = [];
+  if (t.timeTracking?.reachedImplementationAt) datas.push(t.timeTracking.reachedImplementationAt);
+  else if (concluida(t)) {
+    const d = t.updatedAt || t.createdAt;
+    if (d) datas.push(d);
+  }
+  return datas;
 }
 
 export default function HomeView({
@@ -24,429 +68,243 @@ export default function HomeView({
   projects = [],
   labels = [],
   onUpdateTask = () => {},
-  onSelectTask = () => {}
+  onSelectTask = () => {},
+  onNewTask,
+  onAbrirProjeto,
+  onOpenInbox,
 }: HomeViewProps) {
   const { currentUser } = useAuth();
-  const { notifications, markAsViewed, postpone, markAsImportant } = useNotifications();
-  const userName = currentUser?.name?.split(' ')[0] || 'Ana';
-  const [docsExpanded, setDocsExpanded] = React.useState(false);
+  const [aba, setAba] = React.useState<AbaTarefas | null>(null);
+  const [filtroStatus, setFiltroStatus] = React.useState<FiltroStatus | null>(null);
+  const quadroRef = React.useRef<HTMLDivElement | null>(null);
 
-  // ---------------------------------------------------------
-  // Helpers de Data e Agregações Reais
-  // ---------------------------------------------------------
-  const today = new Date();
-  
-  const getStartOfWeek = (d: Date) => {
-    const date = new Date(d);
-    const day = date.getDay();
-    const diff = date.getDate() - day + (day === 0 ? -6 : 1);
-    date.setDate(diff);
-    date.setHours(0, 0, 0, 0);
-    return date;
-  };
+  // ---------------------------------------------------------------------
+  // Datas
+  // ---------------------------------------------------------------------
+  const agora = new Date();
+  const hoje = hojeLocal();
+  const amanha = somarDias(1);
+  const dataExtenso = agora.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' });
+  const dataExtensoFmt = dataExtenso.charAt(0).toUpperCase() + dataExtenso.slice(1);
+  const primeiroNome = currentUser?.name?.trim().split(/\s+/)[0];
 
-  const getEndOfWeek = (startOfWeek: Date) => {
-    const end = new Date(startOfWeek);
-    end.setDate(end.getDate() + 6);
-    end.setHours(23, 59, 59, 999);
-    return end;
-  };
+  // ---------------------------------------------------------------------
+  // Agregações (mesmas regras de antes)
+  // ---------------------------------------------------------------------
+  const myTasks = tasks.filter(t => !!currentUser && temResponsavel(t, currentUser.id));
+  const { proximas, atrasadas, concluidas } = separarTarefas(myTasks);
 
-  const isDateInCurrentWeek = (dateString?: string) => {
-    if (!dateString) return false;
-    const date = new Date(dateString);
-    const startOfWeek = getStartOfWeek(today);
-    const endOfWeek = getEndOfWeek(startOfWeek);
-    return date >= startOfWeek && date <= endOfWeek;
-  };
-
-  // Filtrar apenas tasks do usuário logado
-  const myTasks = tasks.filter(t => t.assigneeId === currentUser?.id);
-
-  // Helper function: verifica se a tarefa chegou em 'implementation' ou 'done' NESTA semana.
-  const reachedConcludedThisWeek = (t: Task) => {
-    if (t.statusHistory && t.statusHistory.length > 0) {
-      return t.statusHistory.some(h => 
-        (h.status === 'implementation' || h.status === 'done') && 
-        isDateInCurrentWeek(h.enteredAt)
-      );
+  // Concluídas por semana (segunda a domingo), das 8 últimas. Uma tarefa conta
+  // uma vez por semana, mesmo que tenha ido e voltado de implementação.
+  const inicioSemanaAtual = inicioDaSemana(agora);
+  const inicioSerie = new Date(inicioSemanaAtual);
+  inicioSerie.setDate(inicioSerie.getDate() - 7 * (SEMANAS - 1));
+  const porSemana = new Array(SEMANAS).fill(0);
+  for (const t of myTasks) {
+    const semanas = new Set<number>();
+    for (const iso of datasDeConclusao(t)) {
+      const idx = Math.floor((new Date(iso).getTime() - inicioSerie.getTime()) / (7 * DIA_MS));
+      if (idx >= 0 && idx < SEMANAS) semanas.add(idx);
     }
-    if (t.timeTracking?.reachedImplementationAt && isDateInCurrentWeek(t.timeTracking.reachedImplementationAt)) {
-      return true;
-    }
-    // Fallback caso a task não tenha histórico mapeado ainda
-    if (t.status === 'done' || t.status === 'implementation') {
-      return isDateInCurrentWeek(t.updatedAt || t.createdAt);
-    }
-    return false;
-  };
-
-  // 1. Concluídas da semana (Status alterado para implementação ou concluído nesta semana)
-  // Cada ID de tarefa é verificado uma vez pelo helper acima.
-  const concluidasDaSemana = myTasks.filter(t => reachedConcludedThisWeek(t));
-
-  // 2. Atrasadas (Total tasks delayed associated with user)
-  const atrasadas = myTasks.filter(t => {
-    if (t.status === 'done' || t.status === 'implementation') return false;
-    if (!t.dueDate) return false;
-    const [y, m, d] = t.dueDate.split('-');
-    const due = new Date(Number(y), Number(m) - 1, Number(d), 23, 59, 59, 999);
-    return due < today;
+    semanas.forEach(i => { porSemana[i]++; });
+  }
+  const rotulosSemana = porSemana.map((_, i) => {
+    const d = new Date(inicioSerie);
+    d.setDate(d.getDate() + 7 * i);
+    return `semana de ${ddmm(d)}`;
   });
+  const concluidasSemana = porSemana[SEMANAS - 1];
+  const variacao = concluidasSemana - porSemana[SEMANAS - 2];
 
-  // 3. Em andamento (in_progress, approval, rework, paused - excluindo 'todo' e status de conclusão)
-  const emAndamento = myTasks.filter(t => 
-    ['in_progress', 'approval', 'rework', 'paused'].includes(t.status)
-  );
+  const emAberto = proximas.length + atrasadas.length;
+  const noPrazo = proximas.length;
+  const vencemHoje = proximas.filter(t => t.dueDate?.slice(0, 10) === hoje).length;
+  const vencemAmanha = proximas.filter(t => t.dueDate?.slice(0, 10) === amanha).length;
+  const abertas = [...atrasadas, ...proximas];
+  const emAndamento = abertas.filter(t => t.status === 'in_progress' || t.status === 'rework').length;
+  const emAprovacao = abertas.filter(t => t.status === 'approval').length;
+  const pausadas = abertas.filter(t => t.status === 'paused').length;
+  const naoIniciadas = abertas.filter(t => t.status === 'todo' || t.status === 'no_forecast').length;
+  const diasAtrasoMaisAntiga = atrasadas[0]?.dueDate
+    ? Math.round((dataLocal(hoje).getTime() - dataLocal(atrasadas[0].dueDate).getTime()) / DIA_MS)
+    : 0;
 
-  // 4. Foco da semana (Urgente mais recente ou em andamento mais recente)
-  const focoSemana = emAndamento.sort((a, b) => {
-    if (a.priority === 'urgent' && b.priority !== 'urgent') return -1;
-    if (b.priority === 'urgent' && a.priority !== 'urgent') return 1;
-    return 0;
-  })[0];
-  const focoSemanaProj = projects?.find(p => p.id === focoSemana?.projectId)?.name || '';
+  // Escala do acento para o que anda, neutros para o que está parado.
+  const segmentos: (SegmentoStatus & { filtro?: FiltroStatus })[] = [
+    { id: 'andamento', label: 'Em andamento', valor: emAndamento, cor: 'var(--color-blue-500)' },
+    { id: 'aprovacao', label: 'Em aprovação', valor: emAprovacao, cor: 'var(--color-blue-300)', filtro: { status: 'approval', label: 'Em aprovação' } },
+    { id: 'pausadas', label: 'Pausadas', valor: pausadas, cor: 'var(--color-zinc-500)' },
+    { id: 'nao-iniciadas', label: 'Não iniciadas', valor: naoIniciadas, cor: 'var(--color-zinc-700)' },
+  ];
 
-  // 6. Notificações reais
-  const myNotifications = notifications.filter(n => (n.status !== 'viewed') && (n.userId === currentUser?.id || n.userId === 'all'));
+  const irParaTabela = () => {
+    requestAnimationFrame(() => quadroRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }));
+  };
+  const abrirAba = (a: AbaTarefas) => { setFiltroStatus(null); setAba(a); irParaTabela(); };
+  const filtrar = (f: FiltroStatus) => { setFiltroStatus(f); irParaTabela(); };
 
-  // 7. Prioridades (Máximo de 4 cartões urgentes não concluídos)
-  const prioridades = myTasks.filter(t => t.priority === 'urgent' && t.status !== 'done' && t.status !== 'implementation').slice(0, 4);
-
-  // Helper para mostrar período da semana atual
-  const startOfWeekStr = getStartOfWeek(today).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
-  const endOfWeekStr = getEndOfWeek(getStartOfWeek(today)).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
-
-  // 8. Próximos Prazos (Atrasadas ou vencendo nos próximos 7 dias, order by date)
-  const proximosPrazos = myTasks.filter(t => {
-    if (t.status === 'done' || t.status === 'implementation') return false;
-    if (!t.dueDate) return false;
-    const due = new Date(t.dueDate);
-    due.setHours(23, 59, 59, 999);
-    const nextWeek = new Date(today);
-    nextWeek.setDate(nextWeek.getDate() + 7);
-    return due <= nextWeek;
-  }).sort((a, b) => new Date(a.dueDate!).getTime() - new Date(b.dueDate!).getTime());
+  const Comparativo = () => {
+    if (variacao === 0) {
+      return <span className="inline-flex items-center gap-1 text-caption text-zinc-400"><Equal size={12} aria-hidden /> Igual à semana passada</span>;
+    }
+    const melhor = variacao > 0;
+    const n = Math.abs(variacao);
+    return (
+      <span className={`inline-flex items-center gap-1 text-caption font-medium ${melhor ? 'text-emerald-400' : 'text-red-400'}`}>
+        {melhor ? <ArrowUp size={12} aria-hidden /> : <ArrowDown size={12} aria-hidden />}
+        {n} a {melhor ? 'mais' : 'menos'} que a semana passada
+      </span>
+    );
+  };
 
   return (
-    // `p-10` no lg valia para monitor; em notebook são 80px de margem lateral
-    // roubados das três colunas. O `view-pad` já entrega 24/16/12 por altura.
     <div className="flex-1 overflow-auto bg-[#08080a] view-pad text-zinc-200 scrollbar-minimal">
-      <div className="max-w-[1900px] w-full mx-auto flex flex-col view-gap-sm">
+      <div className="max-w-[1600px] w-full mx-auto flex flex-col view-gap">
 
-        {/* HEADER AREA - SINGLE LINE */}
-        <div className="flex items-center justify-between gap-3 mb-0">
-          <div className="flex items-center gap-4 xl:gap-6 min-w-0">
-            <div className="flex items-center gap-2 shrink-0">
-              <Bookmark className="text-zinc-400" size={18} />
-              <h1 className="text-xs font-bold tracking-[0.2em] text-zinc-400 uppercase">HOME</h1>
-            </div>
+        {/* 1. Saudação + data. O CTA único ("+ Novo") vive no header do app. */}
+        <header className="min-w-0">
+          <p className="text-caption text-zinc-400">{dataExtensoFmt}</p>
+          <h1 className="mt-0.5 text-title font-semibold text-zinc-100 truncate">
+            {saudacao(agora.getHours())}{primeiroNome ? `, ${primeiroNome}` : ''}
+          </h1>
+        </header>
 
-            {/* USER PROFILE */}
-            <div className="hidden lg:flex items-center gap-3 ml-2 border-l border-zinc-800/80 pl-4 xl:pl-6 min-w-0">
-              {currentUser?.avatarUrl ? (
-                <img src={currentUser.avatarUrl} alt={currentUser.name} className="w-10 h-10 short:w-8 short:h-8 rounded-full border border-zinc-700/50 object-cover shrink-0" />
-              ) : (
-                <div className="w-10 h-10 short:w-8 short:h-8 rounded-full border border-zinc-700/50 bg-zinc-800 flex items-center justify-center text-sm font-bold text-zinc-300 shrink-0">
-                  {currentUser?.initials || 'U'}
-                </div>
-              )}
-              <div className="flex flex-col min-w-0">
-                <span className="text-sm font-bold text-zinc-100 tracking-tight leading-tight truncate">{currentUser?.name || userName}</span>
-                <span className="text-[10px] text-zinc-400 font-medium uppercase tracking-wider mt-0.5 truncate">{currentUser?.role || 'Usuário'}</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-4 shrink-0">
-            <button className="flex items-center gap-2 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 text-blue-400 px-4 py-1.5 rounded-md text-[10px] font-bold tracking-[0.15em] uppercase transition-colors">
-              <Plus size={14} /> <span className="hidden sm:inline">NOVA TAREFA</span>
-            </button>
-          </div>
-        </div>
-
-        {/* TOP STATS / KPIS
-            4 colunas só a partir de 1280px: abaixo disso cada card fica com
-            menos de 250px e o rótulo "Concluídas da semana" (nowrap) vaza. */}
+        {/* 2. Indicadores: mesma altura, mesmo padding, atrasadas primeiro. */}
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 view-gap-sm">
-          <div className="bg-gradient-to-br from-[#0c0c0e] to-[#08080a] border border-zinc-900 rounded-xl p-4 short:p-3 flex items-center gap-4 short:gap-3 shadow-sm group">
-            <div className="w-10 h-10 short:w-8 short:h-8 rounded-full border border-emerald-500/20 bg-emerald-500/5 flex items-center justify-center shrink-0 group-hover:bg-emerald-500/10 transition-colors">
-              <CheckCircle2 size={16} className="text-emerald-500" />
+
+          <KpiCard
+            icone={AlertTriangle}
+            titulo="Atrasadas"
+            alerta={atrasadas.length > 0}
+            rodape={atrasadas.length > 0 ? (
+              <button
+                type="button"
+                onClick={() => abrirAba('atrasadas')}
+                className={BOTAO_KPI}
+              >
+                Revisar atrasadas <ArrowRight size={14} aria-hidden />
+              </button>
+            ) : (
+              <span className="text-caption text-zinc-400">Nada vencido</span>
+            )}
+          >
+            <div className="flex items-baseline gap-2 min-w-0">
+              <span className={`text-metric font-semibold tabular-nums ${atrasadas.length > 0 ? 'text-red-400' : 'text-zinc-50'}`}>{atrasadas.length}</span>
+              {atrasadas.length > 0 && (
+                <span className="text-caption text-zinc-400 truncate">
+                  mais antiga há <span className="tabular-nums">{diasAtrasoMaisAntiga}</span> {diasAtrasoMaisAntiga === 1 ? 'dia' : 'dias'}
+                </span>
+              )}
             </div>
-            <div className="flex flex-col">
-              <span className="text-[11px] text-zinc-400 font-medium whitespace-nowrap">Concluídas da semana</span>
-              <div className="flex items-baseline gap-2 mt-0.5">
-                <span className="text-xl font-bold text-zinc-100 leading-none">{concluidasDaSemana.length.toString().padStart(2, '0')}</span>
-                <span className="text-[10px] text-zinc-500 font-medium ml-1">({startOfWeekStr} a {endOfWeekStr})</span>
+          </KpiCard>
+
+          <KpiCard
+            icone={Calendar}
+            titulo="Vencem hoje"
+            rodape={
+              <button type="button" onClick={() => abrirAba('proximas')} className={LINK}>
+                Ver próximas <ArrowRight size={12} aria-hidden />
+              </button>
+            }
+          >
+            <div className="flex items-baseline gap-2 min-w-0">
+              <span className="text-metric font-semibold tabular-nums text-zinc-50">{vencemHoje}</span>
+              <span className="text-caption text-zinc-400 truncate">
+                <span className="tabular-nums">{vencemAmanha}</span> {vencemAmanha === 1 ? 'vence' : 'vencem'} amanhã
+              </span>
+            </div>
+          </KpiCard>
+
+          <KpiCard
+            icone={Layers}
+            titulo="Em aberto"
+            rodape={
+              <ul className="flex flex-wrap gap-x-3 gap-y-1">
+                {segmentos.map(s => (
+                  <li key={s.id} className="inline-flex items-center gap-1.5 text-caption">
+                    <span className="size-2 rounded-full shrink-0" style={{ background: s.cor }} aria-hidden />
+                    {s.filtro && s.valor > 0 ? (
+                      <button
+                        type="button"
+                        onClick={() => filtrar(s.filtro!)}
+                        className={`rounded text-zinc-200 underline decoration-zinc-500 underline-offset-2 hover:text-zinc-50 hover:decoration-zinc-300 transition-colors ${FOCO}`}
+                      >
+                        {s.label} <span className="tabular-nums font-medium">{s.valor}</span>
+                      </button>
+                    ) : (
+                      <span className="text-zinc-400">{s.label} <span className="tabular-nums font-medium text-zinc-200">{s.valor}</span></span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            }
+          >
+            <div className="flex items-baseline gap-2 min-w-0">
+              <span className="text-metric font-semibold tabular-nums text-zinc-50">{emAberto}</span>
+              <span className="text-caption text-zinc-400 truncate">
+                <span className="tabular-nums">{noPrazo}</span> no prazo
+              </span>
+            </div>
+            <BarraStatus segmentos={segmentos} />
+          </KpiCard>
+
+          <KpiCard
+            icone={CheckCircle2}
+            titulo="Concluídas na semana"
+            acao={
+              <button type="button" onClick={() => abrirAba('concluidas')} aria-label="Ver concluídas" title="Ver concluídas" className={`size-7 inline-flex items-center justify-center rounded-md text-zinc-400 hover:text-zinc-100 hover:bg-[#1f1f23] transition ${EASE} ${FOCO}`}>
+                <ArrowUpRight size={15} aria-hidden />
+              </button>
+            }
+            rodape={<Comparativo />}
+          >
+            <div className="flex items-end gap-4 min-w-0">
+              <span className="text-metric font-semibold tabular-nums text-zinc-50">{concluidasSemana}</span>
+              <div className="flex-1 min-w-0 max-w-[160px] ml-auto">
+                <Sparkline
+                  valores={porSemana}
+                  rotulos={rotulosSemana}
+                  altura={36}
+                  descricao={`Concluídas por semana, últimas ${SEMANAS}: ${porSemana.join(', ')}`}
+                />
               </div>
             </div>
-          </div>
-
-          <div className="bg-gradient-to-br from-[#0c0c0e] to-[#08080a] border border-zinc-900 rounded-xl p-4 short:p-3 flex items-center gap-4 short:gap-3 shadow-sm group">
-            <div className="w-10 h-10 short:w-8 short:h-8 rounded-full border border-red-500/20 bg-red-500/5 flex items-center justify-center shrink-0 group-hover:bg-red-500/10 transition-colors">
-              <AlertTriangle size={16} className="text-red-500" />
-            </div>
-            <div className="flex flex-col">
-              <span className="text-[11px] text-zinc-400 font-medium">Atrasadas</span>
-              <div className="flex items-baseline gap-2 mt-0.5">
-                <span className="text-xl font-bold text-zinc-100 leading-none">{atrasadas.length.toString().padStart(2, '0')}</span>
-                {atrasadas.length > 0 && <span className="text-[10px] font-bold text-red-500 flex items-center gap-0.5"><AlertCircle size={10} /> Atenção</span>}
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-gradient-to-br from-[#0c0c0e] to-[#08080a] border border-zinc-900 rounded-xl p-4 short:p-3 flex items-center gap-4 short:gap-3 shadow-sm">
-            <div className="w-10 h-10 short:w-8 short:h-8 rounded-full border-2 border-blue-500/20 border-t-blue-500 flex items-center justify-center shrink-0">
-            </div>
-            <div className="flex flex-col">
-              <span className="text-[11px] text-zinc-400 font-medium">Em andamento</span>
-              <div className="flex items-baseline gap-2 mt-0.5">
-                <span className="text-xl font-bold text-zinc-100 leading-none">{emAndamento.length.toString().padStart(2, '0')}</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-gradient-to-br from-[#0c0c0e] to-[#08080a] border border-zinc-900 rounded-xl p-4 short:p-3 flex items-center gap-4 short:gap-3 shadow-sm group">
-            <div className="w-10 h-10 short:w-8 short:h-8 rounded-full bg-indigo-500/10 flex items-center justify-center shrink-0 group-hover:bg-indigo-500/20 transition-colors">
-              <Target size={16} className="text-indigo-400" />
-            </div>
-            <div className="flex flex-col min-w-0">
-              <span className="text-[11px] text-zinc-400 font-medium">Foco da semana</span>
-              <span className="text-[11px] font-bold text-zinc-100 truncate mt-1">{focoSemana?.title || 'Nenhuma tarefa'}</span>
-              <span className="text-[10px] text-zinc-500 truncate mt-0.5">{focoSemanaProj || '---'}</span>
-            </div>
-          </div>
+          </KpiCard>
         </div>
 
-        <div className="flex-1 min-h-0 flex flex-col">
-            {/* THREE COLUMNS */}
-            {!docsExpanded && (
-            <div className="grid grid-cols-1 lg:grid-cols-3 view-gap-sm mt-4 short:mt-2">
-          
-          {/* Notificações */}
-          <div className="flex flex-col bg-[#121214] border border-zinc-900 rounded-xl overflow-hidden shadow-sm shadow-black/20">
-            <div className="flex items-center justify-between px-4 py-2.5 border-b border-zinc-900 bg-[#08080a]">
-              <div className="flex items-center gap-2 text-zinc-400 font-bold text-[10px] uppercase tracking-[0.15em]">
-                <Bell size={12} className="text-zinc-500" /> Notificações {myNotifications.length > 0 && <span className="bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded-full text-[9px]">{myNotifications.length}</span>}
-              </div>
-              <button className="text-[10px] font-mono text-zinc-500 hover:text-zinc-300 transition-colors uppercase tracking-wider font-semibold">Ver todas</button>
-            </div>
-            <div className="flex flex-col p-2 gap-1 card-list-h overflow-y-auto scrollbar-minimal">
-              {myNotifications.length === 0 ? (
-                <div className="flex-1 flex flex-col items-center justify-center text-zinc-500 py-10 opacity-70">
-                  <CheckCircle2 size={32} className="mb-2 text-zinc-600" />
-                  <span className="text-xs">Tudo limpo!</span>
-                </div>
-              ) : myNotifications.map((n) => {
-                const isImportant = n.status === 'important';
-                const isUnread = n.status === 'unread';
-                const task = tasks?.find(t => t.id === n.taskId);
-
-                let titlePart = n.message;
-                let descPart = n.details || '';
-                if (n.message.includes(':')) {
-                  const parts = n.message.split(':');
-                  titlePart = parts[0].trim();
-                  const rest = parts.slice(1).join(':').trim();
-                  descPart = rest + (descPart ? ' - ' + descPart : '');
-                }
-
-                const IconComponent = n.type === 'task_assigned' ? CheckCircle2 : n.type === 'feedback_received' || n.type === 'review_requested' ? AlertTriangle : n.type === 'assignee_replaced' ? AlertCircle : Bell;
-
-                return (
-                  <div key={n.id} onClick={() => {
-                    if (task && onSelectTask) onSelectTask(task);
-                  }} className="group relative flex flex-col cursor-pointer rounded-lg px-2 py-1.5 hover:bg-[#161619] border border-transparent hover:border-zinc-800 transition-all duration-150">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex items-start gap-2.5 flex-1 overflow-hidden">
-                        <div className={`mt-[2px] shrink-0 ${isUnread ? 'text-blue-400' : isImportant ? 'text-amber-400' : 'text-zinc-500'}`}>
-                          <IconComponent size={14} />
-                        </div>
-                        <div className="flex flex-col min-w-0">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className={`text-[13px] font-medium leading-tight truncate ${isUnread || isImportant ? 'text-zinc-200' : 'text-zinc-400'}`}>
-                              {titlePart}
-                            </span>
-                            {isUnread && <div className="w-1.5 h-1.5 rounded-full bg-blue-500" />}
-                          </div>
-                          
-                          {descPart && (
-                            <span className="text-[12px] text-zinc-500 line-clamp-1 mt-0.5 leading-tight pr-4">
-                              {descPart.replace(/\n/g, ' ')}
-                            </span>
-                          )}
-                          
-                          {task && (
-                            <span className="text-[11px] text-zinc-600 mt-1.5 flex items-center gap-1 truncate max-w-full">
-                              <ChevronRight size={10} className="shrink-0" /> {task.title}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      <div className="flex flex-col items-end shrink-0 pt-0.5">
-                        <span className="text-[10px] text-zinc-500 font-medium mb-1">
-                          {new Date(n.createdAt).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
-                        </span>
-                        <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button 
-                            className="text-emerald-500 hover:text-emerald-400 transition-colors" 
-                            title="Marcar como Arquivada"
-                            onClick={(e) => { e.stopPropagation(); markAsViewed(n.id); }}
-                          >
-                            <CheckCircle2 size={13} />
-                          </button>
-                          <button 
-                            className="text-zinc-500 hover:text-zinc-300 transition-colors" 
-                            title="Adiar"
-                            onClick={(e) => { e.stopPropagation(); postpone(n.id); }}
-                          >
-                            <Clock size={13} />
-                          </button>
-                          <button 
-                            className="text-zinc-500 hover:text-amber-400 transition-colors" 
-                            title="Destacar"
-                            onClick={(e) => { e.stopPropagation(); markAsImportant(n.id); }}
-                          >
-                            <Star size={13} />
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Prioridades */}
-          <div className="flex flex-col bg-[#121214] border border-zinc-900 rounded-xl overflow-hidden shadow-sm shadow-black/20">
-            <div className="flex items-center justify-between px-4 py-2.5 border-b border-zinc-900 bg-[#08080a]">
-              <div className="flex items-center gap-2 text-zinc-400 font-bold text-[10px] uppercase tracking-[0.15em]">
-                <Flag size={12} className="text-zinc-500" /> Prioridades
-              </div>
-              <button className="text-[10px] font-mono text-zinc-500 hover:text-zinc-300 transition-colors uppercase tracking-wider font-semibold">Ver todas</button>
-            </div>
-            <div className="flex flex-col p-2 gap-1 card-list-h overflow-y-auto scrollbar-minimal">
-              {prioridades.length === 0 ? (
-                <div className="flex-1 flex flex-col items-center justify-center text-zinc-500 py-10 opacity-70">
-                  <span className="text-xs">Nenhuma tarefa urgente</span>
-                </div>
-              ) : prioridades.map((t) => {
-                const primaryLabelId = t.labels?.length > 0 ? t.labels[0].id : null;
-                const primaryLabelData = primaryLabelId ? labels?.find(l => l.id === primaryLabelId) : null;
-                const themeTextColor = primaryLabelData ? (primaryLabelData.color.match(/text-[a-z]+-\d+/) || ['text-zinc-500'])[0] : 'text-zinc-500';
-                
-                let ThemeIcon: any = TagIcon;
-                if (primaryLabelData?.name === 'Design') ThemeIcon = PenTool;
-                else if (primaryLabelData?.name === 'Copy') ThemeIcon = Type;
-                else if (primaryLabelData?.name === 'Tarefa') ThemeIcon = CheckSquare;
-                else if (primaryLabelData?.name === 'Orçamento') ThemeIcon = DollarSign;
-                else if (primaryLabelData?.name === 'Social Media') ThemeIcon = Share2;
-                
-                return (
-                  <div key={t.id} onClick={() => onSelectTask?.(t)} className="group flex items-center gap-2 bg-[#121214] hover:bg-[#161619] border border-zinc-900/60 hover:border-zinc-800 rounded-md px-2.5 py-1.5 transition-all duration-150 cursor-pointer">
-                    <div className={`shrink-0 ${themeTextColor}`}><ThemeIcon size={12} /></div>
-                    <span className="flex-1 text-[11px] font-medium text-zinc-200 truncate min-w-0" title={t.title}>
-                      {t.title.length > 35 ? t.title.slice(0, 35) + '…' : t.title}
-                    </span>
-                    <div className="shrink-0 flex items-center justify-center text-red-500" title="Urgente"><ChevronsUp size={14} /></div>
-                    {t.dueDate && (() => {
-                      const [, m, d] = t.dueDate.split('-');
-                      const isOverdue = t.status !== 'done' && t.dueDate < today.toISOString().split('T')[0];
-                      return <span className={`text-[9px] font-mono shrink-0 ${isOverdue ? 'text-red-400' : 'text-zinc-300'}`}>{d}/{m}</span>;
-                    })()}
-                    <div onClick={(e) => e.stopPropagation()}>
-                      <DatePicker
-                        value={t.reminderDate || ''}
-                        align="right"
-                        disableAutoScroll
-                        onChange={(date) => { onUpdateTask?.({ ...t, reminderDate: date || undefined }); }}
-                        enableTime={true}
-                        onQuickAdd={() => { const d = new Date(); d.setDate(d.getDate() + 1); onUpdateTask?.({ ...t, reminderDate: `${d.toISOString().split('T')[0]}T09:00` }); }}
-                        trigger={
-                          <button type="button" className={`shrink-0 transition-colors ${t.reminderDate ? 'text-amber-400' : 'text-zinc-700 hover:text-zinc-500'}`} title={t.reminderDate ? 'Desativar lembrete' : 'Ativar lembrete'}>
-                            <Bell size={12} className={t.reminderDate ? 'fill-amber-400' : ''} />
-                          </button>
-                        }
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Próximos prazos */}
-          <div className="flex flex-col bg-[#121214] border border-zinc-900 rounded-xl overflow-hidden shadow-sm shadow-black/20">
-            <div className="flex items-center justify-between px-4 py-2.5 border-b border-zinc-900 bg-[#08080a]">
-              <div className="flex items-center gap-2 text-zinc-400 font-bold text-[10px] uppercase tracking-[0.15em]">
-                <Calendar size={12} className="text-zinc-500" /> Próximos prazos
-              </div>
-              <button className="text-[10px] font-mono text-zinc-500 hover:text-zinc-300 transition-colors uppercase tracking-wider font-semibold">Ver todas</button>
-            </div>
-            <div className="flex flex-col p-2 gap-1 card-list-h overflow-y-auto scrollbar-minimal">
-              {proximosPrazos.length === 0 ? (
-                <div className="flex-1 flex flex-col items-center justify-center text-zinc-500 py-10 opacity-70">
-                  <span className="text-xs">Tudo em dia!</span>
-                </div>
-              ) : proximosPrazos.map((t) => {
-                const primaryLabelId = t.labels?.length > 0 ? t.labels[0].id : null;
-                const primaryLabelData = primaryLabelId ? labels?.find(l => l.id === primaryLabelId) : null;
-                const themeTextColor = primaryLabelData ? (primaryLabelData.color.match(/text-[a-z]+-\d+/) || ['text-zinc-500'])[0] : 'text-zinc-500';
-                
-                let ThemeIcon: any = TagIcon;
-                if (primaryLabelData?.name === 'Design') ThemeIcon = PenTool;
-                else if (primaryLabelData?.name === 'Copy') ThemeIcon = Type;
-                else if (primaryLabelData?.name === 'Tarefa') ThemeIcon = CheckSquare;
-                else if (primaryLabelData?.name === 'Orçamento') ThemeIcon = DollarSign;
-                else if (primaryLabelData?.name === 'Social Media') ThemeIcon = Share2;
-                
-                const isDelayed = new Date(t.dueDate!) < today;
-
-                return (
-                  <div key={t.id} onClick={() => onSelectTask?.(t)} className={`group flex items-center gap-2 hover:bg-[#161619] border rounded-md px-2.5 py-1.5 transition-all duration-150 cursor-pointer ${isDelayed ? 'bg-red-500/5 border-red-500/20' : 'bg-[#121214] border-zinc-900/60 hover:border-zinc-800'}`}>
-                    <div className={`shrink-0 ${themeTextColor}`}><ThemeIcon size={12} /></div>
-                    <span className="flex-1 text-[11px] font-medium text-zinc-200 truncate min-w-0" title={t.title}>
-                      {t.title.length > 35 ? t.title.slice(0, 35) + '…' : t.title}
-                    </span>
-                    {t.priority === 'urgent' && <div className="shrink-0 flex items-center justify-center text-red-500" title="Urgente"><ChevronsUp size={14} /></div>}
-                    {t.priority === 'high' && <div className="shrink-0 flex items-center justify-center text-orange-400" title="Alta"><ChevronUp size={14} /></div>}
-                    {t.priority === 'medium' && <div className="shrink-0 flex items-center justify-center text-blue-500" title="Média"><Minus size={14} /></div>}
-                    {t.priority === 'low' && <div className="shrink-0 flex items-center justify-center text-emerald-500" title="Baixa"><ChevronDown size={14} /></div>}
-                    {t.dueDate && (() => {
-                      const [, m, d] = t.dueDate.split('-');
-                      return <span className={`text-[9px] font-mono shrink-0 ${isDelayed ? 'text-red-400 font-bold' : 'text-zinc-300'}`}>{d}/{m}</span>;
-                    })()}
-                    <div onClick={(e) => e.stopPropagation()}>
-                      <DatePicker
-                        value={t.reminderDate || ''}
-                        align="right"
-                        disableAutoScroll
-                        onChange={(date) => { onUpdateTask?.({ ...t, reminderDate: date || undefined }); }}
-                        enableTime={true}
-                        onQuickAdd={() => { const d = new Date(); d.setDate(d.getDate() + 1); onUpdateTask?.({ ...t, reminderDate: `${d.toISOString().split('T')[0]}T09:00` }); }}
-                        trigger={
-                          <button type="button" className={`shrink-0 transition-colors ${t.reminderDate ? 'text-amber-400' : 'text-zinc-700 hover:text-zinc-500'}`} title={t.reminderDate ? 'Desativar lembrete' : 'Ativar lembrete'}>
-                            <Bell size={12} className={t.reminderDate ? 'fill-amber-400' : ''} />
-                          </button>
-                        }
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          </div>
-          )}
-
-          {/* MEUS DOCUMENTOS */}
-          <div className={`mt-4 min-h-0 ${docsExpanded ? 'flex-1 flex flex-col' : ''}`}>
-            <MyDocuments expanded={docsExpanded} onToggleExpand={() => setDocsExpanded(v => !v)} />
-          </div>
+        {/* 3. Minhas tarefas em largura total */}
+        <div ref={quadroRef} className="min-w-0 scroll-mt-4">
+          <MinhasTarefasQuadro
+            proximas={proximas}
+            atrasadas={atrasadas}
+            concluidas={concluidas}
+            projects={projects}
+            labels={labels}
+            onSelectTask={onSelectTask}
+            onUpdateTask={onUpdateTask}
+            aba={aba}
+            onAbaChange={setAba}
+            onNovaTarefa={onNewTask}
+            filtroStatus={filtroStatus}
+            onLimparFiltro={() => setFiltroStatus(null)}
+            limiteLinhas={LINHAS_VISIVEIS}
+          />
         </div>
-  </div>
+
+        {/* 4. Meus projetos (2/3) + Notificações (1/3). Sem projetos, o
+            wrapper fica vazio (`empty:hidden`) e Notificações ocupa a linha. */}
+        <div className="flex flex-col lg:flex-row items-stretch view-gap-sm">
+          <div className="min-w-0 lg:flex-[2] empty:hidden">
+            {onAbrirProjeto && <MeusProjetosQuadro tasks={tasks} projects={projects} onAbrirProjeto={onAbrirProjeto} />}
+          </div>
+          <PainelNotificacoes
+            className="min-w-0 lg:flex-1"
+            tasks={tasks}
+            onSelectTask={onSelectTask}
+            onOpenInbox={onOpenInbox}
+          />
+        </div>
+      </div>
     </div>
   );
 }

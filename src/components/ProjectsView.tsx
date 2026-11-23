@@ -62,8 +62,8 @@ function DeleteProjectDialog({ project, onCancel, onConfirm }: {
               <AlertTriangle size={15} className="text-red-400" />
             </div>
             <div className="min-w-0">
-              <h3 className="text-sm font-semibold text-zinc-100">Excluir empreendimento</h3>
-              <p className="text-[11px] text-zinc-500 truncate">{project.name}</p>
+              <h3 className="text-body font-semibold text-zinc-100">Excluir empreendimento</h3>
+              <p className="text-caption text-zinc-500 truncate">{project.name}</p>
             </div>
           </div>
           <button onClick={onCancel} className="p-1 text-zinc-600 hover:text-zinc-200 hover:bg-zinc-800 rounded transition-colors shrink-0">
@@ -72,20 +72,20 @@ function DeleteProjectDialog({ project, onCancel, onConfirm }: {
         </div>
 
         <div className="p-4 flex flex-col gap-3 overflow-y-auto">
-          {erro && <p className="text-[11px] text-red-400">{erro}</p>}
+          {erro && <p className="text-caption text-red-400">{erro}</p>}
 
           {!impact && !erro ? (
-            <div className="flex items-center gap-2 text-[11px] text-zinc-500 py-2">
+            <div className="flex items-center gap-2 text-caption text-zinc-500 py-2">
               <Loader2 size={13} className="animate-spin" /> Levantando o que será apagado...
             </div>
           ) : impact && (
             <>
               {linhas.length > 0 ? (
                 <div className="flex flex-col gap-1.5">
-                  <p className="text-[11px] text-zinc-400">Esta ação apaga permanentemente, junto com o empreendimento:</p>
+                  <p className="text-caption text-zinc-400">Esta ação apaga permanentemente, junto com o empreendimento:</p>
                   <div className="flex flex-col rounded-lg border border-zinc-800 overflow-hidden">
                     {linhas.map(([label, n]) => (
-                      <div key={label} className="flex items-center justify-between gap-3 px-3 py-1.5 text-[11px] bg-zinc-900/40 border-b border-zinc-800/60 last:border-b-0">
+                      <div key={label} className="flex items-center justify-between gap-3 px-3 py-1.5 text-caption bg-zinc-900/40 border-b border-zinc-800/60 last:border-b-0">
                         <span className="text-zinc-400">{label}</span>
                         <span className="text-red-400 font-semibold tabular-nums">{n}</span>
                       </div>
@@ -93,11 +93,11 @@ function DeleteProjectDialog({ project, onCancel, onConfirm }: {
                   </div>
                 </div>
               ) : (
-                <p className="text-[11px] text-zinc-400">Este empreendimento não tem tarefas nem tabela de vendas vinculadas.</p>
+                <p className="text-caption text-zinc-400">Este empreendimento não tem tarefas nem tabela de vendas vinculadas.</p>
               )}
 
               {impact.temLp && (
-                <p className="text-[11px] text-amber-400/90 flex items-start gap-1.5">
+                <p className="text-caption text-amber-400/90 flex items-start gap-1.5">
                   <AlertTriangle size={12} className="shrink-0 mt-0.5" />
                   A página pública da Tabela Corretor sai do ar junto.
                 </p>
@@ -106,14 +106,14 @@ function DeleteProjectDialog({ project, onCancel, onConfirm }: {
               {/* Títulos se ligam por nome, não por chave: o cascade não os
                   alcança e eles sobrevivem apontando para um nome extinto. */}
               {impact.titulos > 0 && (
-                <p className="text-[11px] text-amber-400/90 flex items-start gap-1.5">
+                <p className="text-caption text-amber-400/90 flex items-start gap-1.5">
                   <AlertTriangle size={12} className="shrink-0 mt-0.5" />
                   {impact.titulos} {impact.titulos === 1 ? 'título financeiro continua' : 'títulos financeiros continuam'} no sistema, mas {impact.titulos === 1 ? 'fica órfão' : 'ficam órfãos'} — o gasto some do Dashboard Analítico.
                 </p>
               )}
 
               <div className="flex flex-col gap-1.5 pt-1">
-                <label className="text-[11px] text-zinc-400">
+                <label className="text-caption text-zinc-400">
                   Digite <span className="text-zinc-200 font-semibold">{project.name}</span> para confirmar:
                 </label>
                 <input
@@ -121,7 +121,7 @@ function DeleteProjectDialog({ project, onCancel, onConfirm }: {
                   value={confirmText}
                   onChange={e => setConfirmText(e.target.value)}
                   placeholder={project.name}
-                  className="w-full bg-zinc-900/60 border border-zinc-800 rounded-lg px-3 py-2 text-xs text-zinc-100 placeholder-zinc-700 outline-none focus:border-red-500/50 transition-colors"
+                  className="w-full bg-zinc-900/60 border border-zinc-800 rounded-lg px-3 py-2 text-caption text-zinc-100 placeholder-zinc-700 outline-none focus:border-red-500/50 transition-colors"
                 />
               </div>
             </>
@@ -129,13 +129,13 @@ function DeleteProjectDialog({ project, onCancel, onConfirm }: {
         </div>
 
         <div className="flex items-center justify-end gap-2 p-4 border-t border-zinc-900">
-          <button onClick={onCancel} className="px-3 py-1.5 text-xs font-medium text-zinc-400 hover:text-zinc-200 transition-colors">
+          <button onClick={onCancel} className="px-3 py-1.5 text-caption font-medium text-zinc-400 hover:text-zinc-200 transition-colors">
             Cancelar
           </button>
           <button
             disabled={!podeExcluir}
             onClick={async () => { setExcluindo(true); try { await onConfirm(); } finally { setExcluindo(false); } }}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors text-white bg-red-600 hover:bg-red-500 disabled:bg-zinc-800 disabled:text-zinc-600 disabled:cursor-not-allowed"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-caption font-semibold rounded-lg transition-colors btn-danger-soft disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {excluindo ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
             {excluindo ? 'Excluindo...' : 'Excluir permanentemente'}
@@ -299,8 +299,8 @@ export default function ProjectsView({
       <div className="flex items-center justify-between bg-zinc-950/50 p-4 rounded-lg border border-zinc-900">
         <div className="flex items-center gap-2">
           <PieChart size={14} className="text-zinc-400" />
-          <h2 className="text-xs font-semibold text-zinc-350 uppercase tracking-widest font-mono">Workspace Empreendimentos</h2>
-          <span className="text-[9px] bg-zinc-900 text-zinc-500 py-0.5 px-2 rounded-full font-mono font-medium border border-zinc-800">
+          <h2 className="text-title font-semibold text-zinc-100">Workspace Empreendimentos</h2>
+          <span className="text-caption bg-zinc-900 text-zinc-500 py-0.5 px-2 rounded-full tabular-nums font-medium border border-zinc-800">
             {projects.length} Total
           </span>
         </div>
@@ -321,7 +321,7 @@ export default function ProjectsView({
               setShowAddForm(true);
             }
           }}
-          className="h-8 flex items-center gap-1.5 px-3 bg-zinc-800 hover:bg-zinc-750 text-zinc-100 rounded text-xs font-semibold border border-zinc-700/50 transition-all shadow-sm"
+          className="h-8 flex items-center gap-1.5 px-3 bg-zinc-800 hover:bg-zinc-750 text-zinc-100 rounded text-body font-medium border border-zinc-700/50 transition-all shadow-sm"
         >
           <FolderPlus size={12} />
           <span>Novo Empreendimento</span>
@@ -335,12 +335,12 @@ export default function ProjectsView({
           onSubmit={handleCreateProject}
           className="bg-zinc-950 p-4 rounded-lg border border-zinc-900 space-y-3 animate-fade-in max-w-lg"
         >
-          <h3 className="text-[10px] font-bold font-mono uppercase text-zinc-400">
+          <h3 className="text-body font-semibold tabular-nums text-zinc-400">
             {editingProjectId ? 'Editar Empreendimento' : 'Criar Novo Empreendimento'}
           </h3>
           <div className="grid grid-cols-2 gap-3">
             <div className="col-span-2">
-              <label className="text-[9px] text-zinc-550 font-bold uppercase block mb-1">Nome</label>
+              <label className="text-caption text-zinc-550 font-semibold block mb-1">Nome</label>
               <input
                 ref={nameInputRef}
                 type="text"
@@ -350,21 +350,21 @@ export default function ProjectsView({
                 onChange={(e) => setNewProjName(e.target.value)}
                 disabled={!!editingProjectId && !isAdmin}
                 title={editingProjectId && !isAdmin ? 'Renomear empreendimento é exclusivo do administrador' : undefined}
-                className="w-full bg-[#08080a] border border-zinc-900 p-2 text-xs rounded text-zinc-200 outline-none focus:border-zinc-750"
+                className="w-full bg-[#08080a] border border-zinc-900 p-2 text-caption rounded text-zinc-200 outline-none focus:border-zinc-750"
               />
             </div>
             <div>
-              <label className="text-[9px] text-zinc-550 font-bold uppercase block mb-1">Código / Matrícula</label>
+              <label className="text-caption text-zinc-550 font-semibold block mb-1">Código / Matrícula</label>
               <input
                 type="text"
                 placeholder="Ex. 34.0001.2589..."
                 value={newProjCode}
                 onChange={(e) => setNewProjCode(e.target.value)}
-                className="w-full bg-[#08080a] border border-zinc-900 p-2 text-xs rounded text-zinc-200 outline-none focus:border-zinc-750 font-mono"
+                className="w-full bg-[#08080a] border border-zinc-900 p-2 text-caption rounded text-zinc-200 outline-none focus:border-zinc-750 tabular-nums"
               />
             </div>
             <div>
-              <label className="text-[9px] text-zinc-550 font-bold uppercase block mb-1">Evolução da Obra ({newProjBuildProgress}%)</label>
+              <label className="text-caption text-zinc-550 font-semibold block mb-1">Evolução da Obra ({newProjBuildProgress}%)</label>
               <input
                 type="range"
                 min={0}
@@ -375,23 +375,23 @@ export default function ProjectsView({
               />
             </div>
             <div className="col-span-2">
-              <label className="text-[9px] text-zinc-550 font-bold uppercase block mb-1">URL da Imagem de Capa</label>
+              <label className="text-caption text-zinc-550 font-semibold block mb-1">URL da Imagem de Capa</label>
               <input
                 type="text"
                 placeholder="https://..."
                 value={newProjCoverImage}
                 onChange={(e) => setNewProjCoverImage(e.target.value)}
-                className="w-full bg-[#08080a] border border-zinc-900 p-2 text-xs rounded text-zinc-200 outline-none focus:border-zinc-750"
+                className="w-full bg-[#08080a] border border-zinc-900 p-2 text-caption rounded text-zinc-200 outline-none focus:border-zinc-750"
               />
             </div>
             <div className="col-span-2">
-              <label className="text-[9px] text-zinc-550 font-bold uppercase block mb-1">Descrição</label>
+              <label className="text-caption text-zinc-550 font-semibold block mb-1">Descrição</label>
               <textarea
                 placeholder="Ex. Lotes em Guaxuma..."
                 rows={2}
                 value={newProjDesc}
                 onChange={(e) => setNewProjDesc(e.target.value)}
-                className="w-full bg-[#08080a] border border-zinc-900 p-2 text-xs rounded text-zinc-200 outline-none focus:border-zinc-750 resize-none"
+                className="w-full bg-[#08080a] border border-zinc-900 p-2 text-caption rounded text-zinc-200 outline-none focus:border-zinc-750 resize-none"
               />
             </div>
 
@@ -401,8 +401,8 @@ export default function ProjectsView({
             <div className="col-span-2">
               <div className="flex items-center justify-between gap-3 bg-[#08080a] border border-zinc-900 rounded p-2.5">
                 <div className="min-w-0">
-                  <p className="text-[11px] font-medium text-zinc-300">Empreendimento de terceiros</p>
-                  <p className="text-[10px] text-zinc-600 mt-0.5">Não é da incorporadora. A Tabela Corretor se apresenta de outro jeito.</p>
+                  <p className="text-caption font-medium text-zinc-300">Empreendimento de terceiros</p>
+                  <p className="text-caption text-zinc-600 mt-0.5">Não é da incorporadora. A Tabela Corretor se apresenta de outro jeito.</p>
                 </div>
                 <button
                   type="button"
@@ -415,7 +415,7 @@ export default function ProjectsView({
               </div>
             </div>
           </div>
-          <div className="flex justify-end gap-2 text-xs">
+          <div className="flex justify-end gap-2 text-caption">
             <button
               type="button"
               onClick={handleCancelForm}
@@ -466,12 +466,12 @@ export default function ProjectsView({
                   {project.terceiros && (
                     <span
                       title="Empreendimento de terceiros — a Tabela Corretor se apresenta de outro jeito."
-                      className="text-[9px] font-mono font-bold uppercase tracking-wider text-amber-300 bg-amber-500/15 backdrop-blur-sm py-0.5 px-2 rounded-full border border-amber-400/30"
+                      className="text-caption tabular-nums font-semibold text-amber-300 bg-amber-500/15 backdrop-blur-sm py-0.5 px-2 rounded-full border border-amber-400/30"
                     >
                       Terceiros
                     </span>
                   )}
-                  <span className="text-[9px] font-mono font-bold uppercase tracking-wider text-zinc-200 bg-black/50 backdrop-blur-sm py-0.5 px-2 rounded-full border border-white/10">
+                  <span className="text-caption tabular-nums font-semibold text-zinc-200 bg-black/50 backdrop-blur-sm py-0.5 px-2 rounded-full border border-white/10">
                     {STATUS_LABEL[project.status]}
                   </span>
                 </div>
@@ -504,19 +504,19 @@ export default function ProjectsView({
               <div className="p-4 flex flex-col flex-1">
                 {/* Title row */}
                 <div className="flex items-start justify-between gap-2 mb-1">
-                  <h3 className="text-[13.5px] font-semibold text-zinc-100 truncate" title={project.name}>
+                  <h3 className="text-body font-semibold text-zinc-100 truncate" title={project.name}>
                     {project.name}
                   </h3>
                 </div>
                 {project.code && (
                   <div className="flex items-center gap-1.5 mb-3">
-                    <span className="text-[10px] font-mono text-zinc-600 truncate">{project.code}</span>
+                    <span className="text-caption tabular-nums text-zinc-600 truncate">{project.code}</span>
                     <CopyCodeButton code={project.code} />
                   </div>
                 )}
                 {!project.code && <div className="mb-3" />}
 
-                <p className="text-[11.5px] text-zinc-500 leading-relaxed line-clamp-2 mb-3.5">
+                <p className="text-caption text-zinc-500 leading-relaxed line-clamp-2 mb-3.5">
                   {project.description}
                 </p>
 
@@ -525,7 +525,7 @@ export default function ProjectsView({
                   {QUICK_SECTIONS.map(({ label, icon: Icon }) => (
                     <div
                       key={label}
-                      className="flex items-center gap-2 py-1 text-[11.5px] text-zinc-500"
+                      className="flex items-center gap-2 py-1 text-caption text-zinc-500"
                     >
                       <Icon size={12} className="text-zinc-600 shrink-0" />
                       <span className="truncate">{label}</span>
@@ -537,7 +537,7 @@ export default function ProjectsView({
 
                 {/* Build progress meter */}
                 <div className={`space-y-1.5 mt-3 mb-3 ${project.color}`}>
-                  <div className="flex items-center justify-between text-[10px] font-mono">
+                  <div className="flex items-center justify-between text-caption tabular-nums">
                     <span className="text-zinc-500">Evolução da Obra</span>
                     <span className="text-zinc-300 font-semibold">{buildProgress}%</span>
                   </div>
@@ -550,14 +550,14 @@ export default function ProjectsView({
                 </div>
 
                 {/* Tasks meta + open button */}
-                <div className="flex items-center justify-between pt-3 border-t border-zinc-900 text-[10px] text-zinc-600 font-mono mb-3">
+                <div className="flex items-center justify-between pt-3 border-t border-zinc-900 text-caption text-zinc-600 tabular-nums mb-3">
                   <span>{completedTasks}/{totalTasks} tarefas concluídas</span>
                   <span className="text-zinc-500">{progressPercent}%</span>
                 </div>
 
                 <button
                   onClick={(e) => { e.stopPropagation(); onSelectProjectFilter(project.id); }}
-                  className="w-full flex items-center justify-center gap-1.5 text-[11.5px] font-semibold text-zinc-300 bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 rounded-lg py-2 transition-colors group-hover:border-zinc-700"
+                  className="w-full flex items-center justify-center gap-1.5 text-body font-medium text-zinc-300 bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 rounded-lg py-2 transition-colors group-hover:border-zinc-700"
                 >
                   <span>Abrir Empreendimento</span>
                   <ChevronRight size={12} className="group-hover:translate-x-0.5 transition-transform" />

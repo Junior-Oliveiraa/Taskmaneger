@@ -39,7 +39,7 @@ export interface AcoesPost {
 export function EtapaChip({ etapa, className = '' }: { etapa: Etapa; className?: string }) {
   const e = etapaInfo(etapa);
   return (
-    <span className={`inline-flex items-center gap-1.5 text-[10px] font-semibold rounded-full px-2 py-0.5 ${e.fundo} ${e.texto} ${className}`}>
+    <span className={`inline-flex items-center gap-1.5 text-caption font-semibold rounded-full px-2 py-0.5 ${e.fundo} ${e.texto} ${className}`}>
       <span className="w-1.5 h-1.5 rounded-full" style={{ background: e.cor }} aria-hidden="true" />
       {e.label}
     </span>
@@ -70,7 +70,7 @@ export function Avatar({ pessoa, size = 22 }: { pessoa?: Pessoa; size?: number }
   return (
     <span
       title={pessoa.name}
-      className="rounded-full bg-zinc-800 text-zinc-200 font-bold flex items-center justify-center shrink-0 border border-zinc-700/60"
+      className="rounded-full bg-zinc-800 text-zinc-200 font-semibold flex items-center justify-center shrink-0 border border-zinc-700/60"
       style={{ width: size, height: size, fontSize: Math.max(8, Math.round(size * 0.4)) }}
     >
       {pessoa.initials || pessoa.name.slice(0, 2).toUpperCase()}
@@ -94,11 +94,11 @@ export function Miniatura({ post, proporcional, altura = 112 }: { post: PostView
       ) : (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-zinc-600">
           <ImageOff size={16} aria-hidden="true" />
-          <span className="text-[10px] font-medium">Sem peça ainda</span>
+          <span className="text-caption font-medium">Sem peça ainda</span>
         </div>
       )}
       {post.formato && (
-        <span className="absolute left-1.5 bottom-1.5 text-[9px] font-semibold text-zinc-100 bg-black/65 rounded px-1.5 py-0.5 backdrop-blur-sm">
+        <span className="absolute left-1.5 bottom-1.5 text-caption font-semibold text-zinc-100 bg-black/65 rounded px-1.5 py-0.5 backdrop-blur-sm">
           {post.formato}
         </span>
       )}
@@ -114,14 +114,14 @@ export function BotoesAprovacao({ post, acoes }: { post: PostView; acoes: AcoesP
       <button
         type="button"
         onClick={() => acoes.pedirRefacao(post)}
-        className="flex-1 h-8 rounded-md text-[11px] font-semibold text-zinc-300 border border-zinc-700 hover:border-red-500/40 hover:text-red-300 hover:bg-red-500/10 transition-colors"
+        className="flex-1 h-8 rounded-md text-caption font-semibold text-zinc-300 border border-zinc-700 hover:border-red-500/40 hover:text-red-300 hover:bg-red-500/10 transition-colors"
       >
         Pedir refação
       </button>
       <button
         type="button"
         onClick={() => acoes.aprovar(post)}
-        className="flex-1 h-8 rounded-md text-[11px] font-semibold text-emerald-300 bg-emerald-500/10 border border-emerald-500/25 hover:bg-emerald-500/20 transition-colors"
+        className="flex-1 h-8 rounded-md text-caption font-semibold text-emerald-300 bg-emerald-500/10 border border-emerald-500/25 hover:bg-emerald-500/20 transition-colors"
       >
         Aprovar
       </button>
@@ -132,8 +132,8 @@ export function BotoesAprovacao({ post, acoes }: { post: PostView; acoes: AcoesP
 export function Vazio({ titulo, texto, acao }: { titulo: string; texto?: string; acao?: React.ReactNode }) {
   return (
     <div className="flex flex-col items-center justify-center text-center gap-2 py-10 px-6 border border-dashed border-zinc-800/80 rounded-xl">
-      <div className="text-sm font-semibold text-zinc-300">{titulo}</div>
-      {texto && <div className="text-xs text-zinc-500 max-w-sm leading-relaxed">{texto}</div>}
+      <div className="text-body font-semibold text-zinc-300">{titulo}</div>
+      {texto && <div className="text-caption text-zinc-500 max-w-sm leading-relaxed">{texto}</div>}
       {acao}
     </div>
   );

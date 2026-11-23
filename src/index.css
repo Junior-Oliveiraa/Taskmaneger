@@ -3,12 +3,9 @@
 /* Folha de impressão da LP do Corretor (tema claro, só dentro de @media print). */
 @import "./lp-print.css";
 
-@import "@fontsource/inter/200.css";
-@import "@fontsource/inter/300.css";
-@import "@fontsource/inter/400.css";
-@import "@fontsource/inter/500.css";
-@import "@fontsource/inter/600.css";
-@import "@fontsource/inter/700.css";
+/* Geist (variável, 100–900 num arquivo só): desenho geométrico e mais
+   compacto que a Inter, com algarismos limpos para dados. */
+@import "@fontsource-variable/geist";
 
 /* ============================================================================
    ORBIT — SISTEMA DE TEMA (DUAL: ESCURO + CLARO)
@@ -28,7 +25,27 @@
    ========================================================================== */
 
 @theme {
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Geist Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  /* Escala tipográfica: um tamanho de interface (14) e um de apoio (12). Título
+     (24) e número (32/40) aparecem uma vez por tela. O resto da hierarquia é cor
+     (cinza → branco) e peso (400 → 500 → 600), nunca ±1px, maiúsculas ou bold. */
+  --text-caption: 0.75rem;            /* 12 — metadados, datas, eixos, selos */
+  --text-caption--line-height: 1rem;
+  --text-body: 0.875rem;              /* 14 — linhas, rótulos, botões, abas */
+  --text-body--line-height: 1.25rem;
+  --text-heading: 0.875rem;           /* 14 — título de card/seção: igual ao corpo, muda só o peso */
+  --text-heading--line-height: 1.25rem;
+  --text-heading--letter-spacing: 0;
+  --text-title: 1.5rem;               /* 24 — título da página */
+  --text-title--line-height: 2rem;
+  --text-title--letter-spacing: -0.025em;
+  --text-metric: 2rem;                /* 32 — número de indicador */
+  --text-metric--line-height: 1;
+  --text-metric--letter-spacing: -0.035em;
+  --text-display: 2.5rem;             /* 40 — número de destaque */
+  --text-display--line-height: 1;
+  --text-display--letter-spacing: -0.04em;
   --color-slate-*: initial;
   --color-gray-*: initial;
   --color-zinc-*: initial;
@@ -145,11 +162,25 @@
   --color-indigo-500: var(--t-a-indigo-500);
   --color-indigo-600: var(--t-a-indigo-600);
 
+  --color-teal-400: var(--t-a-teal-400);
   --color-sky-400: var(--t-a-sky-400);
   --color-sky-500: var(--t-a-sky-500);
 
   --color-rose-400: var(--t-a-rose-400);
   --color-rose-500: var(--t-a-rose-500);
+
+  /* Marca, sinal e superfícies semânticas (valores por tema mais abaixo). */
+  --color-brand-300: var(--brand-300);
+  --color-brand-400: var(--brand-400);
+  --color-brand-500: var(--brand-500);
+  --color-brand-700: var(--brand-700);
+  --color-danger-300: var(--danger-300);
+  --color-danger-400: var(--danger-400);
+  --color-danger-soft: var(--danger-soft-bg);
+  --color-danger-line: var(--danger-soft-border);
+  --color-warning-300: var(--warning-300);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
 
   --animate-slide-up: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   --animate-fade-in: fadeIn 0.2s ease-out;
@@ -275,29 +306,35 @@
   --t-n-300: #d4d4d8;
   --t-n-350: #bbbbc2;
   --t-n-400: #a1a1aa;
-  --t-n-450: #8a8a93;
-  --t-n-500: #71717a;
-  --t-n-550: #62626b;
-  --t-n-555: #5d5d66;
-  --t-n-600: #52525b;
-  --t-n-650: #44444c;
-  --t-n-700: #3f3f46;
-  --t-n-750: #333338;
-  --t-n-800: #27272a;
-  --t-n-805: #26262a;
-  --t-n-850: #1f1f23;
-  --t-n-900: #18181b;
-  --t-n-950: #09090b;
+  /* Escuro "elevado": o canvas sai do quase-preto (#08080a) para um grafite.
+     Os textos 450..600 subiram junto para manter o contraste sobre o card
+     mais claro. 500 é o texto secundário/terciário (metadados, eixos,
+     cabeçalhos de coluna) e precisa de AA (4.5:1) nas três superfícies:
+     canvas #19191c 5.5:1 · card #222226 4.9:1 · card-2 (hover) #28282d 4.6:1. */
+  --t-n-450: #9a9aa4;
+  --t-n-500: #8e8e98;
+  --t-n-550: #74747e;
+  --t-n-555: #70707a;
+  --t-n-600: #64646d;
+  --t-n-650: #55555d;
+  --t-n-700: #45454c;
+  --t-n-750: #3a3a40;
+  --t-n-800: #303036;
+  --t-n-805: #2e2e34;
+  --t-n-850: #28282d;
+  --t-n-900: #222226;
+  --t-n-950: #19191c;
 
-  /* Superfícies semânticas (usadas pelos overrides de hex e por .rte-*) */
-  --t-canvas:    #08080a;
-  --t-well:      #0c0c0e;
-  --t-card:      #121214;
-  --t-card-2:    #161619;
-  --t-chip:      #18181b;
-  --t-chip-2:    #1f1f22;
-  --t-chip-3:    #27272a;
-  --t-hairline:  #30363d;
+  /* Superfícies semânticas (usadas pelos overrides de hex e por .rte-*).
+     Degraus de ~3–4% de luminosidade: canvas < well < card < card-2 < chip. */
+  --t-canvas:    #19191c;
+  --t-well:      #1d1d20;
+  --t-card:      #222226;
+  --t-card-2:    #28282d;
+  --t-chip:      #2c2c31;
+  --t-chip-2:    #323238;
+  --t-chip-3:    #38383e;
+  --t-hairline:  #404047;
   --t-tint-cool: #1f2937;
 
   /* Texto semântico */
@@ -309,11 +346,13 @@
   --t-text-6: #3a3a3e;
 
   /* Bordas semânticas */
-  --t-border-subtle: #18181b;
-  --t-border:        #27272a;
-  --t-border-strong: #3f3f46;
-  --t-border-focus:  #52525b;
-  --t-border-loud:   #71717a;
+  /* Bordas como luz branca de baixa opacidade (6–14%): se adaptam a qualquer
+     degrau de superfície em vez de "furar" a camada com um cinza fixo. */
+  --t-border-subtle: rgb(255 255 255 / 0.07);
+  --t-border:        rgb(255 255 255 / 0.10);
+  --t-border-strong: rgb(255 255 255 / 0.14);
+  --t-border-focus:  rgb(255 255 255 / 0.22);
+  --t-border-loud:   rgb(255 255 255 / 0.32);
 
   /* Acentos pontuais (hex literais do código) */
   --t-danger:      #f85149;
@@ -334,14 +373,70 @@
   --t-brand-soft:  #8b8bf0;
   --t-info:        #3b82f6;
 
+  /* ── Marca: degradê azul ──────────────────────────────────────────────
+     Reservado a destaques: 1 card hero por tela, ícones de métrica, gráficos,
+     estados ativos e o "+ Novo". Cards comuns e listas ficam neutros. */
+  --brand-300: #93c5fd;
+  --brand-400: #3b82f6;
+  --brand-500: #2563eb;
+  --brand-700: #1d4ed8;
+  --brand-900: #172554;
+  --brand-tint: linear-gradient(135deg, rgb(37 99 235 / 0.18), rgb(37 99 235 / 0.06));
+  /* Começa no 500 e não no 400: branco sobre #3b82f6 dá 3,7:1 (abaixo de AA). */
+  --brand-solid: linear-gradient(180deg, var(--brand-500), var(--brand-700));
+  --brand-solid-hover: linear-gradient(180deg, #2f6bee, #2156e0);
+
+  /* Card hero: mesma receita do card "Atrasadas" do Início — superfície de card,
+     véu de 10% no canto e borda fina, sem brilho externo. */
+  --card-hero-bg: radial-gradient(120% 90% at 0% 0%, rgb(59 130 246 / 0.10), transparent 70%);
+  --card-hero-border: rgb(59 130 246 / 0.30);
+  --card-hero-border-hover: rgb(59 130 246 / 0.45);
+
+  --brand-underline: linear-gradient(90deg, var(--brand-400), var(--brand-700));
+
+  /* Toggle segmentado: trilho rebaixado e pílula neutra elevada. O azul fica só
+     no ícone e no contador do segmento ativo. */
+  --segment-track: rgb(0 0 0 / 0.28);
+  --segment-track-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.07), inset 0 1px 2px rgb(0 0 0 / 0.35);
+  --segment-thumb: linear-gradient(135deg, rgb(59 130 246 / 0.24), rgb(37 99 235 / 0.10));
+  --segment-thumb-border: rgb(96 165 250 / 0.40);
+  --segment-thumb-shadow: inset 0 1px 0 rgb(255 255 255 / 0.10), 0 1px 2px rgb(0 0 0 / 0.45), 0 2px 6px -2px rgb(0 0 0 / 0.40);
+
+  /* Item ativo da sidebar: véu azul, sem borda. */
+  --accent-surface: linear-gradient(180deg, rgb(59 130 246 / 0.22) 0%, rgb(37 99 235 / 0.10) 100%);
+
+
+  --icon-tile-bg: linear-gradient(145deg, rgb(59 130 246 / 0.16), rgb(59 130 246 / 0.08));
+  --icon-tile-border: rgb(59 130 246 / 0.25);
+  --icon-tile-fg: #60a5fa;
+  --icon-tile-highlight: inset 0 1px 0 rgb(255 255 255 / 0.12);
+
+  --chart-fill: linear-gradient(180deg, #60a5fa 0%, #1d4ed8 100%);
+  --chart-area: linear-gradient(180deg, rgb(59 130 246 / 0.35) 0%, rgb(59 130 246 / 0) 100%);
+
+  /* ── Sinal: urgência sem vermelho chapado ────────────────────────────
+     Vermelho sólido de fundo não é usado em badge, chip, linha ou botão. */
+  --danger-400: #f87171;
+  --danger-300: #fca5a5;
+  --danger-soft-bg: rgb(239 68 68 / 0.14);
+  --danger-soft-border: rgb(239 68 68 / 0.30);
+  --danger-soft-hover: rgb(239 68 68 / 0.22);
+  --danger-dot-glow: 0 0 6px rgb(239 68 68 / 0.55);
+  --warning-300: #fcd34d;
+  --warning-soft-bg: rgb(245 158 11 / 0.14);
+  --warning-soft-border: rgb(245 158 11 / 0.30);
+
+  --surface-2: var(--t-card-2);
+  --surface-3: var(--t-chip-2);
+
   /* Controles do editor sobre a toolbar. No escuro a toolbar é --t-canvas e o
      controle ativo é mais claro; no claro a lógica inverte (a toolbar é cinza e
      o controle fica branco), então `bg-zinc-800` não serve para os dois. */
-  --t-control-hover:  #27272a;
-  --t-control-active: #27272a;
+  --t-control-hover:  #303036;
+  --t-control-active: #303036;
 
   /* Gráficos (SiengeSpendChart) */
-  --t-chart-grid:      #1f1f22;
+  --t-chart-grid:      #2c2c31;
   --t-chart-wash:      rgba(255, 255, 255, 0.03);
   --t-chart-crosshair: rgba(255, 255, 255, 0.12);
 
@@ -424,6 +519,7 @@
   --t-a-indigo-500: #6366f1;
   --t-a-indigo-600: #4f46e5;
 
+  --t-a-teal-400: #2dd4bf;
   --t-a-sky-400: #38bdf8;
   --t-a-sky-500: #0ea5e9;
 
@@ -518,6 +614,48 @@
   --t-brand-soft:  #5d61d6;
   --t-info:        #2563eb;
 
+  /* Equivalentes claros: o azul fica, as opacidades caem e o texto desce para a
+     ponta escura da rampa (AA sobre os tints). O hero claro é pálido, não escuro. */
+  --brand-300: #1e40af;
+  --brand-400: #2563eb;
+  --brand-500: #2563eb;
+  --brand-700: #1d4ed8;
+  --brand-900: #dbeafe;
+  --brand-tint: linear-gradient(135deg, rgb(37 99 235 / 0.14), rgb(37 99 235 / 0.07));
+  --brand-solid-hover: linear-gradient(180deg, #1d4ed8, #1e40af);
+
+  --card-hero-bg: radial-gradient(120% 90% at 0% 0%, rgb(37 99 235 / 0.08), transparent 70%);
+  --card-hero-border: rgb(37 99 235 / 0.30);
+  --card-hero-border-hover: rgb(37 99 235 / 0.45);
+
+  --segment-track: rgb(23 25 31 / 0.07);
+  --segment-track-shadow: inset 0 0 0 1px rgb(23 25 31 / 0.08), inset 0 1px 2px rgb(23 25 31 / 0.06);
+  --segment-thumb: linear-gradient(135deg, rgb(37 99 235 / 0.16), rgb(37 99 235 / 0.06));
+  --segment-thumb-border: rgb(37 99 235 / 0.34);
+  --segment-thumb-shadow: 0 0 0 1px rgb(23 25 31 / 0.06), 0 1px 2px rgb(23 25 31 / 0.14), 0 2px 6px -2px rgb(23 25 31 / 0.12);
+
+  --accent-surface: linear-gradient(180deg, rgb(37 99 235 / 0.16) 0%, rgb(37 99 235 / 0.08) 100%);
+
+
+  --icon-tile-bg: linear-gradient(145deg, rgb(37 99 235 / 0.12), rgb(37 99 235 / 0.06));
+  --icon-tile-border: rgb(37 99 235 / 0.25);
+  --icon-tile-fg: #1d4ed8;
+  --icon-tile-highlight: inset 0 1px 0 rgb(255 255 255 / 0.45);
+
+  --danger-400: #b91c1c;
+  --danger-300: #991b1b;
+  --danger-soft-bg: rgb(220 38 38 / 0.10);
+  --danger-soft-border: rgb(220 38 38 / 0.28);
+  --danger-soft-hover: rgb(220 38 38 / 0.16);
+  --danger-dot-glow: none;
+  --warning-300: #854d0e;
+  --warning-soft-bg: rgb(217 119 6 / 0.12);
+  --warning-soft-border: rgb(217 119 6 / 0.30);
+
+  /* No claro, "elevado" é mais cinza que o canvas não funcionaria: chips ficam brancos. */
+  --surface-2: var(--t-card);
+  --surface-3: var(--t-chip-2);
+
   --t-control-hover:  #f4f5f7;
   --t-control-active: #fcfcfd;
 
@@ -605,6 +743,7 @@
   --t-a-indigo-500: #4f46e5;
   --t-a-indigo-600: #4338ca;
 
+  --t-a-teal-400: #0f766e;
   --t-a-sky-400: #0369a1;
   --t-a-sky-500: #0369a1;
 
@@ -616,6 +755,114 @@
   body {
     @apply antialiased text-zinc-200 selection:bg-blue-500/30 selection:text-blue-200 transition-colors duration-300;
   }
+}
+
+/* ============================================================================
+   OVERRIDES DO TEMA ESCURO (superfícies elevadas)
+   ----------------------------------------------------------------------------
+   As views usam hex arbitrários (bg-[#121214]) que, no escuro, iam direto para
+   o CSS sem passar pelos tokens. Aqui cada família de hex aponta para o seu
+   token, então a paleta escura é ajustada em um lugar só (--t-canvas…).
+
+   `:where(.dark)` zera a especificidade do prefixo: a regra empata com a
+   utility original (0,1,0) e vence só pela ordem. Assim `hover:`, `focus:` e
+   `group-hover:` (0,2,0) continuam valendo por cima da cor base.
+   ========================================================================== */
+@layer utilities {
+  /* Canvas */
+  :where(.dark) .bg-\[\#08080a\],
+  :where(.dark) .bg-\[\#0a0a0c\],
+  :where(.dark) .bg-\[\#0A0A0A\],
+  :where(.dark) .bg-\[\#0b0b0e\] { background-color: var(--t-canvas); }
+  :where(.dark) .bg-\[\#08080a\]\/95 { background-color: color-mix(in srgb, var(--t-canvas) 95%, transparent); }
+  :where(.dark) .bg-\[\#08080a\]\/60 { background-color: color-mix(in srgb, var(--t-canvas) 60%, transparent); }
+  :where(.dark) .bg-\[\#08080a\]\/40 { background-color: color-mix(in srgb, var(--t-canvas) 40%, transparent); }
+
+  /* Well (recuado) */
+  :where(.dark) .bg-\[\#0c0c0e\],
+  :where(.dark) .bg-\[\#0C0C0E\],
+  :where(.dark) .bg-\[\#0d0d10\],
+  :where(.dark) .bg-\[\#0D0D0F\],
+  :where(.dark) .bg-\[\#0e0e10\],
+  :where(.dark) .bg-\[\#0e0e11\],
+  :where(.dark) .bg-\[\#0f0f12\],
+  :where(.dark) .bg-\[\#0d1117\] { background-color: var(--t-well); }
+  :where(.dark) .bg-\[\#0d1117\]\/95 { background-color: color-mix(in srgb, var(--t-well) 95%, transparent); }
+  :where(.dark) .bg-\[\#0d1117\]\/50 { background-color: color-mix(in srgb, var(--t-well) 50%, transparent); }
+
+  /* Card */
+  :where(.dark) .bg-\[\#111113\],
+  :where(.dark) .bg-\[\#121214\],
+  :where(.dark) .bg-\[\#141417\],
+  :where(.dark) .bg-\[\#141418\] { background-color: var(--t-card); }
+  :where(.dark) .bg-\[\#121214\]\/40 { background-color: color-mix(in srgb, var(--t-card) 40%, transparent); }
+  :where(.dark) .bg-\[\#121214\]\/30 { background-color: color-mix(in srgb, var(--t-card) 30%, transparent); }
+
+  /* Card elevado / hover de linha */
+  :where(.dark) .bg-\[\#151519\],
+  :where(.dark) .bg-\[\#15151A\],
+  :where(.dark) .bg-\[\#161619\],
+  :where(.dark) .bg-\[\#17171b\],
+  :where(.dark) .bg-\[\#161b22\] { background-color: var(--t-card-2); }
+
+  /* Chips, menus, popovers */
+  :where(.dark) .bg-\[\#18181b\],
+  :where(.dark) .bg-\[\#1a1a1e\],
+  :where(.dark) .bg-\[\#1A1A1E\],
+  :where(.dark) .bg-\[\#1a1b1e\],
+  :where(.dark) .bg-\[\#1A1A1C\],
+  :where(.dark) .bg-\[\#1f1f23\] { background-color: var(--t-chip); }
+  :where(.dark) .bg-\[\#1C1C21\],
+  :where(.dark) .bg-\[\#1F1F22\] { background-color: var(--t-chip-2); }
+  :where(.dark) .bg-\[\#27272a\] { background-color: var(--t-chip-3); }
+  :where(.dark) .bg-\[\#30363d\] { background-color: var(--t-hairline); }
+  :where(.dark) .bg-\[\#30363d\]\/40 { background-color: color-mix(in srgb, var(--t-hairline) 55%, transparent); }
+
+  /* Gradientes de fade sobre conteúdo */
+  :where(.dark) .from-\[\#0c0c0e\] { --tw-gradient-from: var(--t-well); }
+  :where(.dark) .from-\[\#08080a\] { --tw-gradient-from: var(--t-canvas); }
+  :where(.dark) .to-\[\#08080a\] { --tw-gradient-to: var(--t-canvas); }
+  :where(.dark) .via-\[\#08080a\]\/90 { --tw-gradient-via: color-mix(in srgb, var(--t-canvas) 90%, transparent); }
+  :where(.dark) .via-\[\#08080a\]\/80 { --tw-gradient-via: color-mix(in srgb, var(--t-canvas) 80%, transparent); }
+  :where(.dark) .via-\[\#08080a\]\/40 { --tw-gradient-via: color-mix(in srgb, var(--t-canvas) 40%, transparent); }
+
+  /* Bordas: zinc-900 virou cor de card, então como borda ele sumiria sobre o
+     próprio card. Como borda, ele passa a ser hairline branca translúcida. */
+  :where(.dark) .border-zinc-900,
+  :where(.dark) .border-zinc-900\/80,
+  :where(.dark) .border-zinc-900\/60,
+  :where(.dark) .border-zinc-900\/50,
+  :where(.dark) .border-zinc-900\/40,
+  :where(.dark) .border-\[\#1A1A1E\],
+  :where(.dark) .border-\[\#18181C\],
+  :where(.dark) .border-\[\#0d1117\] { border-color: var(--t-border-subtle); }
+  :where(.dark) .divide-zinc-900 > :not(:last-child),
+  :where(.dark) .divide-zinc-900\/60 > :not(:last-child),
+  :where(.dark) .divide-zinc-900\/70 > :not(:last-child),
+  :where(.dark) .divide-\[\#1A1A1E\] > :not(:last-child) { border-color: var(--t-border-subtle); }
+  :where(.dark) .border-\[\#1F1F22\],
+  :where(.dark) .border-\[\#1F1F22\]\/60,
+  :where(.dark) .border-\[\#30363d\],
+  :where(.dark) .border-\[\#30363d\]\/45 { border-color: var(--t-border); }
+  :where(.dark) .border-\[\#08080a\] { border-color: var(--t-canvas); }
+  :where(.dark) .border-\[\#121214\] { border-color: var(--t-card); }
+
+  /* Estados sobre hex (0,2,0): mesma especificidade da utility de estado,
+     vencem pela ordem e trocam o hex antigo pelo token. */
+  :where(.dark) .hover\:bg-\[\#121214\]:hover { background-color: var(--t-card); }
+  :where(.dark) .hover\:bg-\[\#141418\]:hover,
+  :where(.dark) .hover\:bg-\[\#151519\]:hover,
+  :where(.dark) .hover\:bg-\[\#161619\]:hover,
+  :where(.dark) .hover\:bg-\[\#17171b\]:hover,
+  :where(.dark) .focus-within\:bg-\[\#161619\]:focus-within,
+  :where(.dark) .focus-visible\:bg-\[\#161619\]:focus-visible,
+  :where(.dark) .group:hover .group-hover\:bg-\[\#161619\] { background-color: var(--t-card-2); }
+  :where(.dark) .hover\:bg-\[\#18181b\]:hover,
+  :where(.dark) .hover\:bg-\[\#18181c\]:hover,
+  :where(.dark) .hover\:bg-\[\#1A1A1C\]:hover,
+  :where(.dark) .hover\:bg-\[\#1f1f23\]:hover { background-color: var(--t-chip); }
+  :where(.dark) .hover\:bg-\[\#1F1F22\]:hover { background-color: var(--t-chip-2); }
+  :where(.dark) .hover\:bg-\[\#30363d\]:hover { background-color: var(--t-hairline); }
 }
 
 /* ============================================================================
@@ -838,7 +1085,7 @@
    estes valem para a classe `.border-zinc-800`, não para o inline. Por isso as
    bordas do editor usam as variáveis semânticas direto. */
 .rte-wrapper {
-  @apply relative flex flex-col border rounded-lg overflow-hidden focus-within:ring-1 transition-all;
+  @apply relative flex flex-col border rounded-xl overflow-hidden focus-within:ring-1 transition-all;
   background-color: var(--t-well);
   border-color: var(--t-border-subtle);
 }
@@ -853,13 +1100,13 @@
 }
 
 .rte-toolbar {
-  @apply flex flex-wrap items-center gap-1 p-2 border-b sticky top-0 z-10;
-  background-color: var(--t-canvas);
+  @apply flex flex-wrap items-center gap-0.5 px-2 py-1 border-b sticky top-0 z-10;
+  background-color: var(--t-well);
   border-color: var(--t-border-subtle);
 }
 
 .rte-btn {
-  @apply p-1.5 rounded text-zinc-500 hover:text-zinc-200 transition-colors flex items-center justify-center;
+  @apply h-7 min-w-7 px-1.5 rounded-md text-zinc-400 hover:text-zinc-100 transition-colors flex items-center justify-center;
 }
 
 .rte-btn:hover {
@@ -880,25 +1127,10 @@
   background-color: var(--t-border);
 }
 
-/* Color Picker Popover */
-.rte-color-panel {
-  @apply absolute top-full left-0 mt-1 flex flex-wrap gap-1 p-2 border rounded shadow-xl z-50 w-36;
-  background-color: var(--t-card);
-  border-color: var(--t-border);
-}
-
-.rte-color-swatch {
-  @apply w-5 h-5 rounded-full border hover:scale-110 transition-transform cursor-pointer;
-  border-color: var(--t-border-strong);
-}
-
-.rte-color-reset {
-  @apply w-full mt-1 text-[10px] text-zinc-400 hover:text-zinc-200 p-1 rounded hover:bg-zinc-800 text-left transition-colors;
-}
 
 /* Editor Content Formatting */
 .rte-content {
-  @apply p-4 min-h-[150px] outline-none text-sm text-zinc-300 leading-relaxed font-sans;
+  @apply p-4 min-h-[150px] outline-none text-body text-zinc-300 leading-relaxed font-sans;
 }
 
 .rte-content p {
@@ -907,7 +1139,7 @@
 
 /* TipTap Placeholder */
 .rte-content p.is-editor-empty:first-child::before {
-  color: var(--t-n-600);
+  color: var(--t-n-500);
   content: attr(data-placeholder);
   float: left;
   height: 0;
@@ -1067,6 +1299,14 @@
 
 .rte-content em {
   @apply italic;
+}
+
+.rte-content u {
+  @apply underline underline-offset-2;
+}
+
+.rte-content a {
+  @apply text-blue-400 underline underline-offset-2;
 }
 
 .rte-content s {
@@ -1252,6 +1492,91 @@
 /* --- Utilitários semânticos --------------------------------------------
    Preferir estes a `p-6`/`gap-6` em qualquer shell de view: eles já vêm
    com a resposta certa para cada faixa de altura. */
+/* ── Marca e sinal (tokens em :root) ─────────────────────────────────── */
+@utility bg-brand-tint { background-image: var(--brand-tint); }
+@utility hl-top { box-shadow: var(--icon-tile-highlight); }
+@utility tab-underline { background-image: var(--brand-underline); height: 2px; border-radius: 9999px; }
+@utility bg-accent-surface { background-image: var(--accent-surface); }
+@utility chart-fill { background-image: var(--chart-fill); }
+@utility btn-brand {
+  background-image: var(--brand-solid);
+  color: #fff;
+  box-shadow: var(--icon-tile-highlight);
+  &:hover { background-image: var(--brand-solid-hover); }
+}
+@utility segment-track { background: var(--segment-track); box-shadow: var(--segment-track-shadow); }
+/* Pílula ativa: degradê azul sobre a superfície do card, com borda fina. */
+@utility segment-thumb {
+  background: var(--segment-thumb), var(--t-card);
+  border: 1px solid var(--segment-thumb-border);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.04);
+}
+/* Card de destaque (um por tela). */
+@utility card-hero {
+  border-radius: 1rem;
+  background: var(--card-hero-bg), var(--t-card);
+  border: 1px solid var(--card-hero-border);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.04);
+  transition: border-color 200ms ease;
+  &:is(button, a):hover { border-color: var(--card-hero-border-hover); }
+}
+@utility icon-tile {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border-radius: 0.625rem;
+  background: var(--icon-tile-bg);
+  border: 1px solid var(--icon-tile-border);
+  color: var(--icon-tile-fg);
+}
+@utility icon-tile-danger {
+  background: var(--danger-soft-bg);
+  border-color: var(--danger-soft-border);
+  color: var(--danger-400);
+}
+/* Tom (cor) separado da forma: selos com forma própria usam só o tom. */
+@utility tone-danger-soft {
+  background: var(--danger-soft-bg);
+  color: var(--danger-300);
+  border: 1px solid var(--danger-soft-border);
+}
+@utility btn-danger-soft {
+  background: var(--danger-soft-bg);
+  color: var(--danger-300);
+  border: 1px solid var(--danger-soft-border);
+  &:hover:not(:disabled) { background: var(--danger-soft-hover); }
+}
+@utility badge-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  padding-inline: 0.375rem;
+  border-radius: 9999px;
+  border: 1px solid transparent;
+  font-size: 0.75rem;
+  line-height: 1;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+@utility badge-danger-soft { @apply badge-pill; background: var(--danger-soft-bg); color: var(--danger-300); border-color: var(--danger-soft-border); }
+@utility badge-warning-soft { @apply badge-pill; background: var(--warning-soft-bg); color: var(--warning-300); border-color: var(--warning-soft-border); }
+@utility badge-neutral { @apply badge-pill; background: var(--surface-3); color: var(--color-zinc-300); }
+@utility badge-brand { @apply badge-pill; background-image: var(--brand-tint); color: var(--brand-300); }
+@utility dot-danger {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--danger-400);
+  box-shadow: var(--danger-dot-glow);
+}
+
 @utility view-pad { padding: var(--d-pad); }
 @utility view-pad-x { padding-inline: var(--d-pad); }
 @utility view-pad-y { padding-block: var(--d-pad); }
@@ -1303,3 +1628,51 @@ html:not(.dark) {
   --cv-cinza: #8a8f99;
   --cv-cinza-claro: #c3c6cc;
 }
+
+/* Painel da tarefa: texto de leitura, 1px acima do resto do app. 15 é também o
+   menor tamanho aqui dentro, então o apoio usa o mesmo e se distingue pela cor. */
+.tela-tarefa {
+  --text-caption: 0.9375rem;
+  --text-caption--line-height: 1.375rem;
+  --text-body: 0.9375rem;
+  --text-body--line-height: 1.375rem;
+  --text-heading: 0.9375rem;
+  --text-heading--line-height: 1.375rem;
+}
+/* O Tailwind 4 deixa botões com o cursor padrão: aqui, o que é clicável mostra a mão. */
+@layer base {
+  .tela-tarefa :where(button, [role^="menuitem"], select):not(:disabled) { cursor: pointer; }
+}
+
+/* Tela do Cronograma: usa a mesma escala do resto do app (tokens em rem), para
+   Lista → Kanban → Cronograma não mudar de tamanho. A classe `tela-cronograma`
+   ficou só como marcador. */
+
+/* Azul, ou cinza em Pausado. O preenchido é o avanço do status; o resto é a mesma
+   cor bem clara, com contorno. */
+.dark {
+  --cron-ativa: #3f74b5;
+  --cron-pausada: #71717a;
+  --cron-atraso: #ef4444;
+  --cron-resumo: #71717a;
+  --cron-linha: rgb(255 255 255 / 0.05);
+  --cron-fds: rgb(255 255 255 / 0.04);
+  --cron-hoje: rgb(37 99 235 / 0.6);
+}
+html:not(.dark) {
+  --cron-ativa: #8bb4e8;
+  --cron-pausada: #b4b7bf;
+  --cron-atraso: #dc2626;
+  --cron-resumo: #8a8f99;
+  --cron-linha: rgb(0 0 0 / 0.08);
+  --cron-fds: rgb(0 0 0 / 0.035);
+  --cron-hoje: rgb(37 99 235 / 0.6);
+}
+.cron-barra, .cron-anel { --cor: var(--cron-ativa); }
+.cron-barra[data-situacao="pausada"], .cron-anel[data-situacao="pausada"] { --cor: var(--cron-pausada); }
+.cron-barra {
+  --resto: color-mix(in srgb, var(--cor) 20%, transparent);
+  background: linear-gradient(90deg, var(--cor) var(--feito, 0%), var(--resto) var(--feito, 0%));
+  border: 1px solid var(--cor);
+}
+.cron-linha { border-color: var(--cron-linha); }

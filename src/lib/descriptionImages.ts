@@ -29,6 +29,21 @@ export function fileToDataUrl(file: File): Promise<string> {
   });
 }
 
+/** Lê as imagens da área de transferência (print recém-tirado). Vazio se não houver ou sem permissão. */
+export async function imagensDoClipboard(): Promise<File[]> {
+  try {
+    const arquivos: File[] = [];
+    for (const item of await navigator.clipboard.read()) {
+      const tipo = item.types.find(t => t.startsWith('image/'));
+      if (!tipo) continue;
+      arquivos.push(new File([await item.getType(tipo)], `print.${tipo.split('/')[1]}`, { type: tipo }));
+    }
+    return arquivos;
+  } catch {
+    return [];
+  }
+}
+
 /** Extrai os arquivos de imagem de um DataTransfer (clipboard ou drop). */
 export function imageFilesFrom(dt: DataTransfer | null): File[] {
   if (!dt) return [];

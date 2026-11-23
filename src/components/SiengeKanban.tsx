@@ -17,8 +17,9 @@ import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
 import { fetchSiengeTitleById } from '../lib/api';
 import {
-  siengeDaysOverdue, withVencimentoOriginal, rejectTargetStatus,
-  getPositiveAction, showsRejectAction, ALCADA_LEVEL_BY_STATUS, alcadaResponsibleId,
+  siengeDaysOverdue, withVencimentoOriginal,
+  getPositiveAction, showsRejectAction, notificacaoAlcada, reprovarTitulo,
+  EVENTO_ABRIR_TITULO, consumirAberturaTitulo,
 } from '../lib/siengeHelpers';
 import { SiengeTaxonomy } from '../lib/siengeCategorias';
 import MonthFilterDropdown, { MonthFilterValue } from './MonthFilterDropdown';
@@ -125,7 +126,7 @@ const COLUMNS: { id: ColumnId; label: string; shortLabel: string; color: string;
     label: 'Recusados',
     shortLabel: 'Recusados',
     color: 'text-red-400',
-    dotColor: 'bg-red-500',
+    dotColor: 'bg-danger-400',
     bg: 'bg-red-500/5',
     border: 'border-red-500/20',
     icon: <XCircle size={12} />,
@@ -225,15 +226,7 @@ function TitleCard({ title, column, onClick, onDragStart, isDragging, lotes, onU
 
   const handleConfirmReject = () => {
     if (!motivo.trim()) return;
-    onUpdateTitle({
-      ...title,
-      status: rejectTargetStatus(title.status),
-      motivoRecusa: motivo.trim(),
-      motivoRecusaRegistradoEm: new Date().toISOString(),
-      motivoRecusaResolvido: false,
-      motivoRecusaResolvidoEm: undefined,
-      motivoRecusaObservacao: undefined,
-    });
+    onUpdateTitle(reprovarTitulo(title, motivo));
     setShowRejectModal(false);
   };
 
@@ -626,20 +619,8 @@ export default function SiengeKanban({ titles, openLotes, openFaturas, projects,
   // Notifies the responsible for the alçada level a title just entered.
   // No-op if the status didn't actually change or no responsible is configured.
   const notifyAlcadaIfNeeded = useCallback((title: SiengeTitle, previousStatus?: SiengeStatus) => {
-    if (!previousStatus || previousStatus === title.status) return;
-    const entry = ALCADA_LEVEL_BY_STATUS[title.status];
-    if (!entry) return;
-    const responsibleId = alcadaResponsibleId(alcadaConfig, entry.level);
-    if (!responsibleId) return;
-    addNotification({
-      userId: responsibleId,
-      actorId: currentUser?.id || 'system',
-      siengeTitleId: title.id,
-      targetId: String(entry.level),
-      type: 'alcada_pending',
-      message: `Título aguardando ${entry.label} alçada`,
-      details: `O título "${title.titulo || title.descricao || ''}" está aguardando sua aprovação.`,
-    });
+    const notif = notificacaoAlcada(title, previousStatus, alcadaConfig, currentUser?.id || 'system');
+    if (notif) addNotification(notif);
   }, [alcadaConfig, currentUser, addNotification]);
 
   const handleUpdateTitle = useCallback((title: SiengeTitle) => {
@@ -745,6 +726,22 @@ export default function SiengeKanban({ titles, openLotes, openFaturas, projects,
     }
     setModalOpen(true);
   };
+
+  // Pedido vindo da Caixa de entrada: abre o título solicitado (ao montar ou ao vivo).
+  useEffect(() => {
+    const abrirPendente = () => {
+      const id = consumirAberturaTitulo();
+      if (!id) return;
+      const t = titles.find(x => x.id === id);
+      if (t) { openEdit(t); return; }
+      fetchSiengeTitleById(id)
+        .then(full => { if (full) { setEditingTitle(full); setModalOpen(true); } })
+        .catch(console.error);
+    };
+    abrirPendente();
+    window.addEventListener(EVENTO_ABRIR_TITULO, abrirPendente);
+    return () => window.removeEventListener(EVENTO_ABRIR_TITULO, abrirPendente);
+  }, []);
 
   const handleSave = (title: SiengeTitle) => {
     handleUpdateTitle(title);

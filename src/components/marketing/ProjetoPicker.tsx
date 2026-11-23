@@ -1,64 +1,63 @@
 import React, { useState } from 'react';
-import { FolderOpen } from 'lucide-react';
-import { useMarketingProjetos, limiteDoProjeto, formatarData } from '../../lib/marketingProjetos';
+import { useMarketingProjetos, conflitoDePrazo } from '../../lib/marketingProjetos';
+import { ArrowUpRight, Folder } from 'lucide-react';
+import { BOTAO_ICONE, ItemMenu, Menu, pilula, Propriedade } from '../tarefa/Propriedade';
 
 /** Campo "Projeto" da tarefa: em qual projeto de Marketing ela está. */
-export default function ProjetoPicker({ taskId, dueDate, disabled }: { taskId: string; dueDate?: string; disabled?: boolean }) {
-  const { projetos, portfolios, projetoDaTarefa, vincularTarefa } = useMarketingProjetos();
-  const [aberto, setAberto] = useState(false);
+export default function ProjetoPicker({ taskId, dueDate, disabled, onAbrir }: {
+  taskId: string;
+  dueDate?: string;
+  disabled?: boolean;
+  /** Sai da tarefa e abre o projeto, com as tarefas dele. */
+  onAbrir?: (projetoId: string) => void;
+}) {
+  const { projetos, projetoDaTarefa, vincularTarefa } = useMarketingProjetos();
   const [erro, setErro] = useState<string | null>(null);
   const atual = projetos.find(p => p.id === projetoDaTarefa[taskId]);
 
   const escolher = async (id: string | null) => {
-    setAberto(false);
     setErro(null);
     // O prazo da tarefa precisa caber na entrega do projeto escolhido.
-    const limite = id ? limiteDoProjeto(projetos.find(p => p.id === id), portfolios) : null;
-    if (limite && dueDate && dueDate.slice(0, 10) > limite) {
-      setErro(`O prazo da tarefa passa da entrega deste projeto (${formatarData(limite)}). Ajuste o prazo antes.`);
-      return;
-    }
+    const conflito = id ? conflitoDePrazo(projetos.find(p => p.id === id), dueDate) : null;
+    if (conflito) { setErro(conflito); return; }
     try { await vincularTarefa(taskId, id); }
     catch (e: any) { setErro(e.message); }
   };
 
   return (
-    <div className="flex flex-col gap-1.5 relative min-w-[140px]">
-      <span className="text-zinc-500 font-medium font-sans flex items-center gap-1.5"><FolderOpen size={13} className="opacity-60" /> Projeto</span>
-      <button
-        type="button"
+    <Propriedade rotulo="Projeto" nota={erro && <p className="text-body text-red-400">{erro}</p>}>
+      <Menu
+        rotulo={`Projeto: ${atual?.nome ?? 'nenhum'}`}
+        classe={pilula(atual ? 'cheia' : 'vazia')}
         disabled={disabled}
-        onClick={() => !disabled && setAberto(!aberto)}
-        onBlur={() => setTimeout(() => setAberto(false), 200)}
-        className="inline-flex items-center justify-between gap-1.5 text-[10px] font-sans font-medium px-2 py-1 rounded border text-zinc-300 bg-zinc-500/10 border-zinc-500/20 hover:bg-zinc-500/20 min-h-[26px] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        largura="w-72"
+        gatilho={<>
+          <Folder size={14} className="shrink-0" aria-hidden />
+          <span className="truncate max-w-[220px]">{atual?.nome || 'Projeto'}</span>
+        </>}
       >
-        <span className="flex items-center gap-1.5 truncate max-w-[150px]">
-          {atual && <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: atual.cor }} />}
-          {atual?.nome || 'Nenhum'}
-        </span>
-        <span className="text-[10px] opacity-60 ml-1">▼</span>
-      </button>
-      {erro && <span className="text-[10px] text-red-400 max-w-[200px]">{erro}</span>}
-
-      {aberto && (
-        <div className="absolute top-full left-0 w-full min-w-[180px] mt-1.5 bg-[#121214] border border-zinc-800 rounded-[8px] shadow-2xl p-1.5 z-50 flex flex-col gap-1 max-h-[220px] overflow-y-auto scrollbar-thin">
-          <button onMouseDown={e => e.preventDefault()} onClick={() => escolher(null)} className="w-full text-left text-[10px] px-2 py-1.5 rounded text-zinc-500 hover:bg-zinc-800/60">
-            Nenhum
-          </button>
+        {fechar => <>
+          <div className={`shrink-0 ${onAbrir ? 'pr-9 [@media(pointer:coarse)]:pr-11' : ''}`}>
+            <ItemMenu marcado={!atual} onClick={() => { fechar(); escolher(null); }}><span className="text-zinc-400">Sem projeto</span></ItemMenu>
+          </div>
           {projetos.filter(p => p.status !== 'concluido' || p.id === atual?.id).map(p => (
-            <button
-              key={p.id}
-              onMouseDown={e => e.preventDefault()}
-              onClick={() => escolher(p.id)}
-              className="w-full flex items-center gap-1.5 text-[10px] px-2 py-1.5 rounded border text-zinc-300 bg-zinc-500/10 border-zinc-500/20 hover:bg-zinc-500/20 transition-colors"
-            >
-              <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: p.cor }} />
-              <span className="truncate">{p.nome}</span>
-            </button>
+            <div key={p.id} className="shrink-0 flex items-center gap-1">
+              <div className="flex-1 min-w-0">
+                <ItemMenu marcado={p.id === atual?.id} onClick={() => { fechar(); escolher(p.id); }}>
+                  <Folder size={14} className="shrink-0 text-zinc-500" aria-hidden />
+                  <span className="truncate">{p.nome}</span>
+                </ItemMenu>
+              </div>
+              {onAbrir && (
+                <button type="button" onClick={() => { fechar(); onAbrir(p.id); }} aria-label={`Abrir o projeto ${p.nome}`} title="Abrir o projeto e ver as tarefas" className={BOTAO_ICONE}>
+                  <ArrowUpRight size={15} aria-hidden />
+                </button>
+              )}
+            </div>
           ))}
-          {projetos.length === 0 && <span className="text-[10px] text-zinc-600 px-2 py-1">Nenhum projeto criado.</span>}
-        </div>
-      )}
-    </div>
+          {projetos.length === 0 && <p className="px-2 py-1.5 text-body text-zinc-400">Nenhum projeto criado.</p>}
+        </>}
+      </Menu>
+    </Propriedade>
   );
 }
