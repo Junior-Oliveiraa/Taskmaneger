@@ -458,7 +458,8 @@ export function unidadesForaDoOrbit(unidades: CvUnidade[], orbit: PrecoOrbit[]):
   return fora;
 }
 
-export interface Contagem { label: string; n: number }
+/** Contagem de reservas/vendas; `reservas` são as que formam o número (detalhe ao clicar). */
+export interface Contagem { label: string; n: number; reservas: CvReserva[] }
 
 export interface Painel {
   kpis: Kpis;
@@ -550,14 +551,14 @@ function topComOutras(fatias: Fatia[], n: number, rotulo: string): Fatia[] {
 }
 
 function contar(rows: CvReserva[], chave: (r: CvReserva) => string | null): { itens: Contagem[]; semInfo: number } {
-  const m = new Map<string, number>();
+  const m = new Map<string, CvReserva[]>();
   let semInfo = 0;
   rows.forEach(r => {
     const k = chave(r);
     if (!k) { semInfo += 1; return; }
-    m.set(k, (m.get(k) ?? 0) + 1);
+    m.set(k, [...(m.get(k) ?? []), r]);
   });
-  return { itens: [...m.entries()].map(([label, n]) => ({ label, n })).sort((a, b) => b.n - a.n), semInfo };
+  return { itens: [...m.entries()].map(([label, reservas]) => ({ label, n: reservas.length, reservas })).sort((a, b) => b.n - a.n), semInfo };
 }
 
 const MES_CURTO = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
@@ -728,13 +729,16 @@ export function calcularPainel(dados: CvDados, f: FiltrosPainel, precos: Map<num
   const midiasAg = agruparFatias(vendas, r => r.midia);
 
   const noPeriodo = reservas.filter(r => dentro(r.data_cad, f.periodo));
-  const desfechoMapa = new Map<string, number>();
+  const desfechoMapa = new Map<string, CvReserva[]>();
   noPeriodo.forEach(r => {
     const d = desfechoDaReserva(r.situacao);
-    desfechoMapa.set(d, (desfechoMapa.get(d) ?? 0) + 1);
+    desfechoMapa.set(d, [...(desfechoMapa.get(d) ?? []), r]);
   });
-  const desfechos = DESFECHOS.map(label => ({ label, n: desfechoMapa.get(label) ?? 0 }));
-  const vendidasDoPeriodo = desfechoMapa.get('Vendida') ?? 0;
+  const desfechos = DESFECHOS.map(label => {
+    const rs = desfechoMapa.get(label) ?? [];
+    return { label, n: rs.length, reservas: rs };
+  });
+  const vendidasDoPeriodo = desfechoMapa.get('Vendida')?.length ?? 0;
 
   const canceladas = reservas.filter(r => r.situacao === 'Cancelada' && dentro(r.data_cancelamento ?? r.data_cad, f.periodo));
   const motivosC = contar(canceladas, r => r.motivo_cancelamento);
@@ -770,7 +774,10 @@ export function calcularPainel(dados: CvDados, f: FiltrosPainel, precos: Map<num
     perfil: {
       base: vendas.length,
       tipoPessoa: tipo.itens,
-      faixaEtaria: FAIXAS_ETARIAS.map(label => ({ label, n: faixaPf.itens.find(i => i.label === label)?.n ?? 0 })),
+      faixaEtaria: FAIXAS_ETARIAS.map(label => {
+        const item = faixaPf.itens.find(i => i.label === label);
+        return { label, n: item?.n ?? 0, reservas: item?.reservas ?? [] };
+      }),
       estadoCivil: civil.itens,
       sexo: sexo.itens,
       cidades: cidade.itens.slice(0, 8),

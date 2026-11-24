@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { AlertTriangle, ArrowDownRight, ArrowUpRight, Briefcase, Building2, ChevronRight, Clock3, Landmark, Minus, RefreshCw, Store, UserRound, X } from 'lucide-react';
 import {
-  CANAIS, FINANCIAMENTOS, financiamentoDe, CvDados, CvReserva, ValorTabela, VendaOrbit, valoresDeTabela, Desfecho, FiltrosPainel, Kpis, Painel, Periodo, SituacaoEstoque, SITUACOES_ESTOQUE, ValorParado,
+  CANAIS, Contagem, FINANCIAMENTOS, financiamentoDe, CvDados, CvReserva, ValorTabela, VendaOrbit, valoresDeTabela, Desfecho, FiltrosPainel, Kpis, Painel, Periodo, SituacaoEstoque, SITUACOES_ESTOQUE, ValorParado,
   PrecoOrbit, calcularPainel, fetchCvComercial, hojeBrasilia, nomeCurto, nomeCurtoEmpreendimento, precosDasUnidades, unidadesForaDoOrbit,
 } from '../../lib/cvComercial';
 import { FotosEstoque, MesVso, calcularVsoMensal, fetchFotosEstoque, mediaVso, mesesEntre } from '../../lib/cvVso';
@@ -297,8 +297,77 @@ const SEM_FOTOS: FotosEstoque = new Map();
 
 const porNome = (a: string, b: string) => a.localeCompare(b, 'pt-BR');
 
-type GraficoOrigem = 'canal' | 'imobiliaria' | 'midia';
-const TITULO_ORIGEM: Record<GraficoOrigem, string> = { canal: 'Canal', imobiliaria: 'Imobiliária', midia: 'Mídia' };
+// Gráficos que detalham, ao clicar, as unidades/reservas que formam o número.
+type GraficoDetalhe = 'canal' | 'imobiliaria' | 'midia' | 'desfecho' | 'cancelamento' | 'distrato' | 'faixa' | 'tipo' | 'civil' | 'cidade';
+type SecaoDetalhe = 'origem' | 'reservas' | 'perfil';
+const DETALHE: Record<GraficoDetalhe, { secao: SecaoDetalhe; titulo: string }> = {
+  canal: { secao: 'origem', titulo: 'Canal' },
+  imobiliaria: { secao: 'origem', titulo: 'Imobiliária' },
+  midia: { secao: 'origem', titulo: 'Mídia' },
+  desfecho: { secao: 'reservas', titulo: 'Reservas do período' },
+  cancelamento: { secao: 'reservas', titulo: 'Motivo de cancelamento' },
+  distrato: { secao: 'reservas', titulo: 'Motivo de distrato' },
+  faixa: { secao: 'perfil', titulo: 'Faixa etária' },
+  tipo: { secao: 'perfil', titulo: 'Tipo de cliente' },
+  civil: { secao: 'perfil', titulo: 'Estado civil' },
+  cidade: { secao: 'perfil', titulo: 'Cidade do cliente' },
+};
+
+/** Item de gráfico já normalizado para o detalhe. */
+interface ItemDetalhe { label: string; n: number; valor: number; linhas: CvReserva[] }
+
+function ReservasDoDetalhe({ reservas }: { reservas: CvReserva[] }) {
+  const th = 'font-semibold px-3 py-2 border-b border-zinc-800/70';
+  const td = 'px-3 py-2 border-b border-zinc-800/40';
+  // A data que explica a situação: venda, cancelamento ou distrato.
+  const desfecho = (r: CvReserva) => r.situacao === 'Cancelada' ? r.data_cancelamento
+    : r.situacao === 'Distrato' ? r.data_distrato : r.data_venda;
+  const total = reservas.reduce((s, r) => s + r.valor_contrato, 0);
+  return (
+    <div className="px-4 py-3">
+      <div className="overflow-x-auto custom-scrollbar">
+        <table className="w-full text-[11px] min-w-[1080px]">
+          <thead>
+            <tr className="text-zinc-500">
+              <th className={`${th} text-left`}>Empreendimento</th>
+              <th className={`${th} text-left`}>Unidade</th>
+              <th className={`${th} text-left`}>Situação</th>
+              <th className={`${th} text-left`}>Reserva</th>
+              <th className={`${th} text-left`} title="Data da venda, do cancelamento ou do distrato">Desfecho</th>
+              <th className={`${th} text-left`}>Corretor</th>
+              <th className={`${th} text-left`}>Imobiliária</th>
+              <th className={`${th} text-left`}>Motivo</th>
+              <th className={`${th} text-right`}>Valor</th>
+            </tr>
+          </thead>
+          <tbody>
+            {reservas.map(r => (
+              <tr key={r.idreserva} className="text-zinc-300">
+                <td className={`${td} whitespace-nowrap text-zinc-200`}>{nomeCurtoEmpreendimento(r.empreendimento).nome}</td>
+                <td className={`${td} font-semibold text-zinc-100 whitespace-nowrap`}>{r.unidade ?? '–'}</td>
+                <td className={`${td} whitespace-nowrap`}>{r.situacao}</td>
+                <td className={`${td} tabular-nums whitespace-nowrap`}>{fmtData(r.data_cad)}</td>
+                <td className={`${td} tabular-nums whitespace-nowrap`}>{fmtData(desfecho(r))}</td>
+                <td className={`${td} max-w-[180px] truncate`}><Nome nome={r.corretor} /></td>
+                <td className={`${td} max-w-[180px] truncate`}><Nome nome={r.imobiliaria} /></td>
+                <td className={`${td} max-w-[220px] truncate`} title={r.motivo_cancelamento ?? r.motivo_distrato ?? undefined}>
+                  {r.motivo_cancelamento ?? r.motivo_distrato ?? <span className="text-zinc-600">–</span>}
+                </td>
+                <td className={`${td} text-right tabular-nums whitespace-nowrap`}>{fmtMoeda(r.valor_contrato)}</td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr className="text-zinc-200 font-semibold">
+              <td className="px-3 pt-2" colSpan={8}>{fmtInt(reservas.length)} {reservas.length === 1 ? 'reserva' : 'reservas'}</td>
+              <td className="px-3 pt-2 text-right tabular-nums whitespace-nowrap">{fmtMoeda(total)}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+  );
+}
 
 const ROTULO_ORIGEM_VSO: Record<MesVso['origem'], string> = {
   fechamento: 'Estoque do fechamento do mês',
@@ -315,8 +384,8 @@ export function PainelDesempenho({ dados, hoje = hojeBrasilia(), metas = null, v
 }) {
   const [empreendimentos, setEmpreendimentos] = useState<number[] | null>(null);
   const [aberto, setAberto] = useState<number | null>(null);
-  // Origem das vendas: fatia clicada em canal, imobiliária ou mídia → tabela das unidades.
-  const [detalheOrigem, setDetalheOrigem] = useState<{ grafico: GraficoOrigem; label: string } | null>(null);
+  // Item clicado num gráfico (origem, reservas, perfil) → tabela das unidades abaixo da seção.
+  const [detalhe, setDetalhe] = useState<{ grafico: GraficoDetalhe; label: string } | null>(null);
   const tabelaPor = useMemo(() => valoresDeTabela(dados.reservas, vendasOrbit), [dados.reservas, vendasOrbit]);
   const precos = useMemo(() => precosDasUnidades(dados.unidades, precosOrbit), [dados.unidades, precosOrbit]);
   const [canal, setCanalBruto] = useState<string | null>(null);
@@ -424,12 +493,64 @@ export function PainelDesempenho({ dados, hoje = hojeBrasilia(), metas = null, v
   const disponiveis = painel.estoqueTotal['disponível'];
   const estoqueAberto = disponiveis + painel.estoqueTotal.reservada;
   const totalCanais = painel.canais.reduce((s, c) => s + c.valor, 0);
-  const fatiasDaOrigem: Record<GraficoOrigem, typeof painel.canais> = { canal: painel.canais, imobiliaria: painel.imobiliarias, midia: painel.midias };
-  // Some sozinho se a fatia deixar de existir com outro filtro.
-  const fatiaDetalhada = detalheOrigem ? fatiasDaOrigem[detalheOrigem.grafico].find(f => f.label === detalheOrigem.label) ?? null : null;
-  const ehDetalhe = (grafico: GraficoOrigem, label: string) => detalheOrigem?.grafico === grafico && detalheOrigem.label === label;
-  const detalhar = (grafico: GraficoOrigem, label: string) =>
-    setDetalheOrigem(ehDetalhe(grafico, label) ? null : { grafico, label });
+  const itensDo = (g: GraficoDetalhe): ItemDetalhe[] => {
+    const deFatias = (fs: typeof painel.canais) => fs.map(f => ({ label: f.label, n: f.unidades, valor: f.valor, linhas: f.vendas }));
+    const deContagem = (cs: Contagem[]) => cs.map(c => ({ label: c.label, n: c.n, valor: c.reservas.reduce((s, r) => s + r.valor_contrato, 0), linhas: c.reservas }));
+    switch (g) {
+      case 'canal': return deFatias(painel.canais);
+      case 'imobiliaria': return deFatias(painel.imobiliarias);
+      case 'midia': return deFatias(painel.midias);
+      case 'desfecho': return deContagem(painel.desfechos);
+      case 'cancelamento': return deContagem(painel.motivosCancelamento);
+      case 'distrato': return deContagem(painel.motivosDistrato);
+      case 'faixa': return deContagem(painel.perfil.faixaEtaria);
+      case 'tipo': return deContagem(painel.perfil.tipoPessoa);
+      case 'civil': return deContagem(painel.perfil.estadoCivil);
+      case 'cidade': return deContagem(painel.perfil.cidades);
+    }
+  };
+  // Some sozinho se o item deixar de existir (ou zerar) com outro filtro.
+  const itemDetalhado = detalhe ? itensDo(detalhe.grafico).find(i => i.label === detalhe.label && i.n > 0) ?? null : null;
+  const ehDetalhe = (grafico: GraficoDetalhe, label: string) => detalhe?.grafico === grafico && detalhe.label === label;
+  const detalhar = (grafico: GraficoDetalhe, label: string) =>
+    setDetalhe(ehDetalhe(grafico, label) ? null : { grafico, label });
+  /** Props de clique para um item de gráfico. */
+  const clique = (grafico: GraficoDetalhe, label: string) => ({ onClick: () => detalhar(grafico, label), ativo: ehDetalhe(grafico, label) });
+  const DICA_CLIQUE = <p className="text-zinc-500">Clique para ver as unidades</p>;
+
+  // Tabela do item clicado, logo abaixo dos gráficos da seção dele.
+  const painelDetalhe = (secao: SecaoDetalhe) => {
+    if (!detalhe || !itemDetalhado || DETALHE[detalhe.grafico].secao !== secao) return null;
+    const ehVendas = secao !== 'reservas';
+    const linhas = [...itemDetalhado.linhas].sort((x, y) => ehVendas
+      ? (y.data_venda ?? '').localeCompare(x.data_venda ?? '')
+      : (y.data_cad ?? '').localeCompare(x.data_cad ?? ''));
+    const n = itemDetalhado.n;
+    return (
+      <section aria-label={`Detalhe de ${itemDetalhado.label}`} className="rounded-xl border border-zinc-800/80 bg-zinc-900/40 overflow-hidden animate-fade-in">
+        <header className="flex items-start justify-between gap-3 px-4 py-3 border-b border-zinc-800/70">
+          <div className="min-w-0">
+            <p className="text-[11px] text-zinc-500">{DETALHE[detalhe.grafico].titulo}</p>
+            <h3 className="text-sm font-semibold text-zinc-100 truncate">{itemDetalhado.label}</h3>
+            <p className="text-[11px] text-zinc-500 tabular-nums">
+              {fmtInt(n)} {ehVendas ? (n === 1 ? 'unidade vendida' : 'unidades vendidas') : (n === 1 ? 'reserva' : 'reservas')} · {fmtMoeda(itemDetalhado.valor)}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setDetalhe(null)}
+            aria-label="Fechar o detalhe"
+            className="shrink-0 p-1.5 rounded-md text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+          >
+            <X size={14} />
+          </button>
+        </header>
+        {ehVendas
+          ? <VendasDoEmpreendimento comEmpreendimento className="px-4 py-3" vendas={linhas} tabelaPor={tabelaPor} />
+          : <ReservasDoDetalhe reservas={linhas} />}
+      </section>
+    );
+  };
   const totalVendasPerfil = painel.perfil.base;
 
   // Meta do recorte: soma das metas dos empreendimentos filtrados ("Todos" = todas).
@@ -1000,34 +1121,7 @@ export function PainelDesempenho({ dados, hoje = hojeBrasilia(), metas = null, v
           </CardGrafico>
         </div>
 
-        {/* Unidades que formam a fatia clicada; some ao clicar de novo ou no X. */}
-        {detalheOrigem && fatiaDetalhada && (
-          <section aria-label={`Vendas de ${fatiaDetalhada.label}`} className="rounded-xl border border-zinc-800/80 bg-zinc-900/40 overflow-hidden animate-fade-in">
-            <header className="flex items-start justify-between gap-3 px-4 py-3 border-b border-zinc-800/70">
-              <div className="min-w-0">
-                <p className="text-[11px] text-zinc-500">{TITULO_ORIGEM[detalheOrigem.grafico]}</p>
-                <h3 className="text-sm font-semibold text-zinc-100 truncate">{fatiaDetalhada.label}</h3>
-                <p className="text-[11px] text-zinc-500 tabular-nums">
-                  {fmtInt(fatiaDetalhada.unidades)} {fatiaDetalhada.unidades === 1 ? 'unidade vendida' : 'unidades vendidas'} · {fmtMoeda(fatiaDetalhada.valor)} no período
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setDetalheOrigem(null)}
-                aria-label="Fechar o detalhe"
-                className="shrink-0 p-1.5 rounded-md text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-              >
-                <X size={14} />
-              </button>
-            </header>
-            <VendasDoEmpreendimento
-              comEmpreendimento
-              className="px-4 py-3"
-              vendas={[...fatiaDetalhada.vendas].sort((x, y) => (y.data_venda ?? '').localeCompare(x.data_venda ?? ''))}
-              tabelaPor={tabelaPor}
-            />
-          </section>
-        )}
+        {painelDetalhe('origem')}
 
         {/* ── Reservas ── */}
         <TituloSecao titulo="Reservas" descricao="Cadastradas no período, conforme a situação atual de cada uma" />
@@ -1045,7 +1139,8 @@ export function PainelDesempenho({ dados, hoje = hojeBrasilia(), metas = null, v
                 valor: d.n,
                 cor: COR_DESFECHO[d.label as Desfecho],
                 rotulo: fmtInt(d.n),
-                tip: <><TipTitulo>{d.label}</TipTitulo><p className="tabular-nums">{fmtInt(d.n)} · {fmtPct(painel.reservasNoPeriodo ? d.n / painel.reservasNoPeriodo : 0)}</p></>,
+                tip: <><TipTitulo>{d.label}</TipTitulo><p className="tabular-nums">{fmtInt(d.n)} · {fmtPct(painel.reservasNoPeriodo ? d.n / painel.reservasNoPeriodo : 0)}</p>{d.n > 0 && DICA_CLIQUE}</>,
+                ...(d.n > 0 ? clique('desfecho', d.label) : {}),
               }))}
             />
           </CardGrafico>
@@ -1057,7 +1152,8 @@ export function PainelDesempenho({ dados, hoje = hojeBrasilia(), metas = null, v
           >
             <ListaBarras cor={COR.cinza} barras={painel.motivosCancelamento.map(m => ({
               label: m.label, valor: m.n, rotulo: fmtInt(m.n),
-              tip: <><TipTitulo>{m.label}</TipTitulo><p className="tabular-nums">{fmtInt(m.n)} reservas</p></>,
+              tip: <><TipTitulo>{m.label}</TipTitulo><p className="tabular-nums">{fmtInt(m.n)} reservas</p>{DICA_CLIQUE}</>,
+              ...clique('cancelamento', m.label),
             }))} />
           </CardGrafico>
           <CardGrafico
@@ -1067,10 +1163,13 @@ export function PainelDesempenho({ dados, hoje = hojeBrasilia(), metas = null, v
           >
             <ListaBarras cor={COR.roxo} barras={painel.motivosDistrato.map(m => ({
               label: m.label, valor: m.n, rotulo: fmtInt(m.n),
-              tip: <><TipTitulo>{m.label}</TipTitulo><p className="tabular-nums">{fmtInt(m.n)} distratos</p></>,
+              tip: <><TipTitulo>{m.label}</TipTitulo><p className="tabular-nums">{fmtInt(m.n)} distratos</p>{DICA_CLIQUE}</>,
+              ...clique('distrato', m.label),
             }))} />
           </CardGrafico>
         </div>
+
+        {painelDetalhe('reservas')}
 
         {/* ── Clientes ── */}
         <TituloSecao titulo="Perfil de quem comprou" descricao={`${fmtInt(totalVendasPerfil)} vendas do período, sempre em grupo, sem identificar clientes`} />
@@ -1086,7 +1185,8 @@ export function PainelDesempenho({ dados, hoje = hojeBrasilia(), metas = null, v
               colunas={painel.perfil.faixaEtaria.map(f => ({
                 chave: f.label, label: f.label, valor: f.n,
                 aria: `${f.label} anos: ${fmtInt(f.n)} vendas`,
-                tip: <><TipTitulo>{f.label} anos</TipTitulo><p className="tabular-nums">{fmtInt(f.n)} vendas</p></>,
+                tip: <><TipTitulo>{f.label} anos</TipTitulo><p className="tabular-nums">{fmtInt(f.n)} vendas</p>{f.n > 0 && DICA_CLIQUE}</>,
+                ...(f.n > 0 ? clique('faixa', f.label) : {}),
               }))}
               formatarEixo={fmtInt}
               formatarRotulo={fmtInt}
@@ -1107,7 +1207,8 @@ export function PainelDesempenho({ dados, hoje = hojeBrasilia(), metas = null, v
                 valor: t.n,
                 cor: COR_PESSOA[t.label] ?? COR_SEXO[t.label] ?? COR.cinza,
                 rotulo: fmtInt(t.n),
-                tip: <><TipTitulo>{t.label}</TipTitulo><p className="tabular-nums">{fmtInt(t.n)} vendas</p></>,
+                tip: <><TipTitulo>{t.label}</TipTitulo><p className="tabular-nums">{fmtInt(t.n)} vendas</p>{DICA_CLIQUE}</>,
+                ...clique('tipo', t.label),
               }))}
             />
           </CardGrafico>
@@ -1119,7 +1220,8 @@ export function PainelDesempenho({ dados, hoje = hojeBrasilia(), metas = null, v
           >
             <ListaBarras barras={painel.perfil.estadoCivil.map(t => ({
               label: t.label, valor: t.n, rotulo: fmtInt(t.n),
-              tip: <><TipTitulo>{t.label}</TipTitulo><p className="tabular-nums">{fmtInt(t.n)} vendas</p></>,
+              tip: <><TipTitulo>{t.label}</TipTitulo><p className="tabular-nums">{fmtInt(t.n)} vendas</p>{DICA_CLIQUE}</>,
+              ...clique('civil', t.label),
             }))} />
           </CardGrafico>
           <CardGrafico
@@ -1130,10 +1232,13 @@ export function PainelDesempenho({ dados, hoje = hojeBrasilia(), metas = null, v
           >
             <ListaBarras barras={painel.perfil.cidades.map(t => ({
               label: t.label, valor: t.n, rotulo: fmtInt(t.n),
-              tip: <><TipTitulo>{t.label}</TipTitulo><p className="tabular-nums">{fmtInt(t.n)} vendas</p></>,
+              tip: <><TipTitulo>{t.label}</TipTitulo><p className="tabular-nums">{fmtInt(t.n)} vendas</p>{DICA_CLIQUE}</>,
+              ...clique('cidade', t.label),
             }))} />
           </CardGrafico>
         </div>
+
+        {painelDetalhe('perfil')}
       </div>
     </div>
   );

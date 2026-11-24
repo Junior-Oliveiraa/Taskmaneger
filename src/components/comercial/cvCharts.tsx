@@ -147,6 +147,8 @@ export interface Coluna {
   valor: number;
   tip: React.ReactNode;
   aria: string;
+  onClick?: () => void;
+  ativo?: boolean;
 }
 
 const ALTURA_PLOT = 176;
@@ -170,6 +172,7 @@ export function GraficoColunas({ colunas, formatarEixo, formatarRotulo, cor = CO
   const iMax = colunas.reduce((m, c, i) => (c.valor > colunas[m].valor ? i : m), 0);
   const iUlt = colunas.length - 1;
   const cadaLabel = Math.ceil(colunas.length / 12);
+  const algumAtivo = colunas.some(c => c.ativo);
 
   return (
     <div className="flex gap-2">
@@ -197,7 +200,8 @@ export function GraficoColunas({ colunas, formatarEixo, formatarRotulo, cor = CO
                 <div
                   key={c.chave}
                   {...props(c.tip, c.aria)}
-                  className="group relative flex-1 min-w-0 h-full flex flex-col items-center justify-end rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-blue-500 hover:bg-zinc-800/30"
+                  {...clicavel(c.onClick, c.ativo)}
+                  className={`group relative flex-1 min-w-0 h-full flex flex-col items-center justify-end rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-blue-500 hover:bg-zinc-800/30 transition-opacity ${c.onClick ? 'cursor-pointer' : ''} ${c.ativo ? 'bg-zinc-800/50' : ''} ${algumAtivo && !c.ativo ? 'opacity-45' : ''}`}
                 >
                   {rotular && (
                     <span className="mb-1 text-[10px] font-semibold text-zinc-300 tabular-nums whitespace-nowrap">
