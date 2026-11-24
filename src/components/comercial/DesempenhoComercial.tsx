@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { AlertTriangle, ArrowDownRight, ArrowUpRight, Briefcase, Building2, ChevronRight, Clock3, Landmark, Minus, RefreshCw, Store, UserRound } from 'lucide-react';
+import { AlertTriangle, ArrowDownRight, ArrowUpRight, Briefcase, Building2, ChevronRight, Clock3, Landmark, Minus, RefreshCw, Store, UserRound, X } from 'lucide-react';
 import {
   CANAIS, FINANCIAMENTOS, financiamentoDe, CvDados, CvReserva, ValorTabela, VendaOrbit, valoresDeTabela, Desfecho, FiltrosPainel, Kpis, Painel, Periodo, SituacaoEstoque, SITUACOES_ESTOQUE, ValorParado,
   PrecoOrbit, calcularPainel, fetchCvComercial, hojeBrasilia, nomeCurto, nomeCurtoEmpreendimento, precosDasUnidades, unidadesForaDoOrbit,
@@ -211,7 +211,12 @@ function SeloFinanciamento({ valor }: { valor: string | null | undefined }) {
   return <span className={`inline-block rounded border px-1.5 py-px text-[10px] font-semibold whitespace-nowrap ${cor}`}>{valor}</span>;
 }
 
-function VendasDoEmpreendimento({ vendas, tabelaPor }: { vendas: CvReserva[]; tabelaPor: Map<number, ValorTabela> }) {
+function VendasDoEmpreendimento({ vendas, tabelaPor, comEmpreendimento = false, className = 'px-4 py-3 pl-10' }: {
+  vendas: CvReserva[]; tabelaPor: Map<number, ValorTabela>;
+  /** Detalhe de canal/imobiliária/mídia: as vendas vêm de vários empreendimentos. */
+  comEmpreendimento?: boolean;
+  className?: string;
+}) {
   const comTabela = vendas.filter(v => tabelaPor.has(v.idreserva));
   const somaContrato = vendas.reduce((t, v) => t + v.valor_contrato, 0);
   const somaContratoComp = comTabela.reduce((t, v) => t + v.valor_contrato, 0);
@@ -221,11 +226,12 @@ function VendasDoEmpreendimento({ vendas, tabelaPor }: { vendas: CvReserva[]; ta
   const td = 'px-3 py-2 border-b border-zinc-800/40';
 
   return (
-    <div className="px-4 py-3 pl-10">
+    <div className={className}>
       <div className="overflow-x-auto custom-scrollbar">
-        <table className="w-full text-[11px] min-w-[880px]">
+        <table className={`w-full text-[11px] ${comEmpreendimento ? 'min-w-[1040px]' : 'min-w-[880px]'}`}>
           <thead>
             <tr className="text-zinc-500">
+              {comEmpreendimento && <th className={`${th} text-left`}>Empreendimento</th>}
               <th className={`${th} text-left`}>Unidade</th>
               <th className={`${th} text-left`}>Data</th>
               <th className={`${th} text-left`}>Corretor</th>
@@ -241,6 +247,7 @@ function VendasDoEmpreendimento({ vendas, tabelaPor }: { vendas: CvReserva[]; ta
               const t = tabelaPor.get(v.idreserva);
               return (
                 <tr key={v.idreserva} className="text-zinc-300">
+                  {comEmpreendimento && <td className={`${td} whitespace-nowrap text-zinc-200`}>{nomeCurtoEmpreendimento(v.empreendimento).nome}</td>}
                   <td className={`${td} font-semibold text-zinc-100 whitespace-nowrap`}>
                     {v.unidade ?? '–'}
                     {blocoVisivel(v.bloco) && <span className="ml-1.5 font-normal text-zinc-500">{v.bloco}</span>}
@@ -265,7 +272,7 @@ function VendasDoEmpreendimento({ vendas, tabelaPor }: { vendas: CvReserva[]; ta
           </tbody>
           <tfoot>
             <tr className="text-zinc-200 font-semibold">
-              <td className="px-3 pt-2" colSpan={5}>
+              <td className="px-3 pt-2" colSpan={comEmpreendimento ? 6 : 5}>
                 {fmtInt(vendas.length)} {vendas.length === 1 ? 'venda' : 'vendas'}
                 {comTabela.length < vendas.length && (
                   <span className="ml-2 font-normal text-zinc-500">diferença calculada em {fmtInt(comTabela.length)} com valor de tabela</span>
@@ -290,6 +297,9 @@ const SEM_FOTOS: FotosEstoque = new Map();
 
 const porNome = (a: string, b: string) => a.localeCompare(b, 'pt-BR');
 
+type GraficoOrigem = 'canal' | 'imobiliaria' | 'midia';
+const TITULO_ORIGEM: Record<GraficoOrigem, string> = { canal: 'Canal', imobiliaria: 'Imobiliária', midia: 'Mídia' };
+
 const ROTULO_ORIGEM_VSO: Record<MesVso['origem'], string> = {
   fechamento: 'Estoque do fechamento do mês',
   estimado: 'Estimado: mês anterior à primeira foto do estoque',
@@ -305,6 +315,8 @@ export function PainelDesempenho({ dados, hoje = hojeBrasilia(), metas = null, v
 }) {
   const [empreendimentos, setEmpreendimentos] = useState<number[] | null>(null);
   const [aberto, setAberto] = useState<number | null>(null);
+  // Origem das vendas: fatia clicada em canal, imobiliária ou mídia → tabela das unidades.
+  const [detalheOrigem, setDetalheOrigem] = useState<{ grafico: GraficoOrigem; label: string } | null>(null);
   const tabelaPor = useMemo(() => valoresDeTabela(dados.reservas, vendasOrbit), [dados.reservas, vendasOrbit]);
   const precos = useMemo(() => precosDasUnidades(dados.unidades, precosOrbit), [dados.unidades, precosOrbit]);
   const [canal, setCanalBruto] = useState<string | null>(null);
@@ -412,6 +424,12 @@ export function PainelDesempenho({ dados, hoje = hojeBrasilia(), metas = null, v
   const disponiveis = painel.estoqueTotal['disponível'];
   const estoqueAberto = disponiveis + painel.estoqueTotal.reservada;
   const totalCanais = painel.canais.reduce((s, c) => s + c.valor, 0);
+  const fatiasDaOrigem: Record<GraficoOrigem, typeof painel.canais> = { canal: painel.canais, imobiliaria: painel.imobiliarias, midia: painel.midias };
+  // Some sozinho se a fatia deixar de existir com outro filtro.
+  const fatiaDetalhada = detalheOrigem ? fatiasDaOrigem[detalheOrigem.grafico].find(f => f.label === detalheOrigem.label) ?? null : null;
+  const ehDetalhe = (grafico: GraficoOrigem, label: string) => detalheOrigem?.grafico === grafico && detalheOrigem.label === label;
+  const detalhar = (grafico: GraficoOrigem, label: string) =>
+    setDetalheOrigem(ehDetalhe(grafico, label) ? null : { grafico, label });
   const totalVendasPerfil = painel.perfil.base;
 
   // Meta do recorte: soma das metas dos empreendimentos filtrados ("Todos" = todas).
@@ -944,7 +962,9 @@ export function PainelDesempenho({ dados, hoje = hojeBrasilia(), metas = null, v
                 valor: c.valor,
                 cor: COR_CANAL[c.label] ?? COR.cinza,
                 rotulo: fmtPct(totalCanais ? c.valor / totalCanais : 0, 0),
-                tip: <><TipTitulo>{c.label}</TipTitulo><p className="tabular-nums">{fmtMoeda(c.valor)} · {fmtInt(c.unidades)} un.</p></>,
+                tip: <><TipTitulo>{c.label}</TipTitulo><p className="tabular-nums">{fmtMoeda(c.valor)} · {fmtInt(c.unidades)} un.</p><p className="text-zinc-500">Clique para ver as unidades</p></>,
+                onClick: () => detalhar('canal', c.label),
+                ativo: ehDetalhe('canal', c.label),
               }))}
             />
           </CardGrafico>
@@ -958,7 +978,9 @@ export function PainelDesempenho({ dados, hoje = hojeBrasilia(), metas = null, v
               titulo: i.label,
               valor: i.valor,
               rotulo: fmtCompacto(i.valor),
-              tip: <><TipTitulo>{i.label}</TipTitulo><p className="tabular-nums">{fmtMoeda(i.valor)} · {fmtInt(i.unidades)} un.</p></>,
+              tip: <><TipTitulo>{i.label}</TipTitulo><p className="tabular-nums">{fmtMoeda(i.valor)} · {fmtInt(i.unidades)} un.</p><p className="text-zinc-500">Clique para ver as unidades</p></>,
+              onClick: () => detalhar('imobiliaria', i.label),
+              ativo: ehDetalhe('imobiliaria', i.label),
             }))} />
           </CardGrafico>
           <CardGrafico
@@ -971,10 +993,41 @@ export function PainelDesempenho({ dados, hoje = hojeBrasilia(), metas = null, v
               label: i.label,
               valor: i.valor,
               rotulo: fmtCompacto(i.valor),
-              tip: <><TipTitulo>{i.label}</TipTitulo><p className="tabular-nums">{fmtMoeda(i.valor)} · {fmtInt(i.unidades)} un.</p></>,
+              tip: <><TipTitulo>{i.label}</TipTitulo><p className="tabular-nums">{fmtMoeda(i.valor)} · {fmtInt(i.unidades)} un.</p><p className="text-zinc-500">Clique para ver as unidades</p></>,
+              onClick: () => detalhar('midia', i.label),
+              ativo: ehDetalhe('midia', i.label),
             }))} />
           </CardGrafico>
         </div>
+
+        {/* Unidades que formam a fatia clicada; some ao clicar de novo ou no X. */}
+        {detalheOrigem && fatiaDetalhada && (
+          <section aria-label={`Vendas de ${fatiaDetalhada.label}`} className="rounded-xl border border-zinc-800/80 bg-zinc-900/40 overflow-hidden animate-fade-in">
+            <header className="flex items-start justify-between gap-3 px-4 py-3 border-b border-zinc-800/70">
+              <div className="min-w-0">
+                <p className="text-[11px] text-zinc-500">{TITULO_ORIGEM[detalheOrigem.grafico]}</p>
+                <h3 className="text-sm font-semibold text-zinc-100 truncate">{fatiaDetalhada.label}</h3>
+                <p className="text-[11px] text-zinc-500 tabular-nums">
+                  {fmtInt(fatiaDetalhada.unidades)} {fatiaDetalhada.unidades === 1 ? 'unidade vendida' : 'unidades vendidas'} · {fmtMoeda(fatiaDetalhada.valor)} no período
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDetalheOrigem(null)}
+                aria-label="Fechar o detalhe"
+                className="shrink-0 p-1.5 rounded-md text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+              >
+                <X size={14} />
+              </button>
+            </header>
+            <VendasDoEmpreendimento
+              comEmpreendimento
+              className="px-4 py-3"
+              vendas={[...fatiaDetalhada.vendas].sort((x, y) => (y.data_venda ?? '').localeCompare(x.data_venda ?? ''))}
+              tabelaPor={tabelaPor}
+            />
+          </section>
+        )}
 
         {/* ── Reservas ── */}
         <TituloSecao titulo="Reservas" descricao="Cadastradas no período, conforme a situação atual de cada uma" />

@@ -294,7 +294,8 @@ export interface ValorParado {
 
 // ── Resultado ────────────────────────────────────────────────────────────────
 
-export interface Fatia { label: string; valor: number; unidades: number }
+/** Agrupamento de vendas; endas são as que formam o número (detalhe ao clicar). */
+export interface Fatia { label: string; valor: number; unidades: number; vendas: CvReserva[] }
 
 export interface PontoSerie {
   chave: string;
@@ -528,9 +529,10 @@ function agruparFatias(rows: CvReserva[], chave: (r: CvReserva) => string | null
   rows.forEach(r => {
     const k = chave(r);
     if (!k) { semInfo += 1; return; }
-    const f = m.get(k) ?? { label: k, valor: 0, unidades: 0 };
+    const f = m.get(k) ?? { label: k, valor: 0, unidades: 0, vendas: [] };
     f.valor += r.valor_contrato;
     f.unidades += 1;
+    f.vendas.push(r);
     m.set(k, f);
   });
   return { fatias: [...m.values()].sort((a, b) => b.valor - a.valor), semInfo };
@@ -543,6 +545,7 @@ function topComOutras(fatias: Fatia[], n: number, rotulo: string): Fatia[] {
     label: `${rotulo} (${resto.length})`,
     valor: resto.reduce((s, f) => s + f.valor, 0),
     unidades: resto.reduce((s, f) => s + f.unidades, 0),
+    vendas: resto.flatMap(f => f.vendas),
   }];
 }
 

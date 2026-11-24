@@ -383,19 +383,36 @@ export interface Barra {
   valor: number;
   rotulo: string;
   tip: React.ReactNode;
+  /** Torna o item clicável (detalhar). */
+  onClick?: () => void;
+  /** Item detalhado no momento: os demais ficam esmaecidos. */
+  ativo?: boolean;
 }
+
+/** Clique e Enter/Espaço para itens de gráfico que detalham algo. */
+export const clicavel = (onClick: (() => void) | undefined, ativo: boolean | undefined) => !onClick ? {} : {
+  role: 'button',
+  'aria-pressed': !!ativo,
+  onClick,
+  onKeyDown: (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); }
+  },
+};
 
 export function ListaBarras({ barras, cor = COR.azul }: { barras: Barra[]; cor?: string }) {
   const { props, camada } = useTip();
   const max = Math.max(0, ...barras.map(b => b.valor));
   if (max <= 0) return <SemDados />;
+  const algumAtivo = barras.some(b => b.ativo);
   return (
     <ul className="flex flex-col gap-2">
       {barras.map(b => (
         <li
           key={b.titulo ?? b.label}
           {...props(b.tip, `${b.titulo ?? b.label}: ${b.rotulo}`)}
-          className="group grid grid-cols-[minmax(0,2fr)_minmax(0,3fr)] items-center gap-3 min-h-6 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+          {...clicavel(b.onClick, b.ativo)}
+          className={`group grid grid-cols-[minmax(0,2fr)_minmax(0,3fr)] items-center gap-3 min-h-6 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-opacity ${
+            b.onClick ? 'cursor-pointer hover:bg-zinc-800/40 -mx-1.5 px-1.5' : ''} ${b.ativo ? 'bg-zinc-800/60' : ''} ${algumAtivo && !b.ativo ? 'opacity-45' : ''}`}
         >
           <span className="text-xs leading-tight text-zinc-300 line-clamp-2" title={b.titulo ?? b.label}>{b.label}</span>
           <span className="flex items-center gap-2 min-w-0">
@@ -422,6 +439,8 @@ export interface Fatia {
   cor: string;
   rotulo: string;
   tip: React.ReactNode;
+  onClick?: () => void;
+  ativo?: boolean;
 }
 
 const RAIO = 54;
@@ -439,6 +458,8 @@ export function Rosca({ fatias, centro, centroLabel }: {
   const total = fatias.reduce((s, f) => s + f.valor, 0);
   if (total <= 0) return <SemDados />;
   const visiveis = fatias.filter(f => f.valor > 0);
+  const algumAtivo = fatias.some(f => f.ativo);
+  const esmaecer = (f: Fatia) => (algumAtivo && !f.ativo ? 'opacity-35' : '');
   let acumulado = 0;
   return (
     <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-3">
@@ -453,11 +474,12 @@ export function Rosca({ fatias, centro, centroLabel }: {
               <circle
                 key={f.label}
                 {...props(f.tip, `${f.label}: ${f.rotulo}`)}
+                {...clicavel(f.onClick, f.ativo)}
                 cx="70" cy="70" r={RAIO} fill="none"
                 stroke={f.cor} strokeWidth={ESPESSURA}
                 strokeDasharray={`${Math.max(compr - gap, 0.5)} ${CIRC}`}
                 strokeDashoffset={-inicio}
-                className="outline-none transition-opacity hover:opacity-80 focus-visible:opacity-70"
+                className={`outline-none transition-opacity hover:opacity-80 focus-visible:opacity-70 ${f.onClick ? 'cursor-pointer' : ''} ${esmaecer(f)}`}
               />
             );
           })}
@@ -469,7 +491,12 @@ export function Rosca({ fatias, centro, centroLabel }: {
       </div>
       <ul className="flex flex-col gap-1.5 min-w-[150px] flex-1">
         {fatias.map(f => (
-          <li key={f.label} className="flex items-center gap-2 text-xs">
+          <li
+            key={f.label}
+            {...(f.onClick ? { tabIndex: 0, ...clicavel(f.onClick, f.ativo) } : {})}
+            className={`flex items-center gap-2 text-xs rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-opacity ${
+              f.onClick ? 'cursor-pointer hover:bg-zinc-800/40 -mx-1.5 px-1.5 py-0.5' : ''} ${f.ativo ? 'bg-zinc-800/60' : ''} ${esmaecer(f)}`}
+          >
             <span className="w-2.5 h-2.5 rounded-[3px] shrink-0" style={{ background: f.cor }} />
             <span className="text-zinc-300 truncate flex-1" title={f.label}>{f.label}</span>
             <span className="font-semibold text-zinc-200 tabular-nums whitespace-nowrap">{f.rotulo}</span>
