@@ -30,6 +30,10 @@ export interface CvReserva {
   sexo: string | null;
   estado_civil: string | null;
   cidade: string | null;
+  /** UF do cadastro da pessoa; ausente antes da migração 20261124120000. */
+  estado?: string | null;
+  /** Bairro do cadastro da pessoa; só aparece agrupado. */
+  bairro?: string | null;
   /** Pelas séries ativas da condição de pagamento; nulo quando o CV não tem condição. */
   financiamento?: string | null;
 }
@@ -131,6 +135,8 @@ export async function fetchCvComercial(): Promise<CvDados> {
       imobiliaria: nomeProprio(r.imobiliaria),
       corretor: nomeProprio(r.corretor),
       cidade: nomeProprio(r.cidade),
+      estado: r.estado?.trim().toUpperCase() || null,
+      bairro: nomeProprio(r.bairro ?? null),
       midia: textoComum(r.midia),
       motivo_cancelamento: textoComum(r.motivo_cancelamento),
       motivo_distrato: textoComum(r.motivo_distrato),
@@ -489,7 +495,9 @@ export interface Painel {
     estadoCivil: Contagem[];
     sexo: Contagem[];
     cidades: Contagem[];
-    semInfo: { tipoPessoa: number; faixaEtaria: number; estadoCivil: number; sexo: number; cidade: number };
+    estados: Contagem[];
+    bairros: Contagem[];
+    semInfo: { tipoPessoa: number; faixaEtaria: number; estadoCivil: number; sexo: number; cidade: number; estado: number; bairro: number };
   };
 }
 
@@ -751,6 +759,12 @@ export function calcularPainel(dados: CvDados, f: FiltrosPainel, precos: Map<num
   const civil = contar(pf, r => r.estado_civil);
   const sexo = contar(pf, r => r.sexo);
   const cidade = contar(vendas, r => r.cidade);
+  const estado = contar(vendas, r => r.estado ?? null);
+  // Bairro de nome igual em cidades diferentes não se mistura; fora da cidade
+  // principal o rótulo leva a cidade junto.
+  const cidadePrincipal = cidade.itens[0]?.label;
+  const bairro = contar(vendas, r => !r.bairro ? null
+    : r.cidade && r.cidade !== cidadePrincipal ? `${r.bairro} · ${r.cidade}` : r.bairro);
 
   return {
     kpis,
@@ -781,12 +795,16 @@ export function calcularPainel(dados: CvDados, f: FiltrosPainel, precos: Map<num
       estadoCivil: civil.itens,
       sexo: sexo.itens,
       cidades: cidade.itens.slice(0, 8),
+      estados: estado.itens.slice(0, 8),
+      bairros: bairro.itens.slice(0, 8),
       semInfo: {
         tipoPessoa: tipo.semInfo,
         faixaEtaria: faixaPf.semInfo,
         estadoCivil: civil.semInfo,
         sexo: sexo.semInfo,
         cidade: cidade.semInfo,
+        estado: estado.semInfo,
+        bairro: bairro.semInfo,
       },
     },
   };

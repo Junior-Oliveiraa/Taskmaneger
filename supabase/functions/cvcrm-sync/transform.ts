@@ -30,6 +30,10 @@ export interface CvReservaRow {
   sexo: string | null;
   estado_civil: string | null;
   cidade: string | null;
+  /** Sigla da UF do cadastro da pessoa ("AL"). */
+  estado: string | null;
+  /** Bairro do cadastro da pessoa; só aparece agrupado no painel. */
+  bairro: string | null;
   /** 'Caixa', 'Banco privado', 'Caixa e banco privado' ou 'Sem financiamento'; nulo sem condição ativa. */
   financiamento: string | null;
 }
@@ -135,7 +139,15 @@ export function financiamentoPorReserva(condicoes: Raw[]): Map<string, string> {
   return out;
 }
 
-export function montarReservas(reservas: Raw[], vendas: Raw[], distratos: Raw[], condicoes: Raw[] = []): CvReservaRow[] {
+/** "al" / " AL " → "AL"; o que não for sigla de duas letras vira nulo. */
+export function siglaEstado(v: unknown): string | null {
+  const s = texto(v)?.toUpperCase() ?? null;
+  return s && /^[A-Z]{2}$/.test(s) ? s : null;
+}
+
+export function montarReservas(reservas: Raw[], vendas: Raw[], distratos: Raw[], condicoes: Raw[] = [], pessoas: Raw[] = []): CvReservaRow[] {
+  // Da pessoa só saem estado e bairro; o resto do cadastro fica aqui.
+  const pessoaPor = new Map(pessoas.map(p => [String(p.idpessoa), p]));
   const vendaPor = new Map(vendas.map(v => [String(v.idreserva), v]));
   const distratoPor = new Map(distratos.map(d => [String(d.idreserva), d]));
   const financiamentoPor = financiamentoPorReserva(condicoes);
@@ -143,6 +155,7 @@ export function montarReservas(reservas: Raw[], vendas: Raw[], distratos: Raw[],
   return reservas.map(r => {
     const venda = vendaPor.get(String(r.idreserva));
     const distrato = distratoPor.get(String(r.idreserva));
+    const pessoa = pessoaPor.get(String(r.idcliente));
     const imobiliaria = normalizarImobiliaria(r.imobiliaria);
     return {
       idreserva: numero(r.idreserva),
@@ -171,6 +184,8 @@ export function montarReservas(reservas: Raw[], vendas: Raw[], distratos: Raw[],
       sexo: normalizarSexo(r.sexo),
       estado_civil: normalizarEstadoCivil(r.estado_civil),
       cidade: texto(r.cidade),
+      estado: siglaEstado(pessoa?.estado),
+      bairro: texto(pessoa?.bairro),
       financiamento: financiamentoPor.get(String(r.idreserva)) ?? null,
     };
   });

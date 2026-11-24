@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { AlertTriangle, ArrowDownRight, ArrowUpRight, Briefcase, Building2, ChevronRight, Clock3, Landmark, Minus, RefreshCw, Store, UserRound, X } from 'lucide-react';
 import {
@@ -298,7 +298,7 @@ const SEM_FOTOS: FotosEstoque = new Map();
 const porNome = (a: string, b: string) => a.localeCompare(b, 'pt-BR');
 
 // Gráficos que detalham, ao clicar, as unidades/reservas que formam o número.
-type GraficoDetalhe = 'canal' | 'imobiliaria' | 'midia' | 'desfecho' | 'cancelamento' | 'distrato' | 'faixa' | 'tipo' | 'civil' | 'cidade';
+type GraficoDetalhe = 'canal' | 'imobiliaria' | 'midia' | 'desfecho' | 'cancelamento' | 'distrato' | 'faixa' | 'tipo' | 'civil' | 'cidade' | 'estado' | 'bairro';
 type SecaoDetalhe = 'origem' | 'reservas' | 'perfil';
 const DETALHE: Record<GraficoDetalhe, { secao: SecaoDetalhe; titulo: string }> = {
   canal: { secao: 'origem', titulo: 'Canal' },
@@ -311,6 +311,8 @@ const DETALHE: Record<GraficoDetalhe, { secao: SecaoDetalhe; titulo: string }> =
   tipo: { secao: 'perfil', titulo: 'Tipo de cliente' },
   civil: { secao: 'perfil', titulo: 'Estado civil' },
   cidade: { secao: 'perfil', titulo: 'Cidade do cliente' },
+  estado: { secao: 'perfil', titulo: 'Estado do cliente' },
+  bairro: { secao: 'perfil', titulo: 'Bairro do cliente' },
 };
 
 /** Item de gráfico já normalizado para o detalhe. */
@@ -386,6 +388,17 @@ export function PainelDesempenho({ dados, hoje = hojeBrasilia(), metas = null, v
   const [aberto, setAberto] = useState<number | null>(null);
   // Item clicado num gráfico (origem, reservas, perfil) → tabela das unidades abaixo da seção.
   const [detalhe, setDetalhe] = useState<{ grafico: GraficoDetalhe; label: string } | null>(null);
+  // Ao abrir (ou trocar) o detalhe, a tela rola até ele se ficou fora da vista.
+  const detalheRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const el = detalheRef.current;
+    if (!detalhe || !el) return;
+    const r = el.getBoundingClientRect();
+    const alto = window.innerHeight;
+    if (r.top >= 0 && r.bottom <= alto) return;
+    // Mais alta que a tela: mostra o começo; senão, rola só o necessário.
+    el.scrollIntoView({ behavior: 'smooth', block: r.height > alto ? 'start' : 'nearest' });
+  }, [detalhe]);
   const tabelaPor = useMemo(() => valoresDeTabela(dados.reservas, vendasOrbit), [dados.reservas, vendasOrbit]);
   const precos = useMemo(() => precosDasUnidades(dados.unidades, precosOrbit), [dados.unidades, precosOrbit]);
   const [canal, setCanalBruto] = useState<string | null>(null);
@@ -507,6 +520,8 @@ export function PainelDesempenho({ dados, hoje = hojeBrasilia(), metas = null, v
       case 'tipo': return deContagem(painel.perfil.tipoPessoa);
       case 'civil': return deContagem(painel.perfil.estadoCivil);
       case 'cidade': return deContagem(painel.perfil.cidades);
+      case 'estado': return deContagem(painel.perfil.estados);
+      case 'bairro': return deContagem(painel.perfil.bairros);
     }
   };
   // Some sozinho se o item deixar de existir (ou zerar) com outro filtro.
@@ -527,7 +542,7 @@ export function PainelDesempenho({ dados, hoje = hojeBrasilia(), metas = null, v
       : (y.data_cad ?? '').localeCompare(x.data_cad ?? ''));
     const n = itemDetalhado.n;
     return (
-      <section aria-label={`Detalhe de ${itemDetalhado.label}`} className="rounded-xl border border-zinc-800/80 bg-zinc-900/40 overflow-hidden animate-fade-in">
+      <section ref={detalheRef} aria-label={`Detalhe de ${itemDetalhado.label}`} className="scroll-mt-4 scroll-mb-4 rounded-xl border border-zinc-800/80 bg-zinc-900/40 overflow-hidden animate-fade-in">
         <header className="flex items-start justify-between gap-3 px-4 py-3 border-b border-zinc-800/70">
           <div className="min-w-0">
             <p className="text-[11px] text-zinc-500">{DETALHE[detalhe.grafico].titulo}</p>
@@ -1173,7 +1188,7 @@ export function PainelDesempenho({ dados, hoje = hojeBrasilia(), metas = null, v
 
         {/* ── Clientes ── */}
         <TituloSecao titulo="Perfil de quem comprou" descricao={`${fmtInt(totalVendasPerfil)} vendas do período, sempre em grupo, sem identificar clientes`} />
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
           <CardGrafico
             titulo="Faixa etária"
             subtitulo="Pessoa física, em anos"
@@ -1234,6 +1249,30 @@ export function PainelDesempenho({ dados, hoje = hojeBrasilia(), metas = null, v
               label: t.label, valor: t.n, rotulo: fmtInt(t.n),
               tip: <><TipTitulo>{t.label}</TipTitulo><p className="tabular-nums">{fmtInt(t.n)} vendas</p>{DICA_CLIQUE}</>,
               ...clique('cidade', t.label),
+            }))} />
+          </CardGrafico>
+          <CardGrafico
+            titulo="Estado do cliente"
+            subtitulo="UF do cadastro no CV"
+            tabela={{ colunas: ['Estado', 'Vendas'], linhas: painel.perfil.estados.map(t => [t.label, fmtInt(t.n)]) }}
+            rodape={painel.perfil.semInfo.estado > 0 ? `${fmtInt(painel.perfil.semInfo.estado)} sem estado informado.` : undefined}
+          >
+            <ListaBarras barras={painel.perfil.estados.map(t => ({
+              label: t.label, valor: t.n, rotulo: fmtInt(t.n),
+              tip: <><TipTitulo>{t.label}</TipTitulo><p className="tabular-nums">{fmtInt(t.n)} vendas</p>{DICA_CLIQUE}</>,
+              ...clique('estado', t.label),
+            }))} />
+          </CardGrafico>
+          <CardGrafico
+            titulo="Bairro do cliente"
+            subtitulo="Os mais frequentes"
+            tabela={{ colunas: ['Bairro', 'Vendas'], linhas: painel.perfil.bairros.map(t => [t.label, fmtInt(t.n)]) }}
+            rodape={painel.perfil.semInfo.bairro > 0 ? `${fmtInt(painel.perfil.semInfo.bairro)} sem bairro informado.` : undefined}
+          >
+            <ListaBarras barras={painel.perfil.bairros.map(t => ({
+              label: t.label, valor: t.n, rotulo: fmtInt(t.n),
+              tip: <><TipTitulo>{t.label}</TipTitulo><p className="tabular-nums">{fmtInt(t.n)} vendas</p>{DICA_CLIQUE}</>,
+              ...clique('bairro', t.label),
             }))} />
           </CardGrafico>
         </div>
